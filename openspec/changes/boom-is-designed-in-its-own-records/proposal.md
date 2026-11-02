@@ -25,6 +25,17 @@ surfaces an agent meets, how `boom sync` hands a repository its files,
 how an import is accepted, and what stays out of this repository. Its
 section "What the change must take in" lists what this change carries.
 
+The same day the user took three items of the awesome-lists research of
+2026-11-01 into this design (request `req_ee5dd28f`): a rule under the
+ledger, that each event carries an ordering key of its own, so the
+appends two hosts make to one record, merged in either order, derive the
+same status, as radicle-cob orders a collaborative object's changes; a
+rule that no surface an agent calls accepts a record, `boom mcp`
+offering reading and proposing and an accept only as a link a person
+opens; and two design notes, `boom mcp` built on rmcp, the Rust MCP SDK,
+and boom's rebase-and-retry push run by the host's own `git`, gitoxide
+marking push and rebase not done.
+
 None of it is in the repository: it holds one decision record and a site
 whose pages sketch a design they cannot cite, and contradict it. The
 first walkthrough has Ada accept the claims she proposed herself, which
@@ -48,15 +59,17 @@ repositories it describes, in a file any commit can edit.
   `adrs.toml`, whose tool takes the next number on a branch, goes.
   `CLAUDE.md` sends a rule to `core.md` with a name.
 - `docs/architecture/core.md` gains, each in the commit of the record
-  behind it: `core.names-not-numbers`; `core.no-commercial-strategy`,
-  rewording core.4, which stays its legacy alias;
-  `core.private-sources-by-words`; `core.callers-pin-boom`; and
-  `core.plugins-in-this-repository`.
-- Seventeen decision records, each accepted by the user and citing the
-  rulings, decisions and interview topics it rests on:
+  behind it: `core.names-not-numbers`; `core.events-carry-their-order`,
+  under the ledger; `core.no-commercial-strategy`, rewording core.4,
+  which stays its legacy alias; `core.private-sources-by-words`;
+  `core.callers-pin-boom`; `core.plugins-in-this-repository`; and
+  `core.no-agent-surface-accepts`.
+- Eighteen decision records, each accepted by the user and citing the
+  rulings, decisions, interview topics and research it rests on:
   `names-not-numbers`, `no-commercial-strategy-here`, `five-records`,
   `seven-events`, `the-ledger-on-a-shared-branch`,
-  `cells-and-verdicts`, `one-context-per-repository`,
+  `events-carry-their-order`, `cells-and-verdicts`,
+  `one-context-per-repository`,
   `judged-on-a-host`, `the-gate-blocks-regressions`,
   `a-person-accepts`, `a-persons-act-is-signed`,
   `the-command-line-contract`, `the-surfaces`,
@@ -66,10 +79,13 @@ repositories it describes, in a file any commit can edit.
   requirements style, its sections named and its items each opening
   with a name, every requirement the interview names that is boom's own
   a clause of Part A under that name, Parts B and C carrying the
-  interview's seams and profiles, and its questions the eight still
-  open, `open-signature-format`, `open-sync-without-pull-requests` and
-  `open-after-landing-step` among them. Where the style gives a new
-  clause the next free number, the statement says it departs and why.
+  interview's seams and profiles, the design notes `mcp-on-rmcp` and
+  `writes-through-the-hosts-git` named clauses of Part C that the
+  givens' stack cites, and its questions the nine still open,
+  `open-signature-format`, `open-sync-without-pull-requests`,
+  `open-after-landing-step` and `open-accept-link-opener` among them.
+  Where the style gives a new clause the next free number, the
+  statement says it departs and why.
 - The site shows the statement and each record as pages computed at
   build and never committed, each item anchored by its name and showing
   a number derived from the order it landed on main ("Record 0002",
@@ -124,7 +140,7 @@ None.
 
 ## Impact
 
-- New prose: seventeen records, the statement and five rules. Each is
+- New prose: eighteen records, the statement and seven rules. Each is
   reviewed by a person; no check judges what a record decides, and
   review holds `core.no-commercial-strategy` and
   `core.private-sources-by-words`, as the user decided.
@@ -141,9 +157,10 @@ None.
   history and builds when a record or the statement changes.
 - Every page that sketched what the interview settles changes to the
   settled answer: the ledger on a shared branch under `boom/`, its
-  settings signed by an owner, a person's accept signed with them
-  present, exits 0 to 3, `boom sync` opening one ready pull request,
-  `boom import adr` proposing for a person.
+  settings signed by an owner, each event carrying its own order, a
+  person's accept signed with them present and offered to them as a
+  link, exits 0 to 3, `boom sync` opening one ready pull request, `boom
+  import adr` proposing for a person.
 
 ## Touches
 
@@ -153,6 +170,7 @@ docs/adr/no-commercial-strategy-here.md
 docs/adr/five-records.md
 docs/adr/seven-events.md
 docs/adr/the-ledger-on-a-shared-branch.md
+docs/adr/events-carry-their-order.md
 docs/adr/cells-and-verdicts.md
 docs/adr/one-context-per-repository.md
 docs/adr/judged-on-a-host.md

@@ -33,8 +33,8 @@ main as a merge commit, so main's first-parent history is the order
 things landed, and a landing's own commits sit behind its merge.
 
 The design this change writes down comes from these sources, cited by
-date and words (`core.private-sources-by-words`), the first three kept
-outside this repository:
+date and words (`core.private-sources-by-words`), all but the
+constitution interview kept outside this repository:
 
 - the design session of 2026-10-31 on claims, verdicts and
   reconciliation, and its rulings;
@@ -50,7 +50,18 @@ outside this repository:
   decisions 2, 5, 14 and 15;
 - the user's ruling of 2026-11-01 on millpond (request `req_ee1f3b7c`);
 - the constitution interview of 2026-11-01, `interview.md`, in this
-  repository.
+  repository;
+- the awesome-lists research of 2026-11-01, three of whose items the
+  user took into this design the same day (request `req_ee5dd28f`),
+  cited with the public projects it names:
+  [radicle-cob](https://github.com/radicle-dev/heartwood), whose
+  collaborative objects order their changes in git by the graph they
+  form, for an event's order;
+  [rmcp](https://github.com/modelcontextprotocol/rust-sdk), the Rust MCP
+  SDK, for `boom mcp`, with whether `boom mcp` offers an accept; and
+  gitoxide's
+  [`crate-status.md`](https://github.com/GitoxideLabs/gitoxide/blob/main/crate-status.md),
+  which marks push and rebase not done, for how boom writes to git.
 
 The session's rulings, as this change cites them:
 
@@ -111,9 +122,9 @@ writes first, `core.names-not-numbers`, binds everything after it.
 
 **Non-Goals:**
 
-- Drawing `core.md` from these records beyond the five rules the
-  interview sends there; the rules the records imply are the separate
-  step the user decided on.
+- Drawing `core.md` from these records beyond the seven rules the
+  interview and the user's word on the research send there; the rules
+  the records imply are the separate step the user decided on.
 - Renaming record 0001 or core.1 to core.6: they keep their ids, cited
   only as legacy.
 - Answering the statement's open questions, `open-signature-format`,
@@ -236,9 +247,11 @@ commit messages, which the interview does not ask for and review holds.
 
 The interview sends five rules to `core.md` "with them, or in the
 separate step that draws `core.md` from the records, as the user
-chooses". This design sends them with their records, each in its
-record's commit, as `CLAUDE.md` asks of a rule and the decision behind
-it. `core.md`'s preamble gains: "Each rule is known by its id,
+chooses", and the user's word on the awesome-lists research (request
+`req_ee5dd28f`) sends two more, an event's order under the ledger and
+no accept from a surface an agent calls. This design sends all seven
+with their records, each in its record's commit, as `CLAUDE.md` asks of
+a rule and the decision behind it. `core.md`'s preamble gains: "Each rule is known by its id,
 `core.<name>`, a name fixed when the rule is written. core.1, core.2,
 core.3, core.5 and core.6 keep the numbers they were given before
 `core.names-not-numbers`, as legacy ids, and core.4 is
@@ -263,6 +276,23 @@ legacy."
   computed from main's order; boom writing `0007-<name>.md` with the
   number it gave at acceptance. Source: record names-not-numbers. (The
   examples stay in code spans, so `root:adrs` reads them as quoted.)
+
+- **`### The ledger`** gains, after core.2:
+
+  > **[core.events-carry-their-order]** Each event carries an ordering
+  > key of its own, fixed when it is written, so that the appends two
+  > hosts make to one record, merged in either order, derive the same
+  > status.
+
+  Details: Rules out: a status read from an event's place in the
+  ledger's history or in a file; an order taken from a clock, or from a
+  count one host keeps; a write applied again to a new tip with its key,
+  or a person's signature over it, made anew. Not ruled out: the
+  ledger's history kept one line by the family's protocol; the check at
+  the tip refusing an append that no longer holds; two hosts' lines of
+  one file joined as `merge=union` joins them, read as the same status.
+  Source: record events-carry-their-order; the awesome-lists research,
+  2026-11-01, and radicle-cob.
 
 - **`### Secrets and records`**: core.4 becomes
 
@@ -313,6 +343,20 @@ legacy."
   linking boom's library. Not ruled out: a marketplace entry that points
   here. Source: record the-surfaces; core.5.
 
+  > **[core.no-agent-surface-accepts]** No surface an agent calls
+  > accepts a record: `boom mcp` offers reading and proposing, and an
+  > accept only as a link a person opens to make it.
+
+  Details: Rules out: an accept tool in `boom mcp`; a plugin's skill or
+  hook that accepts; an agent's call that sets off a person's key
+  prompt; a link that accepts when it is opened, or carries a
+  signature. Not ruled out: `boom mcp`'s other tools, each an agent's
+  act and none a person's, as record the-surfaces serves them; the link
+  shown to the person by the agent, a plugin or a planner; the person
+  opening it in their own pane, where the accept is signed with them
+  present. Source: record the-surfaces; record a-person-accepts; the
+  awesome-lists research, 2026-11-01.
+
 ### The records' form
 
 One record per decision, in record 0001's form, each with `name`,
@@ -337,7 +381,13 @@ The records are committed one at a time, in the order of the section
 The records below, so the order the site numbers them in is the order
 they are read in (The numbers the site shows). `names-not-numbers` is
 first, in the commit that writes its rule and `CLAUDE.md`'s line; each
-record that sends a rule to `core.md` writes it in its own commit.
+record that sends a rule to `core.md` writes it in its own commit. A
+record cites records later in that order, `names-not-numbers` citing
+`import-proposes-for-a-person` and `seven-events` citing
+`a-person-accepts`, so `root:adrs` resolves every citation only once the
+last record is committed, and the tasks prove the records there. The
+commits between are a landing's own, behind its merge, and the gate
+reads the candidate alone.
 
 Set aside: one record for the whole design, which a citation could not
 narrow to the decision it rests on; a record per interview item, which
@@ -667,6 +717,74 @@ is a new entry with a new id, which millpond's curation may attach to
 the item it already sent; a cell judged satisfied is in no entry. The
 statement calls it the entry's id, keeping "key" for a person's key.
 
+### An event's order
+
+Each event, when boom makes it, names the events of its record that the
+writer had read and that no other read event follows, and carries an id
+derived from what it says, those names among it
+(`event-carries-its-order`). A claim's record, for this, is its events,
+its verdicts and the due events naming them, so a verdict names the
+claim's latest events and the cell's previous verdict as the judge's
+host read them. Both are fixed when the event is made and covered by a
+person's signature; a write the family's protocol applies again to a new
+tip carries the same event. One event is after another when it names
+it, or names an event after it; two neither of which is after the other
+are concurrent, and where a status needs them in one order, as the
+latest verdict of a cell, it takes them by their ids
+(`after-is-what-the-writer-read`). A cell is stale when a `challenged`
+event names its claim and its verdict is not after it, so a challenge
+concurrent with a judgment stales the cell whichever lands first. An
+event naming an event the ledger does not hold before it counts for
+nothing (`validated-on-read`). The site's sketch writes the order as
+`Id:` and one `After:` per event followed, and keeps `At:` as a note no
+status reads; where the fields go is the layout's question
+(`open-ledger-layout`).
+
+Set aside: `merge=union` for the ledger's recfiles, the research's
+cheaper trick, which keeps both sides' appended lines unordered: boom
+applies its own write again to the new tip (record
+the-ledger-on-a-shared-branch) and needs no textual merge, and with each
+event carrying its order a union would derive the same status anyway.
+
+### An accept offered as a link
+
+An answer that names a version waiting on a person's accept, `boom
+propose`'s, `boom supersede`'s and `boom query`'s for a proposed version
+among them, carries `accept_link` beside the words naming the command:
+`boom:accept?ledger=<ledger>&record=<name>@<version>`, a link of boom's
+own scheme naming the ledger as a repository's `.config/boom.toml`
+names it, the record by its name and the version, and nothing that acts
+(`accept-offered-as-a-link`). `boom accept` takes the link as it takes
+`<name>@<version>`: it shows the version, its scenarios and who
+proposed it, then the key's prompt signs, with the person present
+(record a-persons-act-is-signed). Opening a link accepts nothing; it
+carries no signature and no token; an agent hands it to the person and
+never opens it, and its call sets off no key prompt
+(`core.no-agent-surface-accepts`). The herdr plugin opens a link in the
+person's own pane; a planner may show it beside a proposal it lists
+(record proposals-as-signals). boom serves no page and no network for
+it. What opens a link on a host where no plugin does, a handler for
+boom's scheme registered with the host that starts the person's
+terminal on `boom accept`, or the person handing it to `boom accept`
+themselves, is a question the statement keeps
+(`open-accept-link-opener`).
+
+Set aside: an accept tool in `boom mcp` that refuses an agent, which
+would set off the person's key prompt from an agent's call; the words
+naming the command alone, which a surface cannot open for the person.
+
+### The design notes are clauses of Part C
+
+Two choices of the stack come from the research: `boom mcp` built on
+rmcp (`mcp-on-rmcp`), and every write boom makes to git through the
+host's own `git` command, a library only reading
+(`writes-through-the-hosts-git`). A choice of library is no rule and no
+invariant: a model may displace it by saying why (the style's section
+on givens). Each is a named clause of the Part C profile it binds, the
+surfaces' and the store's, which the givens' list of the stack cites,
+and records the-surfaces and the-ledger-on-a-shared-branch state each
+among their outcomes.
+
 ### The millpond loop as a diagram
 
 `site/src/diagrams/millpond.ts`, registered as `millpond` in
@@ -870,8 +988,9 @@ version and records nothing; two amendments may wait side by side, a
 person may reject one and accept the other, and the proposer may propose
 the same words again on the new base, as a new version; boom never
 merges two amendments into one text (`amend-names-its-base`). "After" is
-order in the ledger's history, which is one line, and no status depends
-on a clock. boom holds every event it reads to the checks it holds a
+the order each event carries itself, never its place in the ledger's
+history or a file (record events-carry-their-order), and no status
+depends on a clock. boom holds every event it reads to the checks it holds a
 write to, its form, its actor's role and its signature; an event that
 fails counts for nothing, and a change to what was already written is
 reported as tampering, naming where, and never read as its new text;
@@ -914,7 +1033,14 @@ a branch with no remote takes the same steps with an `update-ref`. The
 history stays one line, and a clash between two writers is caught by the
 check at the new tip, which refuses the second; never a forced push, a
 merge, or a lock standing in for the push
-(`ledger-written-by-the-family-protocol`). Every record at rest is
+(`ledger-written-by-the-family-protocol`). Every step of it that
+changes a repository, the fetch into the cache, the commit through a
+temporary index, the push and the `update-ref`, runs the host's own
+`git` command, so the host's credential helpers and ssh configuration
+apply; a library may read, gix as sluice reads with it, and changes
+nothing, gitoxide's own status of its crates marking push and rebase not
+done; `boom sync`'s push to a repository's `boom/sync` takes the same
+way (`writes-through-the-hosts-git`). Every record at rest is
 recutils and names its format and major version, `format:
 boom-claim/1`; JSON travels only in flight; boom reads every earlier
 version of a record as it stands (`records-name-their-format`). Where
@@ -933,14 +1059,70 @@ falls because the ledger's events would ride a gate built for code and
 land by merge, and a change could edit the claims it is checked
 against; a database because the format must be open so a project trusts
 that it owns its history (record 0001), and a service would run between
-commands. Consequences: the order of the ledger is its branch's history,
-one line; verdicts are appended there too, a named departure from the
-convention's rule 2 (record cells-and-verdicts); the layout of boom's
-files under `boom/` is a question the statement keeps. Sources: decision
-24; the family's storage convention, its five layers, its 5.2, its rule
-4 and its decisions 2, 5, 14 and 15, cited by their words; the
-constitution interview (`interview.md`), its topic on the ledger's
-storage and merge behaviour; record 0001.
+commands. Consequences: the ledger's branch keeps one line of history,
+and the order a status reads is each event's own (record
+events-carry-their-order); verdicts are appended there too, a named
+departure from the convention's rule 2 (record cells-and-verdicts); the
+layout of boom's files under `boom/` is a question the statement keeps.
+Sources: decision 24; the family's storage convention, its five layers,
+its 5.2, its rule 4 and its decisions 2, 5, 14 and 15, cited by their
+words; the constitution interview (`interview.md`), its topic on the
+ledger's storage and merge behaviour; the awesome-lists research,
+2026-11-01, and gitoxide's `crate-status.md`
+(https://github.com/GitoxideLabs/gitoxide/blob/main/crate-status.md);
+record 0001.
+
+**`events-carry-their-order`, Each event carries its own place in its
+record's order, so two hosts' appends give one status in either
+order.** How are a record's events ordered, so that the appends two
+hosts make to one record derive the same status whichever lands first?
+Each host writes the ledger by the family's protocol and applies a
+refused write again to the new tip (record
+the-ledger-on-a-shared-branch), so which of two hosts' appends comes
+first in the history is a race; a person's event is signed when it is
+made (record a-persons-act-is-signed) and cannot be made anew where it
+lands; and each host appends verdicts to files of its own (record
+cells-and-verdicts), so no one file holds a cell's order. Options: the
+event's place in the ledger's history; a time each event carries; a
+count each host keeps; each event naming the events of its record that
+its writer had read, with an id derived from its content, as
+radicle-cob orders the changes of a collaborative object in git by the
+graph they form. Outcome: the last. An event names, when it is made,
+the events of its record its writer had read and no other read event
+follows, and carries an id derived from what it says, those names among
+it; both are fixed when it is made, covered by a person's signature
+where it is a person's act, and never change, a write applied again to a
+new tip carrying the same event (`event-carries-its-order`). One event
+is after another only when it names it, or names an event after it; two
+events neither of which is after the other are concurrent, and where a
+status needs them in one order it takes them by their ids
+(`after-is-what-the-writer-read`). A claim's record, for its order, is
+its events, its verdicts and the due events naming them. A status reads
+that order and nothing else: whichever of two hosts' appends to one
+record lands first, or however their lines are joined in a file, the
+status derived is the same; never an event's place in the history or a
+file, never a clock (`either-order-same-status`). The check at the tip
+stays: an append that no longer holds where it lands, an accept on a
+base no longer standing or a name now taken, is refused there, and the
+order decides only among appends that hold. An event naming an event
+the ledger does not hold before it counts for nothing (record
+seven-events). The history's place falls because a race decides it and
+a signed event cannot be moved; a time because hosts' clocks disagree
+and no status depends on a clock (ruling Q2); a count per host because
+two hosts' counts say nothing of each other. Consequences: a cell is
+stale when a `challenged` event names its claim and the cell's verdict
+is not after it, so a challenge concurrent with a judgment stales the
+cell (record cells-and-verdicts); a cell's latest verdict is the latest
+in this order; the ledger's history stays one line, and no status rests
+on it; two hosts' lines of one file joined as `merge=union` joins them
+would derive the same status, though boom applies its own write again
+and joins nothing; where the order is written is the layout's question
+(`open-ledger-layout`). Rule core.events-carry-their-order holds it.
+Sources: the user, 2026-11-01 (request `req_ee5dd28f`), taking it from
+the awesome-lists research of 2026-11-01; radicle-cob, in
+radicle-dev/heartwood (https://github.com/radicle-dev/heartwood);
+decision 32; ruling Q2; the constitution interview (`interview.md`), its
+topic on the ledger's storage and merge behaviour.
 
 **`cells-and-verdicts`, A verdict is a record beside the claims, and a
 cell's status and its two queues are computed.** Where does a
@@ -973,8 +1155,11 @@ only to files of its own, so writers never meet
 stand, no cell; the repository homes nothing it attaches to, out of
 scope, its verdict reading not applicable and kept; no verdict,
 unjudged; the latest verdict judged an earlier version, stale; a
-`challenged` event after it, stale; a `due` event naming it, stale;
-otherwise current, with its value. A stale cell lists every reason that
+`challenged` event naming the claim that the verdict is not after,
+stale; a `due` event naming it, stale; otherwise current, with its
+value. "Latest" and "after" are the order each event carries (record
+events-carry-their-order), so a challenge concurrent with a judgment
+stales the cell whichever lands first. A stale cell lists every reason that
 holds. The queues: **to judge**, every cell unjudged or stale; the
 **backlog**, every current cell judged partial or not satisfied. Neither
 is stored. Nothing else moves a verdict: not a tag, a kind, a term, a
@@ -1161,8 +1346,9 @@ option falls because an agent could rewrite what the project claims to
 get its own work through; the second because an author's own accept is
 one person's word, not an agreement. Consequences: `boom mcp`, which
 serves an agent, offers no accept and no reject, and no act that needs a
-person's signature (record the-surfaces); the walkthroughs show an agent
-proposing and a person accepting. Sources: decision 41; the
+person's signature, an accept only as a link a person opens (record
+the-surfaces); the walkthroughs show an agent proposing and a person
+accepting. Sources: decision 41; the
 constitution interview (`interview.md`), its topic on who may propose,
 accept, reject and supersede.
 
@@ -1260,14 +1446,25 @@ the `boom` command, with thin wrappers around it, every command taking
 `--json` (`one-engine-every-command-json`). `boom mcp` is an MCP server
 on standard input and output that an agent's harness starts, its tools
 boom's commands, each taking the command's arguments and returning its
-`--json` object (`mcp-is-the-commands`). Each tool is one of boom's
-commands, run by the same code and answering the same JSON, and no tool
-exists without its command; no tool performs an act that needs a
-person's signature. Served: propose, supersede, annotate, challenge,
-query, check, backlog, render, judge, reconcile, sync. Absent: accept,
-reject, `check --answer`, and every owner's act; a tool may answer, as
-text, that a person must accept and with which command
-(`mcp-serves-no-persons-act`). The Claude Code plugin is `boom mcp` and
+`--json` object (`mcp-is-the-commands`); it is built on rmcp, the Rust
+MCP SDK (https://github.com/modelcontextprotocol/rust-sdk), each tool a
+thin call of its command, so the protocol is the SDK's and the logic
+boom's (`mcp-on-rmcp`). Each tool is one of boom's commands, run by the
+same code and answering the same JSON, and no tool exists without its
+command; no tool performs an act that needs a person's signature.
+Served: propose, supersede, annotate, challenge, query, check, backlog,
+render, judge, reconcile, sync. Absent: accept, reject, `check
+--answer`, and every owner's act; a tool may answer, as text, that a
+person must accept and with which command (`mcp-serves-no-persons-act`).
+No surface an agent calls accepts a record: `boom mcp` offers reading
+and proposing, and an accept only as a link a person opens to make it
+(`no-agent-surface-accepts`). An answer naming a version that waits on a
+person's accept carries that link beside the words: a link of boom's
+own scheme naming the ledger, the record by its name and the version,
+and nothing that acts; `boom accept` takes it as it takes
+`<name>@<version>`, shows the version and its scenarios, and the key's
+prompt signs with the person present; opening it accepts nothing, and
+boom serves no page for it (`accept-offered-as-a-link`). The Claude Code plugin is `boom mcp` and
 the three moments an agent meets the ledger: drawing out claims and
 narratives while it plans, at the destination's grain; looking up what
 applies before it edits; running `boom check` before it hands off
@@ -1280,19 +1477,29 @@ The herdr plugin shows, for each agent pane, the claims in scope of its
 last edit and its last check's outcome, and for the workspace, the
 proposals waiting on the person and the unclear checks to answer; its
 one acting key opens the waiting list in the person's own pane, where
-`boom accept` runs and the key's presence prompt signs it; it reads boom
-only by `boom … --json`, never the ledger's files
+`boom accept` runs and the key's presence prompt signs it, and it opens
+an accept link there the same way; it reads boom only by `boom …
+--json`, never the ledger's files
 (`herdr-shows-what-waits-and-applies`). Both plugins live in this
 repository, each under `plugins/<name>` as a moon project of its own,
 each calling boom by its command line or `boom mcp`, never its code,
 naming the boom release it needs and shipping with it
-(`plugins-in-this-repository`). The first option falls because logic in
-a surface is logic its command lacks, and a plugin elsewhere drifts
-from the release it calls. Consequences: rule
-core.plugins-in-this-repository; no agent's call sets off a person's key
-prompt. Sources: the design session of 2026-10-31, its surfaces; the
-constitution interview (`interview.md`), its topic on `boom mcp` and the
-Claude Code and herdr plugins; record a-person-accepts.
+(`plugins-in-this-repository`). For the accept, options: an accept tool
+in `boom mcp` that refuses an agent; no accept at all, the words naming
+the command; an accept only as a link a person opens. Outcome: the link,
+since a tool that refuses an agent still sets off the person's key
+prompt from an agent's call, and words a surface cannot open leave the
+person to copy a command. The first option falls because logic in a surface is logic
+its command lacks, and a plugin elsewhere drifts from the release it
+calls. Consequences: rules core.plugins-in-this-repository and
+core.no-agent-surface-accepts; no agent's call sets off a person's key
+prompt; what opens a link on a host where no plugin does is a question
+the statement keeps (`open-accept-link-opener`). Sources: the design
+session of 2026-10-31, its surfaces; the constitution interview
+(`interview.md`), its topic on `boom mcp` and the Claude Code and herdr
+plugins; the user, 2026-11-01 (request `req_ee5dd28f`), taking the link
+and rmcp from the awesome-lists research of 2026-11-01; record
+a-person-accepts.
 
 **`sync-by-one-pull-request`, boom sync hands a repository its files on
 one ready pull request.** How does what boom writes for a repository,
@@ -1382,7 +1589,8 @@ signed accept does (record a-person-accepts), and a version accepted or
 rejected leaves the listing. The first option falls because a proposal
 nobody is shown waits unseen; the second because a person would be
 asked twice. Consequences: the herdr plugin shows the same waiting list
-in the workspace (record the-surfaces); what a proposal whose scope
+in the workspace, and a signal may carry each proposal's accept link
+for the person to open (record the-surfaces); what a proposal whose scope
 spans repositories naming different planners shows where is a question
 the statement keeps. Sources: decision 42; the ruling of 2026-11-01.
 
@@ -1480,8 +1688,9 @@ verdict for the judge, plan, start, land or merge work, or read another
 tool's files).
 
 **Vocabulary**: ledger, record, name, number (a record's, given at
-first acceptance), legacy number, version, event, actor, provenance,
-signature, key (a person's), owner, operator, role, setting, claim,
+first acceptance), legacy number, version, event, event id, after (of
+two events), concurrent, actor, provenance, signature, key (a
+person's), accept link, owner, operator, role, setting, claim,
 kind, invariant, decision, assumption, statement (a claim's), scenario,
 body, check rule, narrative, context, home, relationship, term, map,
 attachment, scope, standing, proposed, amendment, base (an amendment's),
@@ -1501,9 +1710,9 @@ clause citing its record:
   `name-clash-fails-at-merge`; `cite-by-name`;
   `number-given-at-acceptance`; `ordinal-per-kind-ledger-wide`;
   `legacy-number-alias`; `other-identities-derived`, every other
-  identity boom gives, a version, a verdict's id, an entry's id, is
-  derived from what it identifies and depends on nothing else the
-  ledger holds.
+  identity boom gives, a version, an event's id, a verdict's id, an
+  entry's id, is derived from what it identifies and depends on nothing
+  else the ledger holds.
 - **Records and versions** (record five-records): `version-is-the-words`,
   a version is fixed by what a record says alone, so the same text has
   the same version and new text a new one; `version-leaves-out-attachment`,
@@ -1516,11 +1725,20 @@ clause citing its record:
   never by copy, and is never given a verdict; `term-in-one-context`;
   `relationship-names-its-direction`, a relationship names its two
   contexts, the upstream one and the direction a dependency may run.
-- **Events and standing** (record seven-events): `status-from-events`, a
-  status is read from events alone and stored nowhere;
-  `events-only-appended`; `event-names-version-actor-provenance`;
-  `order-is-the-history`, order is the ledger's history, one line, and
-  no status depends on a clock; `proposed-is-never-checked`;
+- **Events and standing** (records seven-events,
+  events-carry-their-order): `status-from-events`, a status is read from
+  events alone and stored nowhere; `events-only-appended`;
+  `event-names-version-actor-provenance`; `event-carries-its-order`, in
+  mechanism-free words: each event carries, from when it is made, its
+  place in its record's order, the events its writer had read and an id
+  derived from what it says, and keeps both wherever it is appended;
+  `after-is-what-the-writer-read`, one event is after another only when
+  its writer had read the other, and two neither of which had read the
+  other are concurrent, taken by their ids where a status needs one
+  order; `either-order-same-status`, whichever of two appends to one
+  record lands first, the status derived is the same, and no status
+  depends on an event's place in the store or on a clock;
+  `proposed-is-never-checked`;
   `stands-only-by-accept` (accept-by-role-never-agent-never-author);
   `amend-names-its-base`; `amendment-stands-in-place`, an accepted
   amendment stands in place of the version it amends, which stays in
@@ -1533,9 +1751,13 @@ clause citing its record:
   mechanism-free words: a change to what was already appended is
   reported as tampering and never read as its new text.
 - **Acceptance and owners** (records a-person-accepts,
-  a-persons-act-is-signed, proposals-as-signals):
+  a-persons-act-is-signed, the-surfaces, proposals-as-signals):
   `accept-by-role-never-agent-never-author`; `reject-is-a-persons`;
-  `agents-propose`; `persons-acts-signed-with-presence`, in
+  `agents-propose`; `no-agent-surface-accepts`, in mechanism-free words:
+  no surface an agent calls makes an accept, and an accept it would
+  need is offered only as a link that names the version and acts on
+  nothing, which a person opens to make the accept;
+  `persons-acts-signed-with-presence`, in
   mechanism-free words: a person's act carries their signature by a key
   the ledger registers to them, made only with them present, verified
   when written and whenever read, and an agent's act is never taken for
@@ -1630,14 +1852,17 @@ operations in abstract names and its guarantees as named clauses, the
 writer naming each:
 
 - **The ledger's store** (record the-ledger-on-a-shared-branch),
-  carrying the shared-branch protocol's guarantee: append; read in
-  order, at a point of its history; its tip. Appends are never lost or
-  reordered and its history is one line; a write is checked against the
-  tip it lands on and refused there when it no longer holds, a name now
-  taken, a base no longer standing, a role not held; two writers both
-  land, or the second is refused, and neither overwrites the other;
-  nothing is forced over what another wrote; every record names its form
-  and major version, and every earlier one is read as it stands.
+  carrying the shared-branch protocol's guarantee: append; read at a
+  point of its history; its tip. Appends are never lost or changed and
+  its history is one line; a write is checked against the tip it lands
+  on and refused there when it no longer holds, a name now taken, a base
+  no longer standing, a role not held; a write applied again to a new
+  tip appends the same event, its order and signature unchanged
+  (event-carries-its-order); two writers both land, or the second is
+  refused, and neither overwrites the other; nothing is forced over what
+  another wrote; every record names its form and major version, and
+  every earlier one is read as it stands; the order a status reads is
+  the events' own, never the store's (either-order-same-status).
 - **The repository**: its shared head; what a revision holds; the
   landings since a revision, with what each cites; a change against a
   base; propose a change, which lands only by the repository's own
@@ -1677,7 +1902,9 @@ writer naming each:
   and could not run write nothing; an answer names its form and major
   version, within which a field is only added; nothing waits on an
   answer from a terminal; a write repeated with the same arguments adds
-  nothing and answers as the first did.
+  nothing and answers as the first did; an answer naming a version that
+  waits on a person's accept says how a person makes it and makes
+  nothing itself (no-agent-surface-accepts).
 - **Binding the contracts**: each seam is bound by naming profiles of
   Part C; a ledger binds one store and one actor profile; any number of
   planners and signal sources; one conformance suite holds every
@@ -1695,9 +1922,16 @@ interview's items as its clauses:
   ledger's branch beside the claims, the storage convention's rule 2
   departed from by name (verdicts-beside-the-claims); tampering read as
   a commit that changes or removes a line already written, naming the
-  commit; the order of the history the branch's own, one line, with no
-  merge; the layout of boom's files under `boom/` a question
-  (open-ledger-layout).
+  commit; the history the branch's own, one line, with no merge; an
+  event's order written with it, its id and the ids of its record's
+  events it follows, covered by a person's signature
+  (event-carries-its-order); `writes-through-the-hosts-git`, every write
+  boom makes to a repository, the ledger's branch or a sync branch, the
+  fetch, the commit through a temporary index, the push and the
+  `update-ref` among it, run by the host's own `git` command so its
+  credential helpers and ssh configuration apply, a library, gix by
+  default, only reading; the layout of boom's files under `boom/` a
+  question (open-ledger-layout).
 - **The repository in git**: the shared head is the default branch at
   its remote; a landing cites a claim by a `Claim: <name>@<version>`
   trailer; a marker is the same words in an OpenSpec requirement, a
@@ -1732,11 +1966,19 @@ interview's items as its clauses:
 - **The surfaces** (records the-command-line-contract, the-surfaces):
   `one-engine-every-command-json`; `exit-codes`;
   `json-versioned-additive`; `no-prompts-repeats-add-nothing`;
-  `mcp-is-the-commands`; `mcp-serves-no-persons-act`, which holds
-  decision 41's consequence that `boom mcp` offers no accept and no
-  reject (the interview's `mcp-offers-no-accept`, stated once here);
-  `claude-code-plugin-three-moments`; `hook-before-each-edit`;
-  `herdr-shows-what-waits-and-applies`.
+  `mcp-is-the-commands`; `mcp-on-rmcp`, `boom mcp` served by rmcp, the
+  Rust MCP SDK, on standard input and output, each tool a thin call of
+  its command (mcp-is-the-commands); `mcp-serves-no-persons-act`, which
+  holds decision 41's consequence that `boom mcp` offers no accept and
+  no reject (the interview's `mcp-offers-no-accept`, stated once here);
+  `accept-offered-as-a-link`, an answer naming a version that waits on
+  a person's accept carrying `accept_link`,
+  `boom:accept?ledger=<ledger>&record=<name>@<version>`, which `boom
+  accept` takes as it takes `<name>@<version>`, showing the version
+  before the key's prompt signs, and which the herdr plugin opens in the
+  person's own pane, what opens it elsewhere a question
+  (open-accept-link-opener); `claude-code-plugin-three-moments`;
+  `hook-before-each-edit`; `herdr-shows-what-waits-and-applies`.
 - **The renderer and the import**: mdBook, run by command where
   installed, none of its code embedded; `decision-files-numbered-at-acceptance`;
   `import-names-from-files`; `boom import adr` reading a folder of MADR
@@ -1746,13 +1988,15 @@ interview's items as its clauses:
 `status-never-stored`, a status, a record's or a cell's, is read from
 the ledger and never stored; `every-view-is-computed`, every view,
 queue and cache is computed; `only-a-person-makes-a-change-stand`, no
-agent accepts, no author accepts their own, and every person's act is
-signed with them present; `only-regressions-block`, the gate blocks only
+agent accepts, no surface an agent calls accepts, no author accepts
+their own, and every person's act is signed with them present;
+`only-regressions-block`, the gate blocks only
 a change that moves away from a standing claim, and a claim it could not
 review is not run, never passed; `unchanged-inputs-write-nothing`,
 reconciling, judging and every repeated write, on unchanged inputs,
-write nothing; `every-holder-computes-the-same`;
-`tools-exchange-only-commands`; `no-backlog-planned-twice`;
+write nothing; `every-holder-computes-the-same`, any holder of the
+ledger, whichever order two hosts' appends landed in, computes the same
+status for every record and cell; `tools-exchange-only-commands`; `no-backlog-planned-twice`;
 `no-landing-renumbers-or-renames`, no landing renames a record or
 changes a number already given; `nothing-trusted-is-hand-edited`, no
 setting, slice or event the check trusts is changed by editing a file.
@@ -1776,7 +2020,10 @@ which a check says it could not run (sluice's statement, 114). The rest
 of the stack, which a model builds on unless it says why not: moon and
 sluice for the gate; a forge's pull requests, through its own command
 line; mdBook for the book; millpond and flume as the family's inbox and
-launcher; Claude Code and herdr for agents.
+launcher; Claude Code and herdr for agents; rmcp for `boom mcp`
+(mcp-on-rmcp); the host's own `git` for every write to a repository,
+and a library, gix as in sluice, for reads
+(writes-through-the-hosts-git).
 
 **Questions the model must answer**, marked as not requirements, each a
 named item: `open-ledger-layout`, the layout of boom's files under
@@ -1793,8 +2040,11 @@ is sluice's to settle; `open-finer-map`, whether the map needs parts
 finer than a context, elements inside one and the links between them;
 `open-check-rule-form`, what a check rule looks like;
 `open-proposal-across-planners`, what a proposal whose scope spans
-repositories naming different planners shows where; `open-the-name`,
-the name.
+repositories naming different planners shows where;
+`open-accept-link-opener`, what opens an accept link on a host where no
+plugin does, a handler for boom's scheme registered with the host that
+starts the person's terminal on `boom accept`, or the person handing the
+link to `boom accept` themselves; `open-the-name`, the name.
 
 **Scenarios the model must satisfy**, each a named item, as the
 operator lives them, citing the clauses it exercises:
@@ -1817,7 +2067,14 @@ prose claim not run and records no outcome; `a-change-swaps-its-reviewer`
 and `a-slice-edited-by-hand`, each failing the check; `forty-quiet-commits`,
 forty commits that leave a verdict's evidence alone judge nothing again;
 `evidence-removed-makes-due`; `two-hosts-judge-one-cell`, the second
-verdict is dropped and reported; `amend-and-supersede-cells`, an
+verdict is dropped and reported; `two-hosts-append-either-order`, from
+one tip, one host appends Ada's signed annotation of a claim and
+another a millpond signal's challenge of it, and whichever lands first,
+the claim's status and every cell's are the same and Ada's signature
+still verifies after her write was applied again to the new tip;
+`a-challenge-beside-a-judgment`, a challenge and a verdict made from
+one tip leave the cell stale, whichever lands first;
+`amend-and-supersede-cells`, an
 amendment makes every cell of the claim stale, a supersession retires
 the old cells and starts the new claim's unjudged;
 `a-map-changes-no-verdict`; `a-signal-challenges`, a millpond signal
@@ -1841,7 +2098,11 @@ was renamed; `an-import-keeps-its-numbers`, a project imports ADRs 0001
 to 0004 for Ada to accept, each with a drafted scenario, and the next
 decision accepted is 0005, written `0005-money-has-currency.md`;
 `the-hook-before-an-edit`, an agent about to edit a file is given the
-standing claims whose scope holds it.
+standing claims whose scope holds it; `an-accept-reaches-a-person-as-a-link`,
+an agent proposes through `boom mcp`, its answer carries the accept
+link and no tool accepts, Ada opens the link in her own pane, reads the
+version and her key's touch signs the accept, and the agent's call set
+off no prompt.
 
 **What to deliver**: a model of boom satisfying Parts A and B: its
 records and events, the status function, the queues, the commands and
@@ -1871,7 +2132,11 @@ sketches what the design leaves open says so and links the question.
   and `due`, each row citing its clause, the proposed row names
   retirements, attachments and check rules
   (`retire-attach-and-rules-need-a-person`), and the closing sentence on
-  later events goes; a new paragraph says who may accept and that a
+  later events goes; the paragraph on two people adding events on two
+  branches becomes two hosts appending to one record, each event
+  carrying its own order, so the status is the same whichever lands
+  first, citing record events-carry-their-order and
+  `either-order-same-status`; a new paragraph says who may accept and that a
   person's act is signed with them present (records a-person-accepts,
   a-persons-act-is-signed); amend and supersede cite record seven-events
   and `amend-names-its-base`; "Verdicts" becomes cells, verdicts and the
@@ -1896,7 +2161,11 @@ sketches what the design leaves open says so and links the question.
   under `$XDG_CACHE_HOME/boom/` (`boom-state-by-layer`); `shop`'s
   `.config/boom.toml` naming only its ledger, its repository and
   branch; `events.rec`'s `%type` gaining `challenged` and `due`, with
-  one example of each, and a person's event its signature; the verdict
+  one example of each, and a person's event its signature; each event
+  its `Id:` and an `After:` for each event of its record it follows, the
+  intro saying a status reads that order and no event's place in the
+  file, and that `At:` is a note no status reads
+  (`event-carries-its-order`, record events-carry-their-order); the verdict
   example gaining its id and its judge; what sync writes,
   `docs/adr/0001-amounts-in-cents.md` among it, on `boom/sync`; the
   caution keeping the format a sketch.
@@ -1911,9 +2180,11 @@ sketches what the design leaves open says so and links the question.
   challenge` and `boom annotate` join the table with their own
   sections, arguments, an example and its JSON, each citing its record
   and clauses; `boom query` gains `--planner`; `boom propose` shows the
-  refusal of a taken name, exit 2; `boom accept` says who may accept,
-  shows the key's prompt signing it, and shows the refusal of an
-  author's accept as JSON, exit 2, citing records a-person-accepts and
+  refusal of a taken name, exit 2, and its JSON carrying `accept_link`
+  (`accept-offered-as-a-link`); `boom accept` says who may accept,
+  takes `<name>@<version>` or an accept link, shows the version and the
+  key's prompt signing it, and shows the refusal of an author's accept
+  as JSON, exit 2, citing records a-person-accepts and
   a-persons-act-is-signed; `boom check` shows `--answer` writing a
   signed answer under `.boom/answers/` and a not-run, exit 3; `boom
   render adrs` and `boom sync` write `NNNN-<name>.md`, numbered at
@@ -1921,7 +2192,8 @@ sketches what the design leaves open says so and links the question.
   (record sync-by-one-pull-request); `boom import adr` proposes each
   decision with a drafted scenario, keeping its number, for a person to
   accept (record import-proposes-for-a-person); `boom mcp` lists its
-  tools as `mcp-serves-no-persons-act` has them, served and absent;
+  tools as `mcp-serves-no-persons-act` has them, served and absent, an
+  accept offered only as a link (core.no-agent-surface-accepts);
   "Also in the design" goes.
 - **check.mdx**: each section cites record the-gate-blocks-regressions
   and its clauses: the three layers, what it reads, regressions not the
@@ -1934,12 +2206,18 @@ sketches what the design leaves open says so and links the question.
   check is not a verdict, and the two meanings of verdict; the rules
   layer names a citation by number among what fails
   (`a-number-cites-nothing`).
-- **integrations.mdx**: `boom mcp` lists its tools, served and absent
-  (`mcp-serves-no-persons-act`, record the-surfaces); the Claude Code
-  plugin is its skills and the hook before each edit
+- **integrations.mdx**: `boom mcp` is built on rmcp (`mcp-on-rmcp`) and
+  lists its tools, served and absent (`mcp-serves-no-persons-act`,
+  record the-surfaces); the paragraph leaving whether `boom mcp` offers
+  an accept open becomes the rule: no surface an agent calls accepts,
+  and an answer waiting on a person carries an accept link the person
+  opens (core.no-agent-surface-accepts, `accept-offered-as-a-link`),
+  what opens it where no plugin does linked to `open-accept-link-opener`;
+  the Claude Code plugin is its skills and the hook before each edit
   (`hook-before-each-edit`); the herdr plugin shows what waits on the
-  person and what applies, its key opening the waiting list in the
-  person's own pane (`herdr-shows-what-waits-and-applies`); sluice gates
+  person and what applies, its key opening the waiting list, and any
+  accept link, in the person's own pane
+  (`herdr-shows-what-waits-and-applies`); sluice gates
   with `boom check` (`sluice-gates-with-check`), reads exit 3 as not
   run, lands a sync's pull request under its pull-request profile, and
   runs `boom reconcile` and `boom judge` after each landing
@@ -1957,7 +2235,7 @@ sketches what the design leaves open says so and links the question.
 - **roadmap.md**: "Settled" lists each record, linked to its page, with
   the clauses that state it, and keeps core.1 and core.2; "Leaning" and
   "Proposed" keep only what no record decided; "Open questions" become
-  the statement's eight questions, each linked by its anchor, with the
+  the statement's nine questions, each linked by its anchor, with the
   build order kept as the roadmap's own.
 - **guides/first-claims.md**: the ledger made as `boom/ledger`, a branch
   of `shop`, Ada's key registered as its first owner, the host's
@@ -1969,8 +2247,12 @@ sketches what the design leaves open says so and links the question.
   one-context-per-repository, a-person-accepts,
   a-persons-act-is-signed, the-ledger-on-a-shared-branch and
   names-not-numbers.
-- **guides/an-agent-proposes.md**: the last paragraph's open question
-  becomes the rule, citing record a-person-accepts.
+- **guides/an-agent-proposes.md**: the agent's session shows each
+  proposal's answer carrying its accept link, and Ada opens the one she
+  accepts in her own pane, where her key's touch signs it
+  (`accept-offered-as-a-link`); the last paragraph's open question
+  becomes the rule, citing record a-person-accepts and
+  core.no-agent-surface-accepts.
 - **guides/a-change-breaks-a-claim.md**: cites record
   the-gate-blocks-regressions for the block and the replacement that
   waits, record a-person-accepts for who accepts it, and
@@ -2047,6 +2329,18 @@ make:
 - [Record a-person-accepts leaves a person working alone unable to
   accept what they write themselves] → the record says so among its
   consequences, and the walkthroughs show the agent proposing.
+- [An accept link is read as an accept, or an agent opens one itself]
+  → opening a link accepts nothing: it names a version and carries no
+  signature, `boom accept` shows the version before the key's prompt,
+  and the prompt signs only with the person present, so an agent that
+  runs `boom accept` on a link meets the refusal any agent's accept
+  meets.
+- [A writer names fewer events than it read, to place its event before
+  one it saw] → boom makes each event and names what it read; an event
+  written by hand is held to the same checks on read, and two events
+  neither of which names the other are concurrent, so leaving one out
+  makes a judgment concurrent with a challenge, which stales the cell,
+  never makes it current.
 - [Generated pages under `src/content/docs` could be read by a check as
   written ones] → git ignores them, `site:prose` leaves them out by
   glob, and `root:adrs` reads tracked files only; `design-pages` empties
@@ -2059,8 +2353,10 @@ make:
   `core.callers-pin-boom` and `core.plugins-in-this-repository` go to
   `core.md` with their records or in the separate step that draws
   `core.md` from the records. This design sends them with their
-  records, as `CLAUDE.md` asks of a rule and its decision; sending them
-  to the separate step moves four `core.md` edits out of the records
-  group of the tasks and changes nothing else.
+  records, as `CLAUDE.md` asks of a rule and its decision, beside the
+  two the user sent as rules, `core.events-carry-their-order` and
+  `core.no-agent-surface-accepts`; sending the four to the separate step
+  moves four `core.md` edits out of the records task and changes
+  nothing else.
 
 The design's own open questions are the statement's questions.
