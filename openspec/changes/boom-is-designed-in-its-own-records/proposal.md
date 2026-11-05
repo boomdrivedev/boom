@@ -5,19 +5,26 @@
 boom's design was settled in the design session of 2026-10-31 on
 claims, verdicts and reconciliation, with its rulings, in decisions 39
 to 42 of the design's log, accepted on 2026-11-01, and in the user's
-ruling of 2026-11-01 on millpond. The same day the user decided that
+ruling of 2026-11-01 on millpond, the answer they chose: "Both
+directions, backlog only where no [Boomdrive] plans". The same day the user decided that
 boom's open design lives here, in its own repository, as its own
 records, and not as a pointer to a place a reader cannot open.
 
 On 2026-11-01 the user also went through boom's constitution interview,
 whose notes are `interview.md` on main. It settles how anything here is
-known: in another repository of the family, a parallel branch landed
-records 0002 to 0016 and rules core.12 to core.18 under the numbers an
+known: in Boomdrive's repository, a parallel branch landed records 0002
+to 0016 and rules core.12 to core.18 under the numbers its constitution
 interview's branch had taken, and 22 records and 75 rules were
 renumbered twice, each citation rewritten. A well-designed boom makes
 that impossible, for any project and for itself: a record is known by a
 name fixed when it is proposed, and a number is given only from the
-order of acceptance on a line never rewritten. The interview settles
+order of acceptance on a line never rewritten. The cause is the
+family's, not one repository's: every tool of Boomdrive's family takes
+a record's, a rule's and a clause's number on the branch where it is
+written, as the family's requirements style and the `adrs` command line
+have it, and sluice, flume and timber have renumbered the same way. So
+boom's scheme is designed for the family, saying where it differs from
+the others' and why, with one owner they would cite. The interview settles
 much else besides: where the ledger lives and how it is written, how a
 person's act is proven and who owns a ledger, what the check runs and
 what it does when it cannot, the command line's exits and JSON, the
@@ -26,7 +33,7 @@ how an import is accepted, and what stays out of this repository. Its
 section "What the change must take in" lists what this change carries.
 
 The same day the user took three items of the awesome-lists research of
-2026-11-01 into this design (request `req_ee5dd28f`): a rule under the
+2026-11-01 into this design: a rule under the
 ledger, that each event carries an ordering key of its own, so the
 appends two hosts make to one record, merged in either order, derive the
 same status, as radicle-cob orders a collaborative object's changes; a
@@ -36,7 +43,8 @@ opens; and two design notes, `boom mcp` built on rmcp, the Rust MCP SDK,
 and boom's rebase-and-retry push run by the host's own `git`, gitoxide
 marking push and rebase not done.
 
-None of it is in the repository: it holds one decision record and a site
+None of it is in the repository: it holds two decision records, record
+0001 and the proposed rename to Boomdrive, and a site
 whose pages sketch a design they cannot cite, and contradict it. The
 first walkthrough has Ada accept the claims she proposed herself, which
 decision 41 rules out; the roadmap lists as open what the interview
@@ -63,9 +71,15 @@ repositories it describes, in a file any commit can edit.
   under the ledger; `core.no-commercial-strategy`, rewording core.4,
   which stays its legacy alias; `core.private-sources-by-words`;
   `core.callers-pin-boom`; `core.plugins-in-this-repository`; and
-  `core.no-agent-surface-accepts`.
-- Eighteen decision records, each accepted by the user and citing the
-  rulings, decisions, interview topics and research it rests on:
+  `core.no-agent-surface-accepts`. Whether four of them,
+  `core.no-commercial-strategy`, `core.private-sources-by-words`,
+  `core.callers-pin-boom` and `core.plugins-in-this-repository`, go in
+  now or in the later step that draws `core.md` from the records is the
+  user's to choose; the design recommends now and asks.
+- Eighteen decision records of decisions the user made on 2026-10-31
+  and 2026-11-01, each written proposed until the user has read it as a
+  record and said yes, and each citing the rulings, decisions, interview
+  topics and research it rests on, by their words and dates:
   `names-not-numbers`, `no-commercial-strategy-here`, `five-records`,
   `seven-events`, `the-ledger-on-a-shared-branch`,
   `events-carry-their-order`, `cells-and-verdicts`,
@@ -86,6 +100,12 @@ repositories it describes, in a file any commit can edit.
   `open-after-landing-step` and `open-accept-link-opener` among them.
   Where the style gives a new clause the next free number, the
   statement says it departs and why.
+- The family's way and boom's, side by side in the design: how sluice,
+  Flume, Boomdrive, timber and weir number and cite their records,
+  rules and clauses today, where boom differs and why, and the scheme
+  offered to the family as one design, owned by boom's statement, for
+  the requirements style and each tool to take up by its own change if
+  the user so decides; the design asks.
 - The site shows the statement and each record as pages computed at
   build and never committed, each item anchored by its name and showing
   a number derived from the order it landed on main ("Record 0002",
@@ -101,8 +121,11 @@ Out of scope:
   they imply (an agent never accepts, a verdict is appended), which is
   the separate step the user decided on.
 - Building any of boom: the crate still prints its version.
-- The family's requirements style and other repositories' rules, which
-  keep their numbering until they change it themselves.
+- The family's requirements style and the other tools' records, rules
+  and statements, which keep their numbering until each takes up the
+  scheme by its own change.
+- Accepting the records, which is the user's yes, given once they have
+  read each as a record.
 
 Depends on, outside this change (named in the design, built by each
 tool's own change):
@@ -115,6 +138,9 @@ tool's own change):
   `boom challenge`.
 - sluice: a step that runs a repository's command after each landing,
   or a host's watcher doing it (`open-after-landing-step`).
+- The family, if the user so decides: the requirements style's section
+  on numbers, and each tool's `CLAUDE.md`, records check and
+  `adrs.toml`, taking up names, not numbers.
 
 ## Capabilities
 
@@ -140,8 +166,9 @@ None.
 
 ## Impact
 
-- New prose: eighteen records, the statement and seven rules. Each is
-  reviewed by a person; no check judges what a record decides, and
+- New prose: eighteen records, the statement and seven rules. Each
+  record is proposed until the user's yes, and each is reviewed by a
+  person; no check judges what a record decides, and
   review holds `core.no-commercial-strategy` and
   `core.private-sources-by-words`, as the user decided.
 - The root's `adrs` task reads every tracked file and holds names, not

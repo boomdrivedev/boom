@@ -36,7 +36,8 @@ that record's page.
 The site SHALL show each record under `docs/adr` as the page
 `/boom/design/decisions/<slug>/`, the slug the record's name, or a
 legacy record's number, titled from the record's frontmatter, with its
-status and date, its number or that main lacks it, how to cite it, its
+status and date, its number or that it is numbered when first accepted
+on main, how to cite it, its
 edit link the record's own file, and a link in one record to another
 reaching the other's page.
 
@@ -60,7 +61,7 @@ landing SHALL change no number an earlier landing gave.
 #### Scenario: A build on a branch
 
 - **WHEN** `devenv shell -- moon run site:build` runs on a branch that adds a record main lacks
-- **THEN** the build passes, the record's page saying it is not yet on main and showing no number
+- **THEN** the build passes, the record's page saying it is numbered when first accepted on main and showing no number
 
 ### Requirement: Records are numbered in the order they were first accepted
 

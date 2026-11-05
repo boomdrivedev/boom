@@ -2,22 +2,31 @@
 
 ## Context
 
-See proposal.md for why. The repository holds one decision record,
-`docs/adr/0001-boom-is-an-open-source-repository-of-its-own-and-its-binary-is-boom.md`,
-in MADR's bare variant: frontmatter giving `number`, `title`, `status`,
-`date` and `decision-makers`; an H1 repeating the title; `Status:`,
-`Deciders:` and `Sources:` lines; then `## Context and problem
-statement`, `## Considered options`, `## Decision outcome` and
-`### Consequences`. `check-adrs.sh` (`root:adrs`) holds every record to
-a number of its own and tells the later of two to take the next free
-one. `adrs.toml` configures a tool that writes a new record numbered
-after the last. `docs/architecture/core.md` holds six rules, core.1 to
-core.6, each opening `- **[core.N]**` with a details entry below, and
-`CLAUDE.md` tells an agent to give a new rule "the next free number in
-its area". `interview.md`, on main since sluice landed it as submission
-2 and merged into this branch, holds the constitution interview's notes:
-each requirement, rule and open question under a name, and the section
-"What the change must take in" that this design carries out.
+See proposal.md for why. The repository holds two decision records.
+`docs/adr/0001-boom-is-an-open-source-repository-of-its-own-and-its-binary-is-boom.md`
+is in MADR's bare variant: frontmatter giving `number`, `title`,
+`status`, `date` and `decision-makers`; an H1 repeating the title;
+`Status:`, `Deciders:` and `Sources:` lines; then `## Context and
+problem statement`, `## Considered options`, `## Decision outcome` and
+`### Consequences`. `docs/adr/the-rename-to-boomdrive.md`, landed on
+2026-11-04, is the same form with `name` in place of `number`: it has a
+name and no number, as the interview's `boom-names-everything-now` has
+it, and it is proposed, waiting on the user's yes. `check-adrs.sh`
+(`root:adrs`) reads numbered records only, holds each to a number of its
+own and tells the later of two to take the next free one; it never reads
+the named one. `adrs.toml` configures a tool that writes a new record
+numbered after the last. `docs/architecture/core.md` holds six rules,
+core.1 to core.6, each opening `- **[core.N]**` with a details entry
+below, and `CLAUDE.md` tells an agent to give a new rule "the next free
+number in its area". `CLAUDE.md` also names the family, Boomdrive's
+(sluice, Flume, Boomdrive the runner, timber, weir and boom), and asks
+that a behavior two tools share be one design with one owner the others
+call or cite; and it says a spec under `openspec/specs/` changes only
+through an OpenSpec change, validated with `openspec validate --strict`
+and archived with `openspec archive`. `interview.md`, on main, holds the
+constitution interview's notes: each requirement, rule and open question
+under a name, and the section "What the change must take in" that this
+design carries out.
 
 The site (`site/`, Astro with Starlight) has seven pages and four
 walkthroughs that sketch boom; its build checks every internal link,
@@ -48,12 +57,15 @@ constitution interview kept outside this repository:
   declaration in `.config/<tool>.toml`; its rule 2, that a tool's
   records about one repository stay with that repository; and its
   decisions 2, 5, 14 and 15;
-- the user's ruling of 2026-11-01 on millpond (request `req_ee1f3b7c`);
+- the user's ruling of 2026-11-01 on millpond, the answer they chose:
+  "Both directions, backlog only where no [Boomdrive] plans", the
+  bracket holding the family's new name for the old one, as the
+  interview brackets its edits to a quotation;
 - the constitution interview of 2026-11-01, `interview.md`, in this
   repository;
 - the awesome-lists research of 2026-11-01, three of whose items the
-  user took into this design the same day (request `req_ee5dd28f`),
-  cited with the public projects it names:
+  user took into this design the same day, cited with the public
+  projects it names:
   [radicle-cob](https://github.com/radicle-dev/heartwood), whose
   collaborative objects order their changes in git by the graph they
   form, for an event's order;
@@ -114,6 +126,10 @@ writes first, `core.names-not-numbers`, binds everything after it.
   and an item of the statement each have a name fixed when it is
   written, every citation names it, and two branches landing side by
   side never renumber or rename anything that landed.
+- The scheme is designed for the family, not for boom alone: where
+  boom's way of naming, numbering and citing differs from the other
+  tools', the design says where and why, and names the one owner the
+  others would cite.
 - A site page states nothing about the design that it cannot link to a
   clause or a record, and the build proves each link.
 - No commercial strategy reaches the repository
@@ -132,8 +148,12 @@ writes first, `core.names-not-numbers`, binds everything after it.
   them.
 - Vale over the records and the statement: they are read by people and
   reviewed; the gate's prose check stays on the site's written pages.
-- Any change in millpond, flume, sluice or the family's requirements
-  style (Outside this change, below).
+- Any change in another repository: millpond, flume, sluice, Boomdrive,
+  timber, weir or the family's requirements style (Outside this change,
+  below).
+- Accepting the records: each is written proposed, and the user's yes,
+  given once they have read it as a record, is theirs to give (The
+  records' form).
 
 ## Decisions
 
@@ -143,9 +163,11 @@ What stays out of every file this change writes is commercial strategy,
 as `core.no-commercial-strategy` has it: no pricing, no plan for a paid
 tier, no customer, and nothing saying how boom's design limits what it
 does alone or leads its users to a paid product. The family's umbrella
-name and its products, paid ones among them, may be named, and a paid
-product may be said to work with boom by boom's command line, as any
-caller does. A private source is cited by its date and its words, and
+name, Boomdrive since record the-rename-to-boomdrive, and its products,
+paid ones among them, may be named, and a paid product may be said to
+work with boom by boom's command line, as any caller does; a name the
+rename changed is written as the rename has it. A private source is
+cited by its date and its words, and
 any number it gives, never by a path, a repository's name or a link a
 reader cannot open (`core.private-sources-by-words`): "the design
 session of 2026-10-31", "decision 40 of the design's log", "the family's
@@ -157,6 +179,101 @@ The people who grant roles and register keys in a ledger are its
 **owners** (`owner-is-the-word`). **Operator** keeps the family's
 meaning, the person who runs a host. No file this change writes says
 "keeper".
+
+### The family's way, and boom's
+
+Boomdrive's tools name and number their design one way today, the same
+in each tool. As agentplot/blueprints stands at `cd8fd73`, and each
+tool's repository on its main:
+
+- **A statement's items.** The family's requirements style, its section
+  5, makes a number an identifier, "not an order": a clause keeps its
+  number for the statement's life; a new clause "takes the next free
+  number in the whole file"; a clause read beside another takes a
+  lettered insert (`93a`); "a withdrawn clause's number is retired and
+  never reused"; and a clause is cited "by bare number in parentheses".
+  Part C's sections are lettered (`C.2`), the global invariants `I1`
+  onward and the scenarios `S1` onward. sluice's, flume's, weir's and
+  timber's statements in blueprints, and Boomdrive's in its own
+  repository, the style's worked instance, follow it; no clause is known
+  by a name.
+- **Decision records.** Each tool's records are `docs/adr/NNNN-<title>.md`,
+  MADR's bare variant with `number` in the frontmatter, the number taken
+  when the record is written, on the change's branch, by the `adrs`
+  command line's next number (`adrs.toml`, the same in every
+  repository). A record is proposed until the person's yes, and its
+  status changes in place on it, so its number is given at proposal and
+  never at acceptance. `check-adrs.sh`, in sluice, flume, Boomdrive,
+  timber and boom, holds every number unique and tells the later of two
+  to take the next free one.
+- **Rules.** `core.N`, "the next free number in its area", as flume's,
+  weir's, Boomdrive's and boom's `CLAUDE.md` say.
+- **Citations.** A statement cites a record in several forms (record
+  `0075`, ADR `0059`, flume record `0036`), and a commit's subject cites
+  clauses, sections, scenarios and records by number: `(section 3, 4,
+  32, C.2, S103; weir C.4; flume record 0044, accepted on the user's
+  word 2026-11-05)`.
+
+Every number in that scheme is taken on a branch, from what the branch's
+base holds, so two branches cut from one base take the same one, and
+the second to land renumbers. The family's history shows it wherever
+records are written: Boomdrive's constitution interview renumbered 22
+records and 75 rules twice; sluice renumbered records "as main took"
+theirs, and four of its numbers name two different records on two
+branches; in timber, "the bolt's record `0022` takes `0024`, main's
+`0022` holding the number"; flume renumbered two clauses, three
+scenarios and a record of its statement at once, since blueprints' main
+had given the numbers it took to another design and "the designs in
+flight hold" the next ones; and sluice's clause `130`, withdrawn, was
+taken by a new clause the same day, against the style's own rule that a
+withdrawn number is never reused. The cause is the scheme, not one tool:
+a number taken on a branch depends on what else exists, and only a
+landing says what that is.
+
+boom's way differs in three places, each for that cause:
+
+- **An identity is a name, fixed when it is written.** A name depends on
+  nothing else, so two branches never take one by chance; where two take
+  one anyway, the check at the merge refuses the second
+  (`name-clash-fails-at-merge`) and that branch renames its own before
+  it lands. The family's numbers are as stable as names once given; they
+  cannot be while the number is on a branch.
+- **A number is given at acceptance, from a line never rewritten.** The
+  reader keeps what a number is good for, an order and a short handle on
+  a page ("Record 0002", "Clause 12"), and no branch takes one, so no
+  landing renumbers. The family already accepts a record late, on the
+  person's yes; boom gives the number at that same moment.
+- **A citation names what it cites.** A bare number tells a reader
+  nothing without the file in hand, and a citation of a number taken on
+  a branch is wrong once that branch renumbers; a name says what it
+  holds and stays right.
+
+What boom keeps of the family's way: MADR's form, and its numbered file
+names for what boom writes into a repository it describes
+(`decision-files-numbered-at-acceptance`); a record proposed until the
+person's yes; an amended item rewritten in place under the identifier
+it had; a withdrawn identifier never held again, the style's rule for
+numbers held for names; the parts, the givens, the questions and the
+scenarios in the order the style sets them; and every number the family
+has already given, kept and cited as legacy, never renamed.
+
+**One design for the family, and its owner.** Naming and numbering a
+project's records is what boom is for, so the scheme has one owner,
+boom's statement, its section Names and numbers
+(`identity-fixed-at-proposal`, `one-name-space`,
+`name-clash-fails-at-merge`, `cite-by-name`,
+`number-given-at-acceptance`, `legacy-number-alias`). The family's
+requirements style and each tool's rules would cite those clauses
+rather than each numbering its own way, and once boom keeps a tool's
+records, boom's check is the one that holds them. Until the family takes
+it up, what each place would change is its own change, named under
+Outside this change and not made here: the style's section 5, giving an
+item a name and leaving numbers to what a site computes; each tool's
+`CLAUDE.md`, records check and `adrs.toml`, as this repository changes
+its own; and the form a commit's subject cites in. Whether the family
+takes it up is the user's to decide (Open Questions); meanwhile boom's
+statement departs from the style's section 5 and says so in its
+preamble.
 
 ### Names in this repository
 
@@ -193,21 +310,25 @@ meaning, the person who runs a host. No file this change writes says
   paragraphs, which no check reads, write the shorter form. An id
   from outside this repository is cited as its place gives it, in a code
   span where it would read as one of this repository's: flume's
-  `core.21`, sluice's statement, 114, decision 40, request
-  `req_ee1f3b7c`. core.md's details of core.5 and core.6 quote flume's
-  rules so.
+  `core.21`, sluice's statement, 114, decision 40. A ruling the user made
+  on a card or a request is cited by their words and its date, never by
+  the card's or the request's id, which opens nothing for a reader of a
+  public repository. core.md's details of core.5 and core.6 quote
+  flume's rules so.
 - **The numbers a reader sees** are computed by the site at build from
   the order each record and item landed on main ("Record 0002",
   "Clause 12"), and are written into no file (The numbers the site
   shows).
 - **`CLAUDE.md`.** Its rules paragraph says the decisions are
-  `docs/adr/`, one MADR record each, its file named by its name, record
-  0001 keeping its numbered file as legacy; and that a rule is sent to
+  `docs/adr/`, one MADR record each, its file named by its name,
+  proposed until the user's yes, record 0001 keeping its numbered file
+  as legacy; and that a rule is sent to
   `core.md` or its area page with an id `<area>.<name>`, a name chosen
   when it is written and never the next free number
   (`core.names-not-numbers`), amended in the same commit as the decision
   that changes it. Its checks table lists the root's format, toolchain,
-  records, statement, tests, specs and open changes.
+  records, statement, tests, specs and open changes. Its paragraphs on
+  the family and on specs stay as they stand.
 - **`openspec/config.yaml`.** Its context says each record's file is
   named by its name, and names no `adrs.toml`.
 - **`adrs.toml` goes**: the tool it configures takes the next number on
@@ -245,13 +366,18 @@ commit messages, which the interview does not ask for and review holds.
 
 ### The rules this change sends to `core.md`
 
-The interview sends five rules to `core.md` "with them, or in the
-separate step that draws `core.md` from the records, as the user
-chooses", and the user's word on the awesome-lists research (request
-`req_ee5dd28f`) sends two more, an event's order under the ledger and
-no accept from a surface an agent calls. This design sends all seven
-with their records, each in its record's commit, as `CLAUDE.md` asks of
-a rule and the decision behind it. `core.md`'s preamble gains: "Each rule is known by its id,
+The interview sends `core.names-not-numbers` to `core.md` with its
+record, as the user asked when sending the first plan back, and four
+more "with them, or in the separate step that draws `core.md` from the
+records, as the user chooses": `core.no-commercial-strategy`,
+`core.private-sources-by-words`, `core.callers-pin-boom` and
+`core.plugins-in-this-repository`. The user's word of 2026-11-01 on the
+awesome-lists research sends two more, an event's order under the
+ledger and no accept from a surface an agent calls. This design sends
+all seven with their records, each in its record's commit, as
+`CLAUDE.md` asks of a rule and the decision behind it; where the four go
+is the user's to choose, asked under Open Questions. `core.md`'s
+preamble gains: "Each rule is known by its id,
 `core.<name>`, a name fixed when the rule is written. core.1, core.2,
 core.3, core.5 and core.6 keep the numbers they were given before
 `core.names-not-numbers`, as legacy ids, and core.4 is
@@ -313,13 +439,20 @@ legacy."
   > **[core.private-sources-by-words]** A source kept in a private
   > repository is cited by its date and its words, and any number it
   > gives, never by a path, a repository's name or a link a reader
-  > cannot open.
+  > cannot open; a ruling the user made on a card or a request is cited
+  > by their words and its date, never by the card's or the request's
+  > id.
 
   Details: Rules out: a path under a home directory, or a private
   repository's name, in a record, a page or a commit; a link a reader
-  cannot open. Not ruled out: "the design session of 2026-10-31"; a
-  public repository's path and clause, such as sluice's statement, 122.
-  Source: record no-commercial-strategy-here.
+  cannot open; a card's or a request's id (`req_…`), which opens
+  nothing for a reader of this public repository. Not ruled out: "the
+  design session of 2026-10-31"; "the user's ruling of 2026-11-01 on
+  millpond", with the words of the answer they chose; a public
+  repository's path and clause, such as sluice's statement, 122. Source:
+  record no-commercial-strategy-here; the brief of 2026-11-05 that
+  started this change again: "Cite no card or request ids: cite the
+  user's words and their date."
 
 - **`### Callers and plugins`**, a new section after `### The gate`:
 
@@ -359,12 +492,21 @@ legacy."
 
 ### The records' form
 
-One record per decision, in record 0001's form, each with `name`,
-`title`, `status: accepted`, `date: 2026-11-01` and `decision-makers:
-[Chuck Swanberg]` in its frontmatter, an H1 repeating the title, a
-`Status: accepted by the user on 2026-11-01.` line, a `Deciders:` line
-naming the dates of the rulings it rests on, and a `Sources:` line
-citing them by their words (The records, below, gives each). A title has
+One record per decision, in the form of record the-rename-to-boomdrive,
+each with `name`, `title`, `status: proposed`, `date: 2026-11-01` and
+`decision-makers: [Chuck Swanberg]` in its frontmatter, an H1 repeating
+the title, a `Status:` line saying the decision is the user's, made on
+the dates of the rulings it rests on, and that the record waits on their
+yes, a `Deciders:` line naming those dates, and a `Sources:` line citing
+them by their words (The records, below, gives each). The decisions are
+the user's, made on 2026-10-31 and 2026-11-01; a record of one is
+proposed until the user has read it as a record, and accepted on their
+yes, as the family's process for capturing a decision has it. Their yes
+is written one commit per record, in the order of the section The
+records, each setting `status: accepted` and the `Status:` line to
+"accepted by the user on" the date of their yes, so the site numbers the
+records in the order they are read (The numbers the site shows). It is a
+person's act, made after the code and outside the tasks. A title has
 no colon followed by a space, so the frontmatter stays a plain YAML
 scalar. The considered options are a bulleted list, each option in
 words, and the outcome opens "Chosen option: " and the option's words,
@@ -378,8 +520,7 @@ and the user's own words, where a record quotes them, as the interview
 gives them.
 
 The records are committed one at a time, in the order of the section
-The records below, so the order the site numbers them in is the order
-they are read in (The numbers the site shows). `names-not-numbers` is
+The records below. `names-not-numbers` is
 first, in the commit that writes its rule and `CLAUDE.md`'s line; each
 record that sends a rule to `core.md` writes it in its own commit. A
 record cites records later in that order, `names-not-numbers` citing
@@ -578,11 +719,12 @@ runs the script before `astro dev`.
 - **Each record's page**, at `/boom/design/decisions/<slug>/`, titled
   with the record's title, its description `<status>, <date>`, its
   `editUrl` the record's file on GitHub, its H1 dropped. It opens with a
-  line giving its number ("Record 0002", or "Not yet on main") and how
-  to cite it (`record names-not-numbers`); a legacy record's says it was
-  numbered before `core.names-not-numbers` and is cited as `record
-  0001`. Its sidebar order is its number, and records main lacks follow
-  the rest by name. Each `record <name>` in it, and each link to
+  line giving its number ("Record 0002"), or, for a record main has
+  never held accepted, that it is numbered when first accepted on main,
+  and how to cite it (`record names-not-numbers`); a legacy record's
+  says it was numbered before `core.names-not-numbers` and is cited as
+  `record 0001`. Its sidebar order is its number, and records with none
+  follow the rest by name. Each `record <name>` in it, and each link to
   another record's file, becomes a link to that record's page. A record
   whose frontmatter lacks its title, status or date fails the script,
   naming the file.
@@ -816,14 +958,18 @@ statement's.
 **`names-not-numbers`, A record is known by a name fixed when it is
 proposed, and numbered only at acceptance.** What identifies a record,
 and what does a citation name, so that work on two branches never
-collides? In another repository of the family, a constitution
-interview's branch numbered its records and rules after main's last; a
-parallel branch landed records 0002 to 0016 and rules core.12 to
-core.18 first, every number on the branch collided, and 22 records and
-75 rules were renumbered twice, each citation rewritten. The user: "A
-well-designed boom must make that impossible." Options: the next free
-number, taken on the branch where the record is written, as the `adrs`
-command line and the family's statements do; a number taken when the
+collides? In Boomdrive's repository, its constitution interview's
+branch numbered its records and rules after main's last; a parallel
+branch landed records 0002 to 0016 and rules core.12 to core.18 first,
+every number on the branch collided, and 22 records and 75 rules were
+renumbered twice, each citation rewritten. The user: "A well-designed
+boom must make that impossible." It is the family's scheme, not one
+repository's: every tool takes a record's number, a rule's and a
+clause's on the branch where it is written, from what that branch's base
+holds, and sluice, flume and timber have renumbered records and clauses
+the same way. Options: the next free number, taken on the branch where
+the record is written, as the `adrs` command line and the family's
+statements do; a number taken when the
 work lands, the landing rewriting the branch's numbers and citations; a
 name chosen by the proposer and fixed when it is proposed, held unique
 when it reaches the default branch, every citation naming it, and a
@@ -880,11 +1026,17 @@ repository, cited as their places give them; the family's requirements
 style, which numbers clauses, and from which boom's statement departs;
 the three name spaces of record, rule and statement item, each citation
 carrying its kind, where a ledger holds one; the numbers the site shows,
-which need main's whole history. Sources: the user, 2026-11-01, sending
-the first plan of this change back, with the renumbering as its example;
-the constitution interview of 2026-11-01 (`interview.md`), its topics on
-identity and citation when branches race and on importing existing
-decision records.
+which need main's whole history. The scheme is offered to the family as
+one design, its owner boom's statement, which the family's requirements
+style and each tool's rules would cite; each takes it up, if the user
+so decides, by its own change, every number already given kept as
+legacy. Sources: the user, 2026-11-01, sending the first plan of this
+change back, with the renumbering as its example; the constitution
+interview of 2026-11-01 (`interview.md`), its topics on identity and
+citation when branches race and on importing existing decision records;
+the family's requirements style, its section 5, and the records and
+history of sluice, flume, Boomdrive and timber, as agentplot/blueprints
+stands at `cd8fd73`.
 
 **`no-commercial-strategy-here`, No commercial strategy appears here,
 and a private source is cited by its date and words.** What must stay
@@ -892,9 +1044,11 @@ out of this repository, the public one that holds boom, and how does it
 cite a source a reader cannot open? core.4 kept out pricing, a tier, a
 customer and a hosted service, and this change's first brief kept out
 more, the family's umbrella name and its products among them, though the
-site is part of the family's. The user: "The things that should be kept
-out would be strategy for paid tiers or how things we do in Boom might
-limit or get people to a paid product." Options: core.4 as written; core.4
+site is part of the family's. The user: "It's dumb not to mention the
+umbrella name or paid product names, like we're going to have this site
+as part of the whole family. The things that should be kept out would
+be strategy for paid tiers or how things we do in Boom might limit or
+get people to a paid product." Options: core.4 as written; core.4
 naming by kind everything the brief kept out; no commercial strategy,
 the umbrella and the family's products named freely. Outcome: the
 third: no pricing, no plan for a paid tier, no customer, and nothing
@@ -912,9 +1066,14 @@ Consequences: core.4 is reworded as rule core.no-commercial-strategy and
 stays its legacy alias; rule core.private-sources-by-words is added; no
 check holds either yet, and review does ("we don't need a check yet");
 no word list is added to the tree; commits already written stay as they
-are. Sources: the user, 2026-11-01, in the constitution interview
-(`interview.md`), its topic on what stays out of this repository; record
-0001.
+are; the umbrella is named as record the-rename-to-boomdrive names it,
+Boomdrive; a ruling the user made on a card or a request is cited by
+their words and its date, never by the card's or the request's id,
+which opens nothing for a reader here. Sources: the user, 2026-11-01, in
+the constitution interview (`interview.md`), its topic on what stays out
+of this repository; record 0001; record the-rename-to-boomdrive; the
+brief of 2026-11-05 that started this change again, on a card's or a
+request's id.
 
 **`five-records`, The ledger holds claims, narratives, contexts,
 relationships and terms.** What does boom record? Options: a store per
@@ -1011,7 +1170,7 @@ ledger's storage.
 boom's prefix, written by the family's protocol.** Where does a ledger
 live, how is it written so that no append is lost, and what may boom
 keep besides it? The user: "As long as this is grounded in the storage
-rules we established for the flywheel tools." Options: the ledger's
+rules we established for the [Boomdrive] tools." Options: the ledger's
 files in each repository's working tree, landed with the code; a branch
 under boom's own prefix, `boom/`, in a repository the operator names,
 written by the family's storage convention's protocol for a shared
@@ -1118,8 +1277,8 @@ on it; two hosts' lines of one file joined as `merge=union` joins them
 would derive the same status, though boom applies its own write again
 and joins nothing; where the order is written is the layout's question
 (`open-ledger-layout`). Rule core.events-carry-their-order holds it.
-Sources: the user, 2026-11-01 (request `req_ee5dd28f`), taking it from
-the awesome-lists research of 2026-11-01; radicle-cob, in
+Sources: the user, 2026-11-01, taking it from the awesome-lists
+research of that day into this design; radicle-cob, in
 radicle-dev/heartwood (https://github.com/radicle-dev/heartwood);
 decision 32; ruling Q2; the constitution interview (`interview.md`), its
 topic on the ledger's storage and merge behaviour.
@@ -1497,7 +1656,7 @@ prompt; what opens a link on a host where no plugin does is a question
 the statement keeps (`open-accept-link-opener`). Sources: the design
 session of 2026-10-31, its surfaces; the constitution interview
 (`interview.md`), its topic on `boom mcp` and the Claude Code and herdr
-plugins; the user, 2026-11-01 (request `req_ee5dd28f`), taking the link
+plugins; the user, 2026-11-01, taking the link
 and rmcp from the awesome-lists research of 2026-11-01; record
 a-person-accepts.
 
@@ -1540,7 +1699,8 @@ challenging and the backlog left to a person; both ways, millpond taking
 in every repository's backlog; both ways, millpond taking in a
 repository's backlog only where no other planner plans it, the
 repository's planner setting saying which. Outcome: the third, the
-user's ruling of 2026-11-01 (request `req_ee1f3b7c`). (a) A millpond
+user's ruling of 2026-11-01, the answer they chose: "Both directions,
+backlog only where no [Boomdrive] plans". (a) A millpond
 signal that bears on a claim reaches boom as a `challenged` event, `boom
 challenge <name> --signal <key>`, or as a proposed claim, `boom propose`
 with the signal as its provenance; the challenged claim's cells are
@@ -2296,6 +2456,20 @@ make:
   or a host's watcher doing it (`open-after-landing-step`). Until then,
   a host's schedule runs `boom reconcile` and `boom judge`.
 
+Where the family takes up names, not numbers (The family's way, and
+boom's), each place's own change, once the user decides it should:
+
+- agentplot/blueprints: the requirements style's section 5, an item
+  opening with its name and cited by it, a number shown only where a
+  site computes it from the order things landed, withdrawn names never
+  held again; each statement's numbers kept as legacy ids.
+- sluice, flume, Boomdrive, timber and weir: `CLAUDE.md` sending a rule
+  with a name, records written `docs/adr/<name>.md`, `adrs.toml` gone,
+  and a records check holding names unique and citations resolving, as
+  this repository's `root:adrs` does; every record and rule already
+  numbered kept as legacy.
+- Each tool's commit subjects citing clauses and records by name.
+
 ## Risks / Trade-offs
 
 - [A name chosen on one branch is chosen on another] → `root:adrs` and
@@ -2304,6 +2478,12 @@ make:
   lands; nothing landed is renamed. Two records of one name are two
   files of one path, which git refuses to merge unless they are the
   same.
+- [The family keeps numbering while boom names] → boom's statement says
+  where it departs from the style, and a citation from another tool's
+  statement or commit to boom names the record or clause, which
+  resolves here whatever number the site shows. The family's own
+  collisions go on until it takes the scheme up, each place by its own
+  change (Outside this change).
 - [A reader cites the number the site shows] → each page says how to
   cite what it shows, by name; `root:adrs` fails a citation by a number
   no legacy record holds, and `root:statement` one by a clause number;
@@ -2348,15 +2528,35 @@ make:
 
 ## Open Questions
 
-- The interview leaves it to the user whether
-  `core.no-commercial-strategy`, `core.private-sources-by-words`,
-  `core.callers-pin-boom` and `core.plugins-in-this-repository` go to
-  `core.md` with their records or in the separate step that draws
-  `core.md` from the records. This design sends them with their
-  records, as `CLAUDE.md` asks of a rule and its decision, beside the
-  two the user sent as rules, `core.events-carry-their-order` and
-  `core.no-agent-surface-accepts`; sending the four to the separate step
-  moves four `core.md` edits out of the records task and changes
-  nothing else.
+For the user, each with a recommendation; the design is written as the
+recommendation has it, and the other answer changes only what the
+question names.
+
+- **Four rules: now, or in the later step?** Four rules came out of the
+  interview: keep commercial strategy out of this repository (core.4,
+  reworded), cite a private source by its date and words, a tool that
+  calls boom pins the release it calls, and boom's plugins live in this
+  repository. Should they be written into `core.md` now, each in the
+  same commit as the record it comes from, or wait for the later step
+  that draws `core.md` from all the records? Recommended: now. A rule
+  goes in with the decision behind it, as `CLAUDE.md` asks; record
+  the-rename-to-boomdrive, on main, already names Boomdrive Cloud on the
+  strength of the first of them, which `core.md` does not yet hold, so
+  until it does a reviewer reading `core.md` as written would find that
+  record breaking core.4; and the later step can still reword any of
+  them. Waiting moves four edits of `core.md` out of the records task
+  and changes nothing else.
+- **Should the whole family name things, not number them?** Every tool
+  in the family numbers its records, rules and clauses when they are
+  written on a branch, and renumbers when another branch lands first:
+  it has happened in sluice, flume, Boomdrive and timber, and once a
+  withdrawn clause number was used again. This design gives boom names,
+  with a number given only when something is accepted, and writes the
+  scheme once, in boom's statement, for the others to cite. Should the
+  requirements style and each tool take it up, each by its own change
+  once this one lands? Recommended: yes, the style first, then each tool
+  when it next writes a record, every number already given kept as it
+  is. Saying no keeps boom's departure from the style, which its
+  statement says, and changes nothing in this change.
 
 The design's own open questions are the statement's questions.
