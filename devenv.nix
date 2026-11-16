@@ -1,6 +1,7 @@
 {
   pkgs,
   lib,
+  inputs,
   ...
 }:
 
@@ -53,6 +54,18 @@ let
     eval "$(${proto}/bin/proto activate bash --export --no-bin --config-mode upwards 2>/dev/null)"
   '';
 
+  # The site's packages as site/bun.lock locks them, fetched by this shell
+  # outside the gate's sandbox into bun's cache, from which site:install
+  # installs with no network (record 0003). flume's function at the release
+  # devenv.yaml's input `flume` names, which owns how a site's packages
+  # reach a sandboxed gate (flume's record 0059); a release that changes its
+  # arguments fails this shell's evaluation in the change that moves it.
+  sitePackages = import "${inputs.flume}/site/packages.nix" {
+    inherit pkgs lib;
+    lock = ./site/bun.lock;
+    manifest = ./site/package.json;
+  };
+
   # OpenSpec, which root:specs and root:changes validate with: flume's
   # release, built as nixpkgs builds its older one. Bump the version, then
   # each hash from the mismatch the build reports.
@@ -75,7 +88,8 @@ let
     }
   );
 
-  # Vale checks the site's prose (.vale.ini, styles/Boom). From its own
+  # Vale, for the pages' writers to run on their prose (.vale.ini,
+  # styles/Boom); no check runs it (core.5; record 0002). From its own
   # release: nixpkgs trails it. Bump the version and the four hashes from
   # the release's checksums file.
   valeVersion = "3.24.0";
@@ -126,6 +140,10 @@ in
     pkgs.biome
     pkgs.playwright-test
   ];
+
+  # The site's packages, given to site:install by their store path
+  # (site/scripts/install.sh; record 0003).
+  env.BOOM_SITE_PACKAGES = "${sitePackages}";
 
   env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers-chromium}";
 
@@ -189,7 +207,7 @@ in
   };
 
   scripts.prose = {
-    description = "The site's prose and the README, checked by Vale (.vale.ini)";
+    description = "Vale over the site's pages and the README, for their writers (.vale.ini)";
     exec = ''
       set -euo pipefail
       cd "$(git rev-parse --show-toplevel)"

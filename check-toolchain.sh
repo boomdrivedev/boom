@@ -1,8 +1,9 @@
 #!/bin/sh
 # Every tool the gate runs is the version the tree pins, on every host
 # (rule core.6): rustc, cargo, clippy and rustfmt the build .prototools
-# pins, which rust-toolchain.toml names too, and OpenSpec and Vale the
-# releases devenv.nix pins. A tool found outside its pin, a runner's rustup
+# pins, which rust-toolchain.toml names too, and OpenSpec and Vale, which
+# the pages' writers run and no task does (record 0002), the releases
+# devenv.nix pins. A tool found outside its pin, a runner's rustup
 # default say, fails here rather than holding the tree to another
 # version's rules.
 set -eu
