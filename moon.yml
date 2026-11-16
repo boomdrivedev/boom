@@ -39,3 +39,14 @@ tasks:
     inputs: ['/openspec/changes/**/*', '!/openspec/changes/archive/**/*', '/openspec/specs/**/*', '/openspec/config.yaml', '/check-changes.sh', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
+  # check-changes.sh does what core.7 asks of each open change: its cases,
+  # each a scratch tree of its own holding the changes it names as data,
+  # check its exit and its words, so a change to the script that lets
+  # through a change archive refuses, or a requirement past OpenSpec's 500
+  # characters, fails here (check-changes-cases.sh, Flume's copied; record
+  # 0004, point 7, core.7). It reads nothing of the tree but the scripts.
+  changes-cases:
+    command: 'sh check-changes-cases.sh'
+    inputs: ['/check-changes.sh', '/check-changes-cases.sh', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}

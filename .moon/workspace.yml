@@ -4,8 +4,8 @@
 # requires by tag (.config/sluice.toml):
 #   check-fast    the crate's format, lint, type check and tests; the
 #                 site's format, lint, type check, diagrams and build; the
-#                 root's format, toolchain, specs and changes. main
-#                 requires it
+#                 root's format, toolchain, specs, changes and the
+#                 changes check's cases. main requires it
 # No task reads a Markdown file for its words: a page, a README or a record
 # is kept by its writers (core.5; record 0002).
 # A task whose inputs are identical to a run that passed on this host, in
