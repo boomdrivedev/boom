@@ -17,8 +17,9 @@ in
 
   # What no formatter owns, each with its reason (core.5).
   settings.excludes = [
-    # Prose: the docs, the records, the README and the site's pages, which
-    # Vale checks (site:prose); no formatter here rewraps prose.
+    # Markdown: the docs, the records, the README and the site's pages are
+    # kept by their writers, and no task reads one for its words or its
+    # form (core.5; record 0002).
     "*.md"
     "*.mdx"
     # Written by cargo, devenv and bun in their own layouts.
@@ -26,7 +27,8 @@ in
     # Drawn marks and the README's diagram, which site:test holds to what
     # the site draws; no formatter keeps an SVG stable.
     "*.svg"
-    # Vale's own configuration and word list, which no formatter reads.
+    # Vale's own configuration and word list, for the writers' `prose`,
+    # which no formatter reads.
     ".vale.ini"
     "styles/config/vocabularies/**"
     # Lists in gitignore syntax.

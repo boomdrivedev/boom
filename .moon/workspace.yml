@@ -3,9 +3,11 @@
 # (core.5). Each check is tagged with its layer, which a branch's policy
 # requires by tag (.config/sluice.toml):
 #   check-fast    the crate's format, lint, type check and tests; the
-#                 site's format, lint, type check, diagrams, prose and
-#                 build; the root's format, toolchain, records, specs and
-#                 changes. main requires it
+#                 site's format, lint, type check, diagrams and build; the
+#                 root's format, toolchain, specs and changes. main
+#                 requires it
+# No task reads a Markdown file for its words: a page, a README or a record
+# is kept by its writers (core.5; record 0002).
 # A task whose inputs are identical to a run that passed on this host, in
 # any worktree, replays from .moon/cache/outputs (a link into the git common
 # dir, made by devenv.nix) instead of running again.

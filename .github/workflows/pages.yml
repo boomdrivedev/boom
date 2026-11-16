@@ -4,9 +4,10 @@
 # deployment → Source); after that every push to main that touches the site
 # deploys.
 #
-# The prose and the build run in the devenv shell, by the moon tasks the
-# gate runs, so Vale and bun are the versions devenv.nix pins and no second
-# file pins them (core.6).
+# The build runs in the devenv shell, by the moon task the gate runs, so
+# bun is the version devenv.nix pins and no second file pins it (core.6).
+# Nothing reads the pages for their words, which their writers keep
+# (core.5; record 0002).
 name: pages
 
 on:
@@ -14,8 +15,6 @@ on:
     branches: [main]
     paths:
       - site/**
-      - .vale.ini
-      - styles/**
       - .github/workflows/pages.yml
       - devenv.nix
       - devenv.yaml
@@ -41,8 +40,6 @@ jobs:
         with:
           name: devenv
       - run: nix profile add nixpkgs#devenv
-      # The prose, by Vale, before anything is built (.vale.ini).
-      - run: devenv shell -- moon run site:prose
       # The diagrams are drawn by the build itself (src/diagrams/), so no
       # browser is needed here.
       - run: devenv shell -- moon run site:build

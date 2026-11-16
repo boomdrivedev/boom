@@ -43,7 +43,7 @@ claims that hold.
 devenv shell -- cargo run -p boom -- --version
 devenv shell -- moon run :#check-fast   # every check in the fast layer
 devenv shell -- site-build              # the site, through moon
-devenv shell -- prose                   # the prose, through Vale
+devenv shell -- prose                   # the prose, through Vale, for its writers
 ```
 
 ## License
