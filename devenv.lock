@@ -33,6 +33,23 @@
         "type": "github"
       }
     },
+    "flume": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1794716403,
+        "narHash": "sha256-eIGyCcrvD47mlnaVphy946BzCuL8lWkLaNjy+I5A3l8=",
+        "owner": "boomdrivedev",
+        "repo": "flume",
+        "rev": "8d4a95e6ec85909b5d3aab3d8fe4dc7a6452aec0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "boomdrivedev",
+        "ref": "v0.24.0",
+        "repo": "flume",
+        "type": "github"
+      }
+    },
     "git-hooks": {
       "inputs": {
         "flake-compat": "flake-compat",
@@ -93,6 +110,7 @@
     "root": {
       "inputs": {
         "devenv": "devenv",
+        "flume": "flume",
         "git-hooks": "git-hooks",
         "nixpkgs": "nixpkgs",
         "treefmt-nix": "treefmt-nix"

@@ -1,6 +1,7 @@
 {
   pkgs,
   lib,
+  inputs,
   ...
 }:
 
@@ -52,6 +53,18 @@ let
     ${protoHome}
     eval "$(${proto}/bin/proto activate bash --export --no-bin --config-mode upwards 2>/dev/null)"
   '';
+
+  # The site's packages as site/bun.lock locks them, fetched by this shell
+  # outside the gate's sandbox into bun's cache, from which site:install
+  # installs with no network (record 0003). flume's function at the release
+  # devenv.yaml's input `flume` names, which owns how a site's packages
+  # reach a sandboxed gate (flume's record 0059); a release that changes its
+  # arguments fails this shell's evaluation in the change that moves it.
+  sitePackages = import "${inputs.flume}/site/packages.nix" {
+    inherit pkgs lib;
+    lock = ./site/bun.lock;
+    manifest = ./site/package.json;
+  };
 
   # OpenSpec, which root:specs and root:changes validate with: flume's
   # release, built as nixpkgs builds its older one. Bump the version, then
@@ -127,6 +140,10 @@ in
     pkgs.biome
     pkgs.playwright-test
   ];
+
+  # The site's packages, given to site:install by their store path
+  # (site/scripts/install.sh; record 0003).
+  env.BOOM_SITE_PACKAGES = "${sitePackages}";
 
   env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers-chromium}";
 
