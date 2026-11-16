@@ -4,8 +4,9 @@ $schema: 'https://moonrepo.dev/schemas/project.json'
 # Each check is one task, in the fast layer (core.5): its sources' format
 # and lint by Biome, by the settings in /biome.json; its types, the .astro
 # components' among them, by astro check; its diagrams by
-# scripts/diagrams.ts; its prose by Vale; and its build, which fails on a
-# broken internal link.
+# scripts/diagrams.ts; and its build, which fails on a broken internal
+# link. No task reads its pages for their words, which their writers keep
+# (core.5; record 0002).
 language: 'typescript'
 layer: 'application'
 
@@ -39,10 +40,6 @@ tasks:
     command: 'bun scripts/diagrams.ts --check'
     inputs: ['src/diagrams/**/*', 'src/accent.ts', 'scripts/diagrams.ts', 'package.json', 'bun.lock', 'scripts/install.sh', '/docs/diagrams/boom.svg', '/devenv.nix', '/devenv.lock']
     deps: ['~:install']
-    tags: [check-fast]
-  prose:
-    command: 'vale src/content/docs'
-    inputs: ['src/content/docs/**/*', '/.vale.ini', '/styles/**/*', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]
   build:
     command: 'bun ./node_modules/astro/bin/astro.mjs build'

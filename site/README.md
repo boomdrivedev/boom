@@ -8,7 +8,7 @@ boom is designed and not built, and every page says so.
 
 ```sh
 devenv shell -- site-build         # moon run site:build: dist/, every internal link checked
-devenv shell -- prose              # Vale over the pages and the README
+devenv shell -- prose              # Vale over the pages and the README, for their writers
 devenv shell -- moon run site:test # the diagrams, and the README's copy of the hero
 cd site && bun run dev             # http://localhost:4321/boom/
 devenv shell -- site-shots <dir>   # screenshots: every page, both widths, both themes, and diagram frames
@@ -16,8 +16,9 @@ devenv shell -- site-shots <dir>   # screenshots: every page, both widths, both 
 
 Each check is a moon task in the fast layer (`moon.yml`): `format` and
 `lint` by Biome, with the settings in `/biome.json` that treefmt formats
-with too; `typecheck` by `astro check`; `test` by `scripts/diagrams.ts`;
-`prose` by Vale; and `build`.
+with too; `typecheck` by `astro check`; `test` by `scripts/diagrams.ts`; and
+`build`. No task reads the pages for their words: `prose` is Vale for
+their writers, and no task or workflow runs it.
 
 The family's look is `@agentplot/site-theme`: its `starlight.css` carries
 the type and the ink and paper of both themes, its header puts the family

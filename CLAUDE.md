@@ -45,7 +45,7 @@ branch requires:
 
 | layer | what | who requires it |
 |---|---|---|
-| `check-fast` | the crate's format (rustfmt), lint (clippy -D warnings), type check and tests; the site's format and lint (Biome), type check (astro check), diagrams, prose (Vale) and build; the root's format (treefmt), toolchain, records, specs and open changes | main |
+| `check-fast` | the crate's format (rustfmt), lint (clippy -D warnings), type check and tests; the site's format and lint (Biome), type check (astro check), diagrams and build; the root's format (treefmt), toolchain, specs and open changes | main |
 
 Run suites through sluice, so the agents on this host take turns under
 its bound: once your work is committed, `sluice exec main` for the
@@ -54,7 +54,9 @@ gate's checks, and while iterating `sluice exec main -- moon run
 `boom` (`crates/boom`), `site` (`site/`, its own `README.md`) and
 `root`. A quick, narrow call, `cargo check` or one unit test, is fine to
 run directly. `devenv shell -- moon run :#check-fast` runs the fast
-layer.
+layer. `devenv shell -- prose` runs Vale over the pages and the README
+for their writers; no task or workflow runs it, and none reads a
+Markdown file for its words (core.5; record 0002).
 
 ## Commits
 
