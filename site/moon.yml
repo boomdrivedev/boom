@@ -23,7 +23,8 @@ tasks:
   # the gate's sandbox does not let it write, so bun runs astro's bin
   # itself. astro keeps its telemetry setting in the user's home, which a
   # gate's sandbox may not let it write: with telemetry off it reads nothing
-  # there.
+  # there. typecheck and build both write .astro/, so they share the mutex
+  # astro and never run at once, as boomdrivedev/boomdrive's site has them.
   typecheck:
     command: 'bun ./node_modules/astro/bin/astro.mjs check'
     env:
@@ -31,11 +32,12 @@ tasks:
     inputs: ['src/**/*', 'scripts/**/*', 'astro.config.mjs', 'package.json', 'bun.lock', 'tsconfig.json', '/devenv.nix', '/devenv.lock']
     deps: ['~:install']
     tags: [check-fast]
+    options: {mutex: 'astro'}
   # Every diagram drawn in both layouts holds together, and the README's
   # copy of the start page's is the one the site draws now.
   test:
     command: 'bun scripts/diagrams.ts --check'
-    inputs: ['src/diagrams/**/*', 'src/accent.ts', 'scripts/diagrams.ts', 'package.json', 'bun.lock', '/docs/diagrams/boom.svg', '/devenv.nix', '/devenv.lock']
+    inputs: ['src/diagrams/**/*', 'src/accent.ts', 'scripts/diagrams.ts', 'package.json', 'bun.lock', 'scripts/install.sh', '/docs/diagrams/boom.svg', '/devenv.nix', '/devenv.lock']
     deps: ['~:install']
     tags: [check-fast]
   prose:
@@ -46,13 +48,17 @@ tasks:
     command: 'bun ./node_modules/astro/bin/astro.mjs build'
     env:
       ASTRO_TELEMETRY_DISABLED: '1'
-    inputs: ['src/**/*', 'public/**/*', 'astro.config.mjs', 'package.json', 'bun.lock', 'tsconfig.json', '/devenv.nix', '/devenv.lock']
+    inputs: ['src/**/*', 'public/**/*', 'astro.config.mjs', 'package.json', 'bun.lock', 'scripts/install.sh', 'tsconfig.json', '/devenv.nix', '/devenv.lock']
     outputs: ['dist']
     deps: ['~:install']
     tags: [check-fast]
+    options: {mutex: 'astro'}
   # No layer: it checks nothing, and the tasks that need the packages run
-  # it first.
+  # it first. It installs bun.lock's packages with no network, from bun's
+  # cache as the devenv shell fetched it outside the gate's sandbox by
+  # flume's site/packages.nix, which lets a run reach no registry and write
+  # nothing of the user's home (scripts/install.sh; record 0003).
   install:
-    command: 'bun install --frozen-lockfile'
-    inputs: ['package.json', 'bun.lock', '/devenv.nix', '/devenv.lock']
+    command: 'sh scripts/install.sh'
+    inputs: ['package.json', 'bun.lock', 'scripts/install.sh', '/devenv.nix', '/devenv.lock']
     options: {cache: false}

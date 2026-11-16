@@ -23,6 +23,7 @@ exists.
 
 - **[core.5]** Every file the tree tracks is owned by a formatter the gate runs, or is excluded by name with its reason; every crate, and the site, is a moon project of its own, listed in `.moon/workspace.yml` with its language declared, whose check-fast tasks format, lint, type-check and test it, one task per check.
 - **[core.6]** Every tool a gate task runs is the version the tree pins, on every host that runs the gate.
+- **[core.7]** The gate holds the specs and every open change to OpenSpec's own `openspec validate --strict`, and each open change to archiving cleanly: `openspec archive` applies its deltas, alone, to a scratch copy of the tree's specs, and every spec it writes passes `openspec validate --strict`. (Record 0004; boomdrivedev/blueprints principle 16 as amended on 2026-11-15.)
 
 ## Details
 
@@ -32,3 +33,4 @@ exists.
 - **core.4** Rules out: pricing, a tier, a customer or a hosted plan named in code, docs, the site or commits. Source: record 0001.
 - **core.5** Rules out: a file type treefmt neither formats nor excludes; an exclude with no comment saying why; a crate or the site with no project of its own; one task bundling several checks. Source: record 0001; flume's core.21, the pattern this repository copies.
 - **core.6** Rules out: a tool a task finds outside its pin; a pinned toolchain without a component a task runs; two files pinning one tool with no check that fails when they differ. Source: flume's core.22.
+- **core.7** Rules out: an open change that `openspec archive` refuses, such as one adding a requirement its spec already holds with other words or modifying one its spec does not hold; an open change that archives into a spec `root:specs` fails, such as a new capability with archive's placeholder Purpose; a change judged with the other open changes applied; the tree's specs or changes written by the check. Not ruled out: a change whose tasks are not all checked; a spec the change leaves as it was, which `root:specs` alone checks; two open changes that conflict, found by the gate on the branch that lands second. Source: boomdrivedev/blueprints principle 16 as amended on 2026-11-15, on the user's answer on their card ("OpenSpec's own validation stays; the rule is about checks of what pages say"); record 0004; Boomdrive's core.61, the pattern this repository copies.
