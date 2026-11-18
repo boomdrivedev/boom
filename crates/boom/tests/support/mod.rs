@@ -480,3 +480,21 @@ impl Place {
         path_arg(&dir)
     }
 }
+
+impl Place {
+    /// An agent's proposal of a version of a decision with no base,
+    /// giving its version.
+    pub fn proposed_decision(&self, name: &str, statement: &str) -> String {
+        let answer = self.json(&[
+            "propose",
+            "decision",
+            name,
+            statement,
+            "--scenario",
+            SCENARIO,
+            "--provenance",
+            "run-3",
+        ]);
+        answer["version"].as_str().unwrap().to_owned()
+    }
+}

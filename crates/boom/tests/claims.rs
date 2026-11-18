@@ -320,3 +320,127 @@ fn a_rejected_version_gives_who_and_why() {
     assert_eq!(versions[0]["reason"], reason);
     assert_eq!(shown["standing"], json!(null));
 }
+
+const AMOUNTS_AS_FLOATS: &str = "---
+status: superseded by 0003
+---
+
+# Amounts are floats
+
+Amounts are kept as floats.
+";
+
+const AMOUNTS_IN_CENTS: &str = "---
+status: accepted
+---
+
+# Amounts are kept in cents
+";
+
+const FLOATS_SCENARIO: &str = "Given an amount of 0.30, then it is kept as a float.";
+
+/// Imports the shop's superseded `0002` with `0003`, drafting the
+/// scenarios given for `0002`, giving `amounts-as-floats`'s version.
+fn floats_imported(place: &Place, floats_scenarios: &[&str]) -> String {
+    let dir = place.folder(
+        "adr",
+        &[
+            ("0002-amounts-as-floats.md", AMOUNTS_AS_FLOATS),
+            ("0003-amounts-in-cents.md", AMOUNTS_IN_CENTS),
+        ],
+    );
+    let drafts = json!({
+        "format": "boom-import-drafts/1",
+        "records": {
+            "0002-amounts-as-floats.md": {"scenarios": floats_scenarios},
+            "0003-amounts-in-cents.md": {"scenarios": ["Given an amount of 0.30, then it is kept as 30 cents."]},
+        },
+    });
+    let drafts = place.file("drafts.json", &drafts.to_string());
+    let answer = place.json(&[
+        "import",
+        "adr",
+        &dir,
+        "--repository",
+        "shop",
+        "--drafts",
+        &drafts,
+        "--provenance",
+        "run-1",
+    ]);
+    let floats = answer["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| record["source"] == "0002-amounts-as-floats.md")
+        .unwrap();
+    floats["version"].as_str().unwrap().to_owned()
+}
+
+#[test]
+fn history_with_no_scenario() {
+    let place = Place::new();
+    place.made();
+    let version = floats_imported(&place, &[]);
+    let shown = place.show(&format!("amounts-as-floats@{version}"));
+    assert_eq!(shown["status"], "proposed");
+    assert_eq!(shown["scenarios"], json!([]));
+    assert_eq!(shown["history"]["status"], "superseded");
+    assert_eq!(shown["history"]["by"], "amounts-in-cents");
+}
+
+#[test]
+fn the_same_words_as_history_are_another_version() {
+    let place = Place::new();
+    place.made();
+    let history = floats_imported(&place, &[FLOATS_SCENARIO]);
+    let body = place.file("floats.md", "Amounts are kept as floats.\n");
+    let proposed = place.json(&[
+        "propose",
+        "decision",
+        "amounts-as-floats",
+        "Amounts are floats",
+        "--scenario",
+        FLOATS_SCENARIO,
+        "--body",
+        &body,
+        "--provenance",
+        "run-2",
+    ]);
+    let standing = proposed["version"].as_str().unwrap();
+    assert_ne!(standing, history);
+    let shown = place.show(&format!("amounts-as-floats@{history}"));
+    let plain = place.show(&format!("amounts-as-floats@{standing}"));
+    for field in ["statement", "scenarios", "body_fingerprint"] {
+        assert_eq!(shown[field], plain[field], "{field}");
+    }
+    assert_eq!(plain["history"], json!(null));
+    assert_eq!(
+        place.show("amounts-as-floats")["versions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn history_accepted_never_stands() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = floats_imported(&place, &[]);
+    let answer = place.accepted("amounts-as-floats", &version, &ada);
+    assert_eq!(answer["status"], "history");
+    let shown = place.show("amounts-as-floats");
+    assert_eq!(shown["standing"], json!(null));
+    let versions = shown["versions"].as_array().unwrap();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0]["status"], "history");
+    assert_eq!(versions[0]["accepted_by"], "ada");
+    let again = place.accepted("amounts-as-floats", &version, &ada);
+    assert_eq!(again, answer);
+    let first = place.proposed_decision("amounts-as-floats", "Amounts are floats again");
+    place.accepted("amounts-as-floats", &first, &ada);
+    assert_eq!(place.status("amounts-as-floats", &first), "standing");
+    assert_eq!(place.status("amounts-as-floats", &version), "history");
+}

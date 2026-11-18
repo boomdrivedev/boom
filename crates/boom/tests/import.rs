@@ -790,3 +790,38 @@ fn an_import_with_no_provenance_is_refused() {
         "an agent's proposal names its provenance",
     );
 }
+
+#[test]
+fn a_superseded_record_comes_in_as_history() {
+    let place = Place::new();
+    place.made();
+    let dir = adr(
+        &place,
+        &[
+            ("0002-amounts-as-floats.md", AMOUNTS_AS_FLOATS),
+            ("0003-amounts-in-cents.md", AMOUNTS_IN_CENTS),
+        ],
+    );
+    let drafts = drafts(
+        &place,
+        "drafts.json",
+        json!({"0003-amounts-in-cents.md": {"scenarios": [CENTS_SCENARIO]}}),
+    );
+    let answer = imported(&place, &dir, "shop", &drafts);
+    let floats = record(&answer, "0002-amounts-as-floats.md");
+    assert_eq!(floats["name"], "amounts-as-floats");
+    assert_eq!(floats["status"], "proposed");
+    let version = floats["version"].as_str().unwrap();
+    let shown = place.show(&format!("amounts-as-floats@{version}"));
+    assert_eq!(shown["kind"], "decision");
+    assert_eq!(shown["status"], "proposed");
+    assert_eq!(shown["scenarios"], json!([]));
+    assert_eq!(
+        shown["history"],
+        json!({"status": "superseded", "by": "amounts-in-cents"})
+    );
+    assert_eq!(
+        shown["imported"]["status"],
+        "superseded by [ADR-0003](0003-amounts-in-cents.md)"
+    );
+}

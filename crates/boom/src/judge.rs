@@ -42,6 +42,9 @@ pub enum Status {
     Replaced,
     /// Rejected.
     Rejected,
+    /// Accepted as history: it never stands and replaces no version
+    /// (design 6).
+    History,
 }
 
 impl Status {
@@ -52,6 +55,7 @@ impl Status {
             Status::Standing => "standing",
             Status::Replaced => "replaced",
             Status::Rejected => "rejected",
+            Status::History => "history",
         }
     }
 }
@@ -429,6 +433,14 @@ fn check_accept(
             ));
         }
         Status::Rejected => return Err(format!("{name}@{version} is rejected, by {by}")),
+        Status::History if by == accepter => {
+            return Ok(Verdict::Repeats(found.decided_in.unwrap_or_default()))
+        }
+        Status::History => {
+            return Err(format!(
+                "{name}@{version} is history already, accepted by {by}"
+            ))
+        }
         Status::Proposed => {}
     }
     if found.proposer == Actor::Person(accepter.to_owned()) {
@@ -436,7 +448,9 @@ fn check_accept(
             "{name}@{version} waits on another person: no one accepts their own proposal"
         ));
     }
-    if found.proposal.base != claim.standing {
+    // A version that comes in as history never stands, so it is accepted
+    // whatever stands (design 6).
+    if found.proposal.history.is_none() && found.proposal.base != claim.standing {
         let amends = found
             .proposal
             .base
@@ -515,6 +529,16 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 .claims
                 .get_mut(name)
                 .expect("a counted accept's claim");
+            let accepted = claim
+                .version_mut(version)
+                .expect("a counted accept's version");
+            if accepted.proposal.history.is_some() {
+                // History never stands and replaces no version.
+                accepted.status = Status::History;
+                accepted.decided_by = actor;
+                accepted.decided_in = Some(seq);
+                return;
+            }
             if let Some(standing) = claim.standing.take() {
                 if let Some(replaced) = claim.version_mut(&standing) {
                     replaced.status = Status::Replaced;

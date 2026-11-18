@@ -808,7 +808,7 @@ fn actor_words(actor: &Actor) -> String {
 }
 
 fn version_json(view: &store::VersionView) -> serde_json::Map<String, Value> {
-    let accepted = matches!(view.status.as_str(), "standing" | "replaced");
+    let accepted = matches!(view.status.as_str(), "standing" | "replaced" | "history");
     let rejected = view.status == "rejected";
     let mut object = serde_json::Map::new();
     object.insert("version".into(), json!(view.version));
