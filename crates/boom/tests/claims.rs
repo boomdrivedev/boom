@@ -201,3 +201,100 @@ fn a_version_shown_gives_its_body() {
     assert_eq!(shown["status"], "proposed");
     assert_eq!(shown["body"], support::BODY);
 }
+
+const ONE: &str = "Every amount names one currency.";
+const ISO: &str = "Every amount names its currency by its ISO 4217 code.";
+
+#[test]
+fn a_name_whose_claim_stands_is_refused() {
+    let place = Place::new();
+    let ada = place.made();
+    let first = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &first, &ada);
+    let refused = place.refused(
+        &[
+            "propose",
+            "invariant",
+            "money-has-currency",
+            ONE,
+            "--scenario",
+            SCENARIO,
+            "--provenance",
+            "run-2",
+        ],
+        &format!("money-has-currency@{first} stands"),
+    );
+    assert!(refused.stderr.contains("amend it"), "{refused:?}");
+}
+
+#[test]
+fn an_amendment_names_its_base() {
+    let place = Place::new();
+    let ada = place.made();
+    let first = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &first, &ada);
+    let amendment = place.amended("money-has-currency", ONE, &first);
+    let shown = place.show(&format!("money-has-currency@{amendment}"));
+    assert_eq!(shown["status"], "proposed");
+    assert_eq!(shown["base"], first.as_str());
+    assert_eq!(place.status("money-has-currency", &first), "standing");
+    assert_eq!(place.show("money-has-currency")["standing"], first.as_str());
+}
+
+#[test]
+fn two_amendments_of_one_base() {
+    let place = Place::new();
+    let ada = place.made();
+    let first = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &first, &ada);
+    let one = place.amended("money-has-currency", ONE, &first);
+    let iso = place.amended("money-has-currency", ISO, &first);
+    place.accepted("money-has-currency", &one, &ada);
+    place.refused(
+        &[
+            "accept",
+            &format!("money-has-currency@{iso}"),
+            "--key",
+            &ada,
+        ],
+        &format!("money-has-currency@{one} stands"),
+    );
+    assert_eq!(place.status("money-has-currency", &iso), "proposed");
+}
+
+#[test]
+fn the_same_words_on_the_new_base_stand() {
+    let place = Place::new();
+    let ada = place.made();
+    let first = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &first, &ada);
+    let one = place.amended("money-has-currency", ONE, &first);
+    let iso = place.amended("money-has-currency", ISO, &first);
+    place.accepted("money-has-currency", &one, &ada);
+    let iso_on_one = place.amended("money-has-currency", ISO, &one);
+    assert_ne!(iso_on_one, iso);
+    place.accepted("money-has-currency", &iso_on_one, &ada);
+    assert_eq!(place.status("money-has-currency", &iso_on_one), "standing");
+    assert_eq!(place.status("money-has-currency", &iso), "proposed");
+    assert_eq!(place.status("money-has-currency", &one), "replaced");
+}
+
+#[test]
+fn proposed_standing_replaced() {
+    let place = Place::new();
+    let ada = place.made();
+    let first = place.proposed("money-has-currency", MONEY);
+    assert_eq!(place.status("money-has-currency", &first), "proposed");
+    place.accepted("money-has-currency", &first, &ada);
+    let amendment = place.amended("money-has-currency", ONE, &first);
+    place.accepted("money-has-currency", &amendment, &ada);
+    let shown = place.show("money-has-currency");
+    assert_eq!(shown["standing"], amendment.as_str());
+    let versions = shown["versions"].as_array().unwrap();
+    assert_eq!(versions[0]["version"], first.as_str());
+    assert_eq!(versions[0]["status"], "replaced");
+    assert_eq!(versions[0]["accepted_by"], "ada");
+    assert_eq!(versions[1]["version"], amendment.as_str());
+    assert_eq!(versions[1]["status"], "standing");
+    assert_eq!(versions[1]["base"], first.as_str());
+}

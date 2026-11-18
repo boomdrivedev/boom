@@ -106,3 +106,72 @@ fn a_registration_repeated_adds_nothing() {
         .count();
     assert_eq!(registrations, 2, "ada's and bo's");
 }
+
+fn agents_proposal(place: &Place) -> String {
+    place.proposed("money-has-currency", "Every amount names its currency.")
+}
+
+#[test]
+fn an_accept_repeated_adds_nothing() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = agents_proposal(&place);
+    let first = place.accepted("money-has-currency", &version, &ada);
+    let second = place.accepted("money-has-currency", &version, &ada);
+    assert_eq!(second, first);
+    assert_eq!(second["status"], "standing");
+    assert_eq!(place.acts(), ["registered", "proposed", "accepted"]);
+}
+
+#[test]
+fn a_refusal_writes_nothing() {
+    let place = Place::new();
+    place.made();
+    let version = agents_proposal(&place);
+    let before = std::fs::read(&place.store).unwrap();
+    let log = place.log();
+    let refused = place.run(&["accept", &format!("money-has-currency@{version}")]);
+    assert_eq!(refused.code, 2, "{refused:?}");
+    assert_eq!(place.log(), log);
+    assert_eq!(std::fs::read(&place.store).unwrap(), before);
+}
+
+#[test]
+fn a_refusal_answered_as_json() {
+    let place = Place::new();
+    place.made();
+    let version = agents_proposal(&place);
+    let outcome = place.run(&["accept", &format!("money-has-currency@{version}"), "--json"]);
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
+    let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();
+    assert_eq!(answer["format"], "boom-refused/1");
+    let reason = answer["refused"]["reason"].as_str().unwrap();
+    assert!(reason.starts_with("only a person accepts"), "{reason}");
+}
+
+#[test]
+fn a_key_whose_program_cannot_sign_could_not_run() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = agents_proposal(&place);
+    let log = place.log();
+    let keygen = boom::sign::SshKeygen {
+        program: place.dir.path().join("no-such-ssh-keygen"),
+    };
+    let outcome = place.run_with(
+        &keygen,
+        &[
+            "accept",
+            &format!("money-has-currency@{version}"),
+            "--key",
+            &ada,
+        ],
+    );
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    assert!(
+        outcome.stderr.contains("the key's program did not sign"),
+        "{outcome:?}"
+    );
+    assert_eq!(place.log(), log);
+}

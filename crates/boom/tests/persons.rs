@@ -186,3 +186,124 @@ fn a_key_registered_to_another_is_refused() {
         "registered to bo",
     );
 }
+
+const MONEY: &str = "Every amount names its currency.";
+
+#[test]
+fn signed_without_presence_is_refused() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    place
+        .keys
+        .set_flags(std::path::Path::new(&ada), support::ABSENT);
+    place.refused(
+        &[
+            "accept",
+            &format!("money-has-currency@{version}"),
+            "--key",
+            &ada,
+        ],
+        "the signature does not show its person present",
+    );
+    assert_eq!(place.status("money-has-currency", &version), "proposed");
+}
+
+#[test]
+fn signed_by_a_key_not_registered_is_refused() {
+    let place = Place::new();
+    place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    let cy = place.key("cy", 3);
+    place.refused(
+        &[
+            "accept",
+            &format!("money-has-currency@{version}"),
+            "--key",
+            &cy,
+        ],
+        "is not registered",
+    );
+}
+
+#[test]
+fn an_agents_accept_is_refused() {
+    let place = Place::new();
+    place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    place.refused(
+        &["accept", &format!("money-has-currency@{version}")],
+        "only a person accepts",
+    );
+    assert_eq!(place.status("money-has-currency", &version), "proposed");
+}
+
+#[test]
+fn a_person_accepts_an_agents_proposal() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    let answer = place.accepted("money-has-currency", &version, &ada);
+    assert_eq!(answer["format"], "boom-accept/1");
+    assert_eq!(answer["status"], "standing");
+    assert_eq!(answer["by"], "ada");
+    assert_eq!(place.status("money-has-currency", &version), "standing");
+    let accepted = place.log().pop().unwrap();
+    assert_eq!(accepted["act"], "accepted");
+    assert_eq!(accepted["actor"], serde_json::json!({"person": "ada"}));
+}
+
+#[test]
+fn no_one_accepts_their_own_proposal() {
+    let place = Place::new();
+    let ada = place.made();
+    let proposed = place.json(&[
+        "propose",
+        "invariant",
+        "money-has-currency",
+        MONEY,
+        "--scenario",
+        support::SCENARIO,
+        "--key",
+        &ada,
+    ]);
+    let version = proposed["version"].as_str().unwrap();
+    assert_eq!(
+        place.log()[1]["actor"],
+        serde_json::json!({"person": "ada"})
+    );
+    place.refused(
+        &[
+            "accept",
+            &format!("money-has-currency@{version}"),
+            "--key",
+            &ada,
+        ],
+        "waits on another person",
+    );
+    assert_eq!(place.status("money-has-currency", version), "proposed");
+}
+
+#[test]
+fn another_person_accepts_it() {
+    let place = Place::new();
+    let ada = place.made();
+    let bo = place.registered(&ada, "bo", 2);
+    let proposed = place.json(&[
+        "propose",
+        "invariant",
+        "money-has-currency",
+        MONEY,
+        "--scenario",
+        support::SCENARIO,
+        "--key",
+        &ada,
+    ]);
+    let version = proposed["version"].as_str().unwrap();
+    let answer = place.accepted("money-has-currency", version, &bo);
+    assert_eq!(answer["status"], "standing");
+    assert_eq!(answer["by"], "bo");
+    let accepted = place.log().pop().unwrap();
+    assert_eq!(accepted["act"], "accepted");
+    assert_eq!(accepted["actor"], serde_json::json!({"person": "bo"}));
+}

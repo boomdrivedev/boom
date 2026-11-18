@@ -353,3 +353,37 @@ impl Place {
 /// A body of a few lines, with a character past ASCII.
 pub const BODY: &str =
     "# Money\n\nAn amount is a number and a currency,\nnever a number alone: 40.00 €.\n";
+
+impl Place {
+    /// An agent's proposal of `statement` amending `base`, giving its
+    /// version.
+    pub fn amended(&self, name: &str, statement: &str, base: &str) -> String {
+        let answer = self.json(&[
+            "propose",
+            "invariant",
+            name,
+            statement,
+            "--scenario",
+            SCENARIO,
+            "--amends",
+            base,
+            "--provenance",
+            "run-2",
+        ]);
+        assert_eq!(answer["base"], base);
+        answer["version"].as_str().unwrap().to_owned()
+    }
+
+    /// Accepts `name@version` with `key`, asserting it answers.
+    pub fn accepted(&self, name: &str, version: &str, key: &str) -> serde_json::Value {
+        self.json(&["accept", &format!("{name}@{version}"), "--key", key])
+    }
+
+    /// The status `boom show` gives `name@version`.
+    pub fn status(&self, name: &str, version: &str) -> String {
+        self.show(&format!("{name}@{version}"))["status"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+}
