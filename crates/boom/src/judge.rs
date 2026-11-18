@@ -359,7 +359,7 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
         Act::Registered { person, key, owner } => {
             check_registration(state, &entry.actor, person, key, *owner)
         }
-        Act::Proposed { claim, .. } => check_proposal(state, claim),
+        Act::Proposed { claim, attach } => check_proposal(state, claim, attach.as_ref()),
         Act::Accepted { name, version } => {
             let accepter = actor_name(&entry.actor).unwrap_or_default();
             check_accept(state, name, version, accepter)
@@ -402,12 +402,26 @@ fn check_registration(
     Ok(Verdict::Counts)
 }
 
-fn check_proposal(state: &State, proposal: &Proposal) -> Result<Verdict, String> {
+fn check_proposal(
+    state: &State,
+    proposal: &Proposal,
+    attach: Option<&Attach>,
+) -> Result<Verdict, String> {
     let name = &proposal.name;
     let claim = state.claims.get(name);
     if let Some(claim) = claim {
         if let Some(version) = claim.version(&proposal.version) {
-            return Ok(Verdict::Repeats(version.proposed_in));
+            // The same version under the same attachment is a repeat;
+            // under another, a move, which no proposal makes (record
+            // 0008, point 4).
+            if version.repositories == repositories(attach) {
+                return Ok(Verdict::Repeats(version.proposed_in));
+            }
+            return Err(format!(
+                "{name}@{} is attached to {}; a version's attachment does not move",
+                proposal.version,
+                repository::words(&version.repositories)
+            ));
         }
         if claim.kind != proposal.kind {
             return Err(format!(

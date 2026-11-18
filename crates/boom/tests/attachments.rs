@@ -175,3 +175,142 @@ fn a_repository_named_twice_by_hand_counts_for_nothing() {
         "{shown:?}"
     );
 }
+
+#[test]
+fn one_fingerprint_wherever_it_binds() {
+    let shop = Place::new();
+    shop.made();
+    let system = Place::new();
+    system.made();
+    let bound = shop.json(&money(&["--repository", "shop"]));
+    let whole = system.json(&money(&["--system"]));
+    assert_eq!(bound["repositories"], json!(["shop"]));
+    assert_eq!(whole["repositories"], json!([]));
+    assert_eq!(bound["version"], whole["version"]);
+    let unbound = boom::claim::Proposal::new(
+        boom::claim::Kind::Invariant,
+        "money-has-currency",
+        MONEY,
+        vec![SCENARIO.to_owned()],
+        None,
+        None,
+    );
+    assert_eq!(bound["version"], unbound.version.as_str());
+}
+
+#[test]
+fn proposed_again_for_the_same_repository_adds_nothing() {
+    let place = Place::new();
+    place.made();
+    let first = place.json(&money(&["--repository", "shop"]));
+    let second = place.json(&money(&["--repository", "shop"]));
+    assert_eq!(second, first);
+    assert_eq!(place.acts(), ["registered", "proposed"]);
+}
+
+#[test]
+fn the_same_words_for_another_repository_are_refused() {
+    let place = Place::new();
+    place.made();
+    let first = place.json(&money(&["--repository", "shop"]));
+    let version = first["version"].as_str().unwrap();
+    let outcome = place.refused(
+        &money(&["--repository", "ledger"]),
+        &format!("money-has-currency@{version} is attached to shop"),
+    );
+    assert!(
+        outcome
+            .stderr
+            .contains("a version's attachment does not move"),
+        "{outcome:?}"
+    );
+    place.refused(&money(&["--system"]), "is attached to shop");
+    assert_eq!(place.acts(), ["registered", "proposed"]);
+
+    // Written by hand under another attachment, it counts for nothing.
+    let entry = boom::entry::Entry {
+        at: 1_763_424_600,
+        actor: boom::entry::Actor::Agent {
+            provenance: "another-program".to_owned(),
+        },
+        act: boom::entry::Act::Proposed {
+            claim: boom::claim::Proposal::new(
+                boom::claim::Kind::Invariant,
+                "money-has-currency",
+                MONEY,
+                vec![SCENARIO.to_owned()],
+                None,
+                None,
+            ),
+            attach: Some(boom::entry::Attach {
+                repositories: vec!["ledger".to_owned()],
+            }),
+        },
+    };
+    place.append_by_hand(&entry, None);
+    let moved = place.log().pop().unwrap();
+    assert_eq!(moved["counted"], false);
+    assert_eq!(
+        moved["reason"],
+        format!(
+            "money-has-currency@{version} is attached to shop; a version's attachment does not move"
+        )
+    );
+    let shown = place.show("money-has-currency");
+    assert_eq!(shown["versions"].as_array().unwrap().len(), 1);
+}
+
+/// A version of `money-has-currency` attached to `shop`, standing,
+/// accepted by ada; gives its version.
+fn standing_in_shop(place: &Place) -> String {
+    let ada = place.made();
+    let first = place.json(&money(&["--repository", "shop"]));
+    let version = first["version"].as_str().unwrap().to_owned();
+    place.accepted("money-has-currency", &version, &ada);
+    version
+}
+
+/// An agent's amendment of `money-has-currency`'s `base`, with `extra`.
+fn amending<'a>(base: &'a str, extra: &[&'a str]) -> Vec<&'a str> {
+    let mut args = vec![
+        "propose",
+        "invariant",
+        "money-has-currency",
+        "Every amount names exactly one currency.",
+        "--scenario",
+        SCENARIO,
+        "--amends",
+        base,
+        "--provenance",
+        "run-2",
+    ];
+    args.extend_from_slice(extra);
+    args
+}
+
+#[test]
+fn amended_with_nothing_named_keeps_its_bases() {
+    let place = Place::new();
+    let base = standing_in_shop(&place);
+    let ledger = place.repository("ledger-repo", Some("repository = \"ledger\"\n"));
+    let amendment = place.json_in(&ledger, &amending(&base, &[]));
+    assert_eq!(amendment["base"], base.as_str());
+    assert_eq!(amendment["repositories"], json!(["shop"]));
+    assert_eq!(
+        place.last_signed()["attach"],
+        json!({"repositories": ["shop"]})
+    );
+}
+
+#[test]
+fn amended_for_another_repository() {
+    let place = Place::new();
+    let base = standing_in_shop(&place);
+    let amendment = place.json(&amending(&base, &["--repository", "ledger"]));
+    assert_eq!(amendment["base"], base.as_str());
+    assert_eq!(amendment["repositories"], json!(["ledger"]));
+    assert_eq!(
+        place.last_signed()["attach"],
+        json!({"repositories": ["ledger"]})
+    );
+}
