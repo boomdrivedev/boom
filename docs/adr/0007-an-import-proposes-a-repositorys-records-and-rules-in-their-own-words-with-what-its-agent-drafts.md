@@ -101,3 +101,28 @@ edited by hand once boom holds it.
 - Neutral: the numbers kept wait on the change that gives numbers at
   acceptance; until then a second repository whose numbers clash is
   refused.
+
+## More information
+
+The code stage of the change settled these, its own and cheap to
+change, on the design's decisions 2 to 7:
+
+- **An imported proposal meets the import's rules first.** The judge
+  holds a proposal with `imported` to its record read once, its name
+  held by no claim and its number held by no other claim before the
+  rules of any proposal, so a record whose words another repository's
+  record holds under its name is refused on the name, to be named
+  otherwise in its draft. Not taken: the repeat rule of any proposal
+  first, which counts such a record as the other's and drops its
+  source.
+- **A dry run reads the files and no store.** It answers what each
+  record still needs, and an agent runs it before a store exists. Not
+  taken: a dry run judged against the store, which needs one made.
+- **A draft holds `scenarios` and `name` alone.** A draft giving any
+  other field, a statement or a body, is refused naming the field, so
+  an agent learns that boom takes the file's words. Not taken: such
+  fields left unread, which tells the agent nothing.
+- **A rule's body is its details as written.** The body is the details'
+  bullet and the lines under it, `- **core.1** ...` among it. Not
+  taken: the words after the id alone, which drop the bullet the file
+  wrote.
