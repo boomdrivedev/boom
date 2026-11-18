@@ -207,6 +207,7 @@ impl Place {
         let env = boom::cli::Env {
             xdg_data_home: Some(dir.path().join("data")),
             home: Some(dir.path().join("home")),
+            cwd: Some(dir.path().to_owned()),
             clock: boom::cli::Clock::Fixed(1_763_424_000),
         };
         let store = dir.path().join("boom.sqlite");
@@ -465,6 +466,60 @@ pub fn accept_entry(person: &str, name: &str, version: &str) -> boom::entry::Ent
             name: name.to_owned(),
             version: version.to_owned(),
         },
+    }
+}
+
+impl Place {
+    /// Makes the empty folder `name` in the place, giving its path.
+    pub fn empty_folder(&self, name: &str) -> PathBuf {
+        let folder = self.dir.path().join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    /// Writes `text`, from the test's code, as `folder`'s
+    /// `.config/boom.toml`.
+    pub fn declare(&self, folder: &Path, text: &str) {
+        std::fs::create_dir_all(folder.join(".config")).unwrap();
+        std::fs::write(folder.join(boom::repository::DECLARATION), text).unwrap();
+    }
+
+    /// Makes a repository's folder `name` in the place, holding a `.git`
+    /// folder and, where `declaration` is given, a `.config/boom.toml` of
+    /// those words, giving its path (design 6).
+    pub fn repository(&self, name: &str, declaration: Option<&str>) -> PathBuf {
+        let folder = self.empty_folder(name);
+        std::fs::create_dir_all(folder.join(".git")).unwrap();
+        if let Some(text) = declaration {
+            self.declare(&folder, text);
+        }
+        folder
+    }
+
+    /// Runs `args` on the place's store with `cwd` its working folder.
+    pub fn run_in(&self, cwd: &Path, args: &[&str]) -> boom::cli::Outcome {
+        let mut env = self.env.clone();
+        env.cwd = Some(cwd.to_owned());
+        let store = self.store_arg();
+        let mut all: Vec<&str> = args.to_vec();
+        all.extend(["--store", &store]);
+        boom::cli::run(all, &self.keys, &env)
+    }
+
+    /// Runs `args` with `--json` and `cwd` its working folder, asserting
+    /// it answers, and gives its answer.
+    pub fn json_in(&self, cwd: &Path, args: &[&str]) -> serde_json::Value {
+        let mut all: Vec<&str> = args.to_vec();
+        all.push("--json");
+        let outcome = self.run_in(cwd, &all);
+        assert_eq!(outcome.code, 0, "{args:?}: {outcome:?}");
+        serde_json::from_str(&outcome.stdout).unwrap()
+    }
+
+    /// The signed part of the log's last entry, as JSON.
+    pub fn last_signed(&self) -> serde_json::Value {
+        let last = self.log().pop().unwrap();
+        serde_json::from_str(last["signed"].as_str().unwrap()).unwrap()
     }
 }
 

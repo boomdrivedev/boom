@@ -14,21 +14,24 @@ use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
 use crate::claim::{History, Kind, Proposal};
-use crate::entry::{Act, Actor, Entry, Form, Imported};
+use crate::entry::{Act, Actor, Attach, Entry, Form, Imported, GENESIS};
 use crate::import::{self, Read, Record};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
 use crate::store::{self, Append, Store, Written};
-use crate::Failure;
+use crate::{repository, Failure};
 
 /// What a command reads from its process: the folders a store's path
-/// is resolved under, and the clock an entry's time is read from.
+/// is resolved under, the working folder a repository is declared from,
+/// and the clock an entry's time is read from.
 #[derive(Debug, Clone, Default)]
 pub struct Env {
     /// `XDG_DATA_HOME`, where it is set.
     pub xdg_data_home: Option<PathBuf>,
     /// `HOME`, where it is set.
     pub home: Option<PathBuf>,
+    /// The working folder, where it can be read.
+    pub cwd: Option<PathBuf>,
     /// The clock.
     pub clock: Clock,
 }
@@ -63,6 +66,7 @@ impl Env {
         Env {
             xdg_data_home: var("XDG_DATA_HOME").map(PathBuf::from),
             home: var("HOME").map(PathBuf::from),
+            cwd: std::env::current_dir().ok(),
             clock: Clock::System,
         }
     }
@@ -147,6 +151,15 @@ enum Command {
         /// A person's security key, to propose as that person.
         #[arg(long)]
         key: Option<PathBuf>,
+        /// A repository the version binds; any number of times. Naming
+        /// none, an amendment binds what its base binds, and a first
+        /// version the repository the working folder declares, else the
+        /// whole system.
+        #[arg(long = "repository", value_name = "NAME", conflicts_with = "system")]
+        repositories: Vec<String>,
+        /// Bind the version to the whole system, every repository.
+        #[arg(long)]
+        system: bool,
     },
     /// Accept one or more versions, as a person signing each with their
     /// security key, all appended together or none.
@@ -177,6 +190,15 @@ enum Command {
     },
     /// Show the log's entries in order, each with whether it counts.
     Log,
+    /// Give every claim that stands for a repository, as the person
+    /// accepted it, replayed from the log: words an agent's harness can
+    /// put in its context as they are.
+    Query {
+        /// The repository; by default the one the working folder's
+        /// `.config/boom.toml` declares.
+        #[arg(long, value_name = "NAME")]
+        repository: Option<String>,
+    },
     /// Import a repository's decision records or rules once, proposing
     /// each in its file's own words with what its agent drafts.
     Import {
@@ -322,6 +344,8 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
             body,
             provenance,
             key,
+            repositories,
+            system,
         } => propose(
             path,
             Proposed {
@@ -332,6 +356,8 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
                 amends,
                 body,
                 provenance,
+                repositories,
+                system,
             },
             key.as_deref(),
             keys,
@@ -345,6 +371,7 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
         } => reject(path, &target, reason, key.as_deref(), keys, env),
         Command::Show { target } => show(path, &target),
         Command::Log => log(path),
+        Command::Query { repository } => query(path, repository.as_deref(), env),
         Command::Import { what } => match what {
             ImportCommand::Adr { dir, options } => import(path, Form::Madr, &dir, options, env),
             ImportCommand::Rules { page, options } => {
@@ -535,6 +562,43 @@ struct Proposed {
     amends: Option<String>,
     body: Option<PathBuf>,
     provenance: Option<String>,
+    repositories: Vec<String>,
+    system: bool,
+}
+
+/// What a proposal binds, in the order record 0008 (point 4) gives:
+/// the repositories it names, sorted and each once; else, with
+/// `--system`, the whole system; else, for an amendment, what its base
+/// binds in `state`; else the repository `declared`; else the whole
+/// system.
+fn attachment(
+    proposed: &Proposed,
+    proposal: &Proposal,
+    declared: Option<&str>,
+    state: &State,
+) -> Option<Attach> {
+    let named = |repositories: Vec<String>| {
+        Some(repositories)
+            .filter(|repositories| !repositories.is_empty())
+            .map(|repositories| Attach { repositories })
+    };
+    if !proposed.repositories.is_empty() {
+        let mut repositories = proposed.repositories.clone();
+        repositories.sort();
+        repositories.dedup();
+        return named(repositories);
+    }
+    if proposed.system {
+        return None;
+    }
+    if let Some(base) = &proposal.base {
+        let base = state
+            .claims
+            .get(&proposal.name)
+            .and_then(|claim| claim.version(base));
+        return base.and_then(|base| named(base.repositories.clone()));
+    }
+    declared.and_then(|name| named(vec![name.to_owned()]))
 }
 
 fn propose(
@@ -573,13 +637,19 @@ fn propose(
         }
         None => None,
     };
+    let declared =
+        if proposed.repositories.is_empty() && !proposed.system && proposed.amends.is_none() {
+            repository::find(None, env.cwd.as_deref())?
+        } else {
+            None
+        };
     let proposal = Proposal::new(
         proposed.kind,
         &proposed.name,
         &proposed.statement,
-        proposed.scenarios,
+        proposed.scenarios.clone(),
         body.as_deref().map(crate::sha256_hex),
-        proposed.amends,
+        proposed.amends.clone(),
         None,
     );
     let signer = key.map(|key| keys.signer(key)).transpose()?;
@@ -596,6 +666,7 @@ fn propose(
             act: Act::Proposed {
                 claim: proposal.clone(),
                 imported: None,
+                attach: attachment(&proposed, &proposal, declared.as_deref(), state),
             },
         })
     })?;
@@ -613,13 +684,15 @@ fn propose(
             "base": proposal.base,
             "status": status,
             "entry": written.seq(),
+            "repositories": version.repositories,
         }),
         words: format!(
-            "{} {}@{} is {status}, by entry {}\n",
+            "{} {}@{} is {status}, by entry {}\nit binds {}\n",
             claim.kind.as_str(),
             proposal.name,
             proposal.version,
-            written.seq()
+            written.seq(),
+            repository::words(&version.repositories)
         ),
     })
 }
@@ -814,6 +887,7 @@ fn version_json(view: &store::VersionView) -> serde_json::Map<String, Value> {
     object.insert("version".into(), json!(view.version));
     object.insert("status".into(), json!(view.status));
     object.insert("base".into(), json!(view.base));
+    object.insert("repositories".into(), json!(view.repositories));
     object.insert("proposer".into(), json!(view.proposer));
     object.insert("proposed_in".into(), json!(view.proposed_in));
     object.insert(
@@ -880,7 +954,11 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
                     ))
             );
             for view in &claim.versions {
-                words.push_str(&format!("  {}\n", version_words(view)));
+                words.push_str(&format!(
+                    "  {}\n    binds: {}\n",
+                    version_words(view),
+                    repository::words(&view.repositories)
+                ));
             }
             return Ok(Answer {
                 json: json!({
@@ -929,6 +1007,10 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
         for scenario in &view.scenarios {
             words.push_str(&format!("scenario: {scenario}\n"));
         }
+        words.push_str(&format!(
+            "binds: {}\n",
+            repository::words(&view.repositories)
+        ));
         if let Some(history) = &history {
             words.push_str(&format!("history: {}", history.status.as_str()));
             if let Some(by) = &history.by {
@@ -973,7 +1055,9 @@ fn proposed_with(
         .ok_or_else(|| Failure::not_run(format!("the log holds no entry {seq}")))?;
     match Entry::parse(&signed) {
         Ok(Entry {
-            act: Act::Proposed { claim, imported },
+            act: Act::Proposed {
+                claim, imported, ..
+            },
             ..
         }) => Ok((imported.map(|imported| *imported), claim.history)),
         _ => Err(Failure::not_run(format!(
@@ -1028,6 +1112,93 @@ fn log(path: &Path) -> Result<Answer, Failure> {
         Ok(Answer {
             json: json!({"format": "boom-log/1", "entries": entries}),
             words,
+        })
+    })
+}
+
+/// The claims that stand for the repository `named`, or else the one the
+/// working folder declares (repository-rules; design 5): taken from the
+/// judge's replay of the whole log for this answer, never from the views
+/// (record 0008, point 2), and appending nothing.
+fn query(path: &Path, named: Option<&str>, env: &Env) -> Result<Answer, Failure> {
+    let Some(repository) = repository::find(named, env.cwd.as_deref())? else {
+        return Err(Failure::refused(format!(
+            "boom query answers for a repository: name it with --repository, or in {}",
+            repository::DECLARATION
+        )));
+    };
+    let mut store = Store::open(path)?;
+    store.read(|conn| {
+        let rows = store::log_rows(conn)?;
+        let (state, _) = judge::replay(
+            rows.iter()
+                .map(|row| (row.seq, row.signed.as_str(), row.signature.as_deref())),
+        );
+        let (number, hash) = rows
+            .last()
+            .map_or((0, GENESIS), |row| (row.seq, row.hash.as_str()));
+        let mut claims = Vec::new();
+        let mut lines = String::new();
+        for kind in [Kind::Invariant, Kind::Decision, Kind::Assumption] {
+            for claim in state.claims.values().filter(|claim| claim.kind == kind) {
+                let Some(standing) = claim
+                    .standing
+                    .as_deref()
+                    .and_then(|version| claim.version(version))
+                else {
+                    continue;
+                };
+                let binds = &standing.repositories;
+                if !binds.is_empty() && !binds.contains(&repository) {
+                    continue;
+                }
+                let proposal = &standing.proposal;
+                claims.push(json!({
+                    "name": claim.name,
+                    "kind": kind.as_str(),
+                    "version": proposal.version,
+                    "statement": proposal.statement,
+                    "scenarios": proposal.scenarios,
+                    "body": proposal.body,
+                    "repositories": binds,
+                    "accepted": {
+                        "by": standing.decided_by,
+                        "entry": standing.decided_in,
+                    },
+                }));
+                lines.push_str(&format!(
+                    "{} {}@{}: {}\n",
+                    kind.as_str(),
+                    claim.name,
+                    proposal.version,
+                    proposal.statement
+                ));
+                for scenario in &proposal.scenarios {
+                    lines.push_str(&format!("  - {scenario}\n"));
+                }
+                if proposal.body.is_some() {
+                    lines.push_str(&format!(
+                        "  body: boom show {}@{}\n",
+                        claim.name, proposal.version
+                    ));
+                }
+            }
+        }
+        let stand = match claims.len() {
+            0 => "No claim stands".to_owned(),
+            1 => "1 claim stands".to_owned(),
+            n => format!("{n} claims stand"),
+        };
+        Ok(Answer {
+            json: json!({
+                "format": "boom-query/1",
+                "repository": repository,
+                "head": {"number": number, "hash": hash},
+                "claims": claims,
+            }),
+            words: format!(
+                "{stand} for {repository}, at entry {number} of the store's log.\n{lines}"
+            ),
         })
     })
 }
@@ -1093,6 +1264,11 @@ fn import(
             act: Act::Proposed {
                 claim: record.proposal(),
                 imported: Some(Box::new(record.imported.clone())),
+                // Imported for one repository, it stands for that one
+                // alone (design 7).
+                attach: Some(Attach {
+                    repositories: vec![repository.clone()],
+                }),
             },
         };
         let signed = entry.signed_part();

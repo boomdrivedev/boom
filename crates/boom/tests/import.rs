@@ -1152,6 +1152,36 @@ fn an_import_accepted_together() {
 }
 
 #[test]
+fn an_imported_record_stands_for_its_repository_alone() {
+    let place = Place::new();
+    let ada = place.made();
+    let dir = two_records(&place);
+    let drafts = two_drafts(&place);
+    let answer = imported(&place, &dir, "shop", &drafts);
+    let version = record(&answer, "0003-amounts-in-cents.md")["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    accept_given(&place, &answer, &ada);
+    assert_eq!(place.last_signed()["act"], "accepted");
+    let shown = place.show(&format!("amounts-in-cents@{version}"));
+    assert_eq!(shown["status"], "standing");
+    assert_eq!(shown["repositories"], json!(["shop"]));
+    let names = |repository: &str| -> Vec<String> {
+        place.json(&["query", "--repository", repository])["claims"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|claim| claim["name"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let shop = names("shop");
+    assert!(shop.contains(&"amounts-in-cents".to_owned()), "{shop:?}");
+    let billing = names("billing");
+    assert!(billing.is_empty(), "{billing:?}");
+}
+
+#[test]
 fn a_record_left_proposed_waits() {
     let place = Place::new();
     let ada = place.made();

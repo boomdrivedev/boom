@@ -114,6 +114,9 @@ pub enum Act {
         /// Where it came in from, for a version an import proposes,
         /// boxed so a proposal is no larger than the other acts by it.
         imported: Option<Box<Imported>>,
+        /// What it binds: the repositories it names, or, where it is
+        /// `None`, the whole system.
+        attach: Option<Attach>,
     },
     /// A version accepted.
     Accepted {
@@ -143,6 +146,16 @@ impl Act {
             Act::Rejected { .. } => "rejected",
         }
     }
+}
+
+/// What a proposed version binds, written after its claim and no part
+/// of its fingerprint (claim-attachments; design 1): an object, so a
+/// context can join it later as one more field.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Attach {
+    /// The repositories, each kebab case, sorted and each once.
+    pub repositories: Vec<String>,
 }
 
 /// An entry: its time, its actor and its act.
@@ -178,6 +191,8 @@ struct ProposedPart {
     claim: Proposal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     imported: Option<Box<Imported>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attach: Option<Attach>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -206,7 +221,8 @@ struct RejectedPart {
 impl Entry {
     /// The entry's signed part: one JSON object, its fields `format`,
     /// `act`, `at`, `actor` and then the act's own, in that order; a
-    /// proposal's `imported` after its `claim`, and only where present.
+    /// proposal's `imported` after its `claim` and its `attach` after
+    /// that, each only where present (design 7).
     pub fn signed_part(&self) -> String {
         let format = FORMAT.to_owned();
         let act = self.act.name().to_owned();
@@ -222,13 +238,18 @@ impl Entry {
                 key: key.clone(),
                 owner: *owner,
             }),
-            Act::Proposed { claim, imported } => serde_json::to_string(&ProposedPart {
+            Act::Proposed {
+                claim,
+                imported,
+                attach,
+            } => serde_json::to_string(&ProposedPart {
                 format,
                 act,
                 at,
                 actor,
                 claim: claim.clone(),
                 imported: imported.clone(),
+                attach: attach.clone(),
             }),
             Act::Accepted { name, version } => serde_json::to_string(&AcceptedPart {
                 format,
@@ -288,6 +309,7 @@ impl Entry {
                     act: Act::Proposed {
                         claim: part.claim,
                         imported: part.imported,
+                        attach: part.attach,
                     },
                 })
             }
@@ -352,6 +374,10 @@ mod tests {
     }
 
     fn proposal() -> Entry {
+        attached(None)
+    }
+
+    fn attached(attach: Option<Attach>) -> Entry {
         Entry {
             at: 1_763_424_100,
             actor: Actor::Agent {
@@ -368,6 +394,7 @@ mod tests {
                     None,
                 ),
                 imported: None,
+                attach,
             },
         }
     }
@@ -461,6 +488,42 @@ mod tests {
     }
 
     #[test]
+    fn an_attachment_follows_the_claim_in_the_signed_part() {
+        let attach = Attach {
+            repositories: vec!["ledger".to_owned(), "shop".to_owned()],
+        };
+        let entry = attached(Some(attach));
+        let signed = entry.signed_part();
+        assert_eq!(
+            keys(&signed),
+            ["format", "act", "at", "actor", "claim", "attach"]
+        );
+        assert!(
+            signed.ends_with(r#","attach":{"repositories":["ledger","shop"]}}"#),
+            "{signed}"
+        );
+        assert_eq!(Entry::parse(&signed), Ok(entry));
+        let unknown = signed.replace(r#"{"repositories":"#, r#"{"contexts":[],"repositories":"#);
+        let refused = Entry::parse(&unknown).unwrap_err();
+        assert!(refused.contains("unknown field `contexts`"), "{refused}");
+    }
+
+    #[test]
+    fn a_proposal_with_no_attachment_is_written_as_before() {
+        let entry = proposal();
+        let Act::Proposed { claim, .. } = &entry.act else {
+            unreachable!("a proposal");
+        };
+        let before = format!(
+            r#"{{"format":"boom-entry/1","act":"proposed","at":1763424100,"actor":{{"agent":{{"provenance":"run-1"}}}},"claim":{}}}"#,
+            serde_json::to_string(claim).unwrap()
+        );
+        assert_eq!(entry.signed_part().as_bytes(), before.as_bytes());
+        assert!(!entry.signed_part().contains("attach"));
+        assert_eq!(Entry::parse(&before), Ok(entry));
+    }
+
+    #[test]
     fn an_imported_proposal_keeps_where_it_came_from() {
         let entry = imported_proposal();
         let signed = entry.signed_part();
@@ -477,6 +540,7 @@ mod tests {
         let Act::Proposed {
             claim,
             imported: Some(imported),
+            ..
         } = &entry.act
         else {
             panic!("an imported proposal");
@@ -489,6 +553,27 @@ mod tests {
             panic!("a proposal");
         };
         assert_eq!(claim.version, plain.version);
+    }
+
+    #[test]
+    fn an_imported_proposal_is_attached_after_imported() {
+        let mut entry = imported_proposal();
+        if let Act::Proposed { attach, .. } = &mut entry.act {
+            *attach = Some(Attach {
+                repositories: vec!["shop".to_owned()],
+            });
+        }
+        let signed = entry.signed_part();
+        assert_eq!(
+            keys(&signed),
+            ["format", "act", "at", "actor", "claim", "imported", "attach"]
+        );
+        assert!(
+            signed.ends_with(r#","attach":{"repositories":["shop"]}}"#),
+            "{signed}"
+        );
+        assert_eq!(Entry::parse(&signed), Ok(entry.clone()));
+        assert_eq!(Entry::parse(&signed).unwrap().signed_part(), signed);
     }
 
     #[test]

@@ -577,6 +577,12 @@ fn write_claim(conn: &Connection, claim: &Claim) -> Result<(), Failure> {
     Ok(())
 }
 
+/// The log's entries in order, as stored, for a reader inside
+/// [`Store::read`] to replay with [`judge::replay`].
+pub fn log_rows(conn: &Connection) -> Result<Vec<Row>, Failure> {
+    read_log(conn)
+}
+
 /// An entry of the log as `boom log` gives it: as stored, with its
 /// judgment.
 #[derive(Debug, Clone)]
@@ -636,6 +642,9 @@ pub struct VersionView {
     pub scenarios: Vec<String>,
     /// Its body's fingerprint.
     pub body: Option<String>,
+    /// What it binds, read from the entry that proposed it: the
+    /// repositories it names, or none for the whole system.
+    pub repositories: Vec<String>,
     /// Who proposed it.
     pub proposer: Actor,
     /// The entry that proposed it.
@@ -688,6 +697,7 @@ pub fn claim_view(conn: &Connection, name: &str) -> Result<Option<ClaimView>, Fa
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    let mut proposing = conn.prepare("SELECT signed FROM log WHERE seq = ?1")?;
     let mut versions = Vec::with_capacity(rows.len());
     for (
         version,
@@ -703,12 +713,25 @@ pub fn claim_view(conn: &Connection, name: &str) -> Result<Option<ClaimView>, Fa
         reason,
     ) in rows
     {
+        let signed: String = proposing.query_row([proposed_in], |row| row.get(0))?;
+        let repositories = match Entry::parse(&signed) {
+            Ok(Entry {
+                act: Act::Proposed { attach, .. },
+                ..
+            }) => judge::repositories(attach.as_ref()).to_vec(),
+            _ => {
+                return Err(Failure::not_run(format!(
+                    "a view could not be read: entry {proposed_in} proposes no version"
+                )))
+            }
+        };
         versions.push(VersionView {
             version,
             base,
             statement: words,
             scenarios: from_json(&scenarios)?,
             body,
+            repositories,
             proposer: from_json(&proposer)?,
             proposed_in: u64::try_from(proposed_in).unwrap_or(0),
             status,

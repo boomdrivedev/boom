@@ -210,6 +210,7 @@ fn views_behind_the_log_are_rebuilt_before_an_answer() {
         act: boom::entry::Act::Proposed {
             claim: proposal.clone(),
             imported: None,
+            attach: None,
         },
     };
     place.append_by_hand(&entry, None);

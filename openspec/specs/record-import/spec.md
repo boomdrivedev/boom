@@ -91,7 +91,7 @@ An import SHALL take each record's scenarios, and each rule's name, from `--draf
 
 ### Requirement: An import proposes, all or nothing
 
-An import SHALL name its repository with `--repository <name>`, and SHALL be an agent's: each record one `proposed` entry with no signature, naming `--provenance` and carrying `imported`, where the record came from, the repository and the file among it. It SHALL accept nothing, and where any record is refused it SHALL append none.
+An import SHALL name its repository with `--repository <name>`, and SHALL be an agent's: each record one `proposed` entry with no signature, naming `--provenance`, carrying `imported`, where the record came from, the repository and the file among it, and `attach` naming that repository, so a record accepted stands for that repository alone. It SHALL accept nothing, and where any record is refused it SHALL append none.
 
 #### Scenario: An import proposes and accepts nothing
 
@@ -112,6 +112,11 @@ An import SHALL name its repository with `--repository <name>`, and SHALL be an 
 
 - **WHEN** `boom import adr <dir>` runs with no `--repository`
 - **THEN** it exits 2 saying an import names its repository, and nothing is appended
+
+#### Scenario: An imported record stands for its repository alone
+
+- **WHEN** `0003-amounts-in-cents.md` is imported with `--repository shop` and accepted, and then `boom show amounts-in-cents --json`, `boom query --repository shop --json` and `boom query --repository billing --json` run
+- **THEN** the version's `repositories` is `["shop"]`, the query for `shop` gives `amounts-in-cents`, and the query for `billing` does not
 
 ### Requirement: Superseded, deprecated and rejected records come in as history
 

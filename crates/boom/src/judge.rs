@@ -15,8 +15,8 @@ use std::collections::BTreeMap;
 use ssh_key::PublicKey;
 
 use crate::claim::{self, Kind, Proposal};
-use crate::entry::{Act, Actor, Entry, Form, Imported};
-use crate::sign;
+use crate::entry::{Act, Actor, Attach, Entry, Form, Imported};
+use crate::{repository, sign};
 
 /// A person the store registers.
 #[derive(Debug, Clone)]
@@ -65,6 +65,9 @@ impl Status {
 pub struct Version {
     /// The version as proposed.
     pub proposal: Proposal,
+    /// What it binds: the repositories its proposal names, or none for
+    /// the whole system.
+    pub repositories: Vec<String>,
     /// Who proposed it.
     pub proposer: Actor,
     /// The entry that proposed it.
@@ -220,7 +223,10 @@ fn check_form(act: &Act) -> Result<(), String> {
             let key = registered_key(key)?;
             sign::check_key_type(&key)
         }
-        Act::Proposed { claim, .. } => claim.check(),
+        Act::Proposed { claim, attach, .. } => {
+            claim.check()?;
+            check_attach(attach.as_ref())
+        }
         Act::Accepted { name, .. } => claim::check_name(name),
         Act::Rejected { name, reason, .. } => {
             claim::check_name(name)?;
@@ -231,6 +237,43 @@ fn check_form(act: &Act) -> Result<(), String> {
             }
         }
     }
+}
+
+/// An attachment's form: a repository at least, each kebab case, in
+/// ascending order and none twice (claim-attachments; design 2).
+fn check_attach(attach: Option<&Attach>) -> Result<(), String> {
+    let Some(attach) = attach else {
+        return Ok(());
+    };
+    if attach.repositories.is_empty() {
+        return Err(
+            "an attach names a repository at least: one of the whole system holds no attach"
+                .to_owned(),
+        );
+    }
+    for name in &attach.repositories {
+        repository::check_name(name)?;
+    }
+    for pair in attach.repositories.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(format!(
+                "an attach names each repository once: {} is named twice",
+                pair[0]
+            ));
+        }
+        if pair[0] > pair[1] {
+            return Err(format!(
+                "an attach names its repositories in order: {} comes before {}",
+                pair[1], pair[0]
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The repositories an attachment names, none for the whole system.
+pub fn repositories(attach: Option<&Attach>) -> &[String] {
+    attach.map_or(&[], |attach| attach.repositories.as_slice())
 }
 
 fn registered_key(key: &str) -> Result<PublicKey, String> {
@@ -324,12 +367,14 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
         }
         Act::Proposed {
             claim,
-            imported: Some(imported),
-        } => match check_imported(state, claim, imported)? {
-            Some(repeat) => Ok(repeat),
-            None => check_proposal(state, claim),
-        },
-        Act::Proposed { claim, .. } => check_proposal(state, claim),
+            imported,
+            attach,
+        } => {
+            if let Some(imported) = imported {
+                check_imported(state, claim, imported)?;
+            }
+            check_proposal(state, claim, attach.as_ref())
+        }
         Act::Accepted { name, version } => {
             let accepter = actor_name(&entry.actor).unwrap_or_default();
             check_accept(state, name, version, accepter)
@@ -372,12 +417,26 @@ fn check_registration(
     Ok(Verdict::Counts)
 }
 
-fn check_proposal(state: &State, proposal: &Proposal) -> Result<Verdict, String> {
+fn check_proposal(
+    state: &State,
+    proposal: &Proposal,
+    attach: Option<&Attach>,
+) -> Result<Verdict, String> {
     let name = &proposal.name;
     let claim = state.claims.get(name);
     if let Some(claim) = claim {
         if let Some(version) = claim.version(&proposal.version) {
-            return Ok(Verdict::Repeats(version.proposed_in));
+            // The same version under the same attachment is a repeat;
+            // under another, a move, which no proposal makes (record
+            // 0008, point 4).
+            if version.repositories == repositories(attach) {
+                return Ok(Verdict::Repeats(version.proposed_in));
+            }
+            return Err(format!(
+                "{name}@{} is attached to {}; a version's attachment does not move",
+                proposal.version,
+                repository::words(&version.repositories)
+            ));
         }
         if claim.kind != proposal.kind {
             return Err(format!(
@@ -408,13 +467,10 @@ fn check_proposal(state: &State, proposal: &Proposal) -> Result<Verdict, String>
 /// The rules an imported proposal is held to, after those every
 /// proposal keeps (design 7): its record read once, its name held by no
 /// claim, and a decision's number held by no other claim that came in
-/// with it. Answers a repeat where the record came in before as this
-/// version.
-fn check_imported(
-    state: &State,
-    proposal: &Proposal,
-    imported: &Imported,
-) -> Result<Option<Verdict>, String> {
+/// with it. A record that came in before as this version passes, for
+/// `check_proposal` to answer as a repeat where its attachment is the
+/// same.
+fn check_imported(state: &State, proposal: &Proposal, imported: &Imported) -> Result<(), String> {
     let name = &proposal.name;
     let versions = || {
         state.claims.values().flat_map(|claim| {
@@ -428,7 +484,7 @@ fn check_imported(
         versions().find(|(_, _, from)| from.source() == imported.source())
     {
         if &claim.name == name && version.proposal.version == proposal.version {
-            return Ok(Some(Verdict::Repeats(version.proposed_in)));
+            return Ok(());
         }
         let held = &version.proposal.version;
         return Err(format!(
@@ -457,7 +513,7 @@ fn check_imported(
             ));
         }
     }
-    Ok(None)
+    Ok(())
 }
 
 fn find<'a>(
@@ -568,7 +624,11 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 },
             );
         }
-        Act::Proposed { claim, imported } => {
+        Act::Proposed {
+            claim,
+            imported,
+            attach,
+        } => {
             let entry_claim = state
                 .claims
                 .entry(claim.name.clone())
@@ -580,6 +640,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 });
             entry_claim.versions.push(Version {
                 proposal: claim.clone(),
+                repositories: repositories(attach.as_ref()).to_vec(),
                 proposer: entry.actor.clone(),
                 proposed_in: seq,
                 status: Status::Proposed,
