@@ -21,13 +21,16 @@ use crate::store::{self, Store, Written};
 use crate::Failure;
 
 /// What a command reads from its process: the folders a store's path
-/// is resolved under, and the clock an entry's time is read from.
+/// is resolved under, the working folder a repository is declared from,
+/// and the clock an entry's time is read from.
 #[derive(Debug, Clone, Default)]
 pub struct Env {
     /// `XDG_DATA_HOME`, where it is set.
     pub xdg_data_home: Option<PathBuf>,
     /// `HOME`, where it is set.
     pub home: Option<PathBuf>,
+    /// The working folder, where it can be read.
+    pub cwd: Option<PathBuf>,
     /// The clock.
     pub clock: Clock,
 }
@@ -62,6 +65,7 @@ impl Env {
         Env {
             xdg_data_home: var("XDG_DATA_HOME").map(PathBuf::from),
             home: var("HOME").map(PathBuf::from),
+            cwd: std::env::current_dir().ok(),
             clock: Clock::System,
         }
     }

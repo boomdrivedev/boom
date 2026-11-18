@@ -191,6 +191,7 @@ impl Place {
         let env = boom::cli::Env {
             xdg_data_home: Some(dir.path().join("data")),
             home: Some(dir.path().join("home")),
+            cwd: Some(dir.path().to_owned()),
             clock: boom::cli::Clock::Fixed(1_763_424_000),
         };
         let store = dir.path().join("boom.sqlite");
