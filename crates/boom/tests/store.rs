@@ -239,3 +239,106 @@ fn views_behind_the_log_are_rebuilt_before_an_answer() {
         1
     );
 }
+
+fn agents_proposal_command(place: &Place, name: &str) -> std::process::Command {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_boom"));
+    command
+        .args([
+            "propose",
+            "invariant",
+            name,
+            "Every amount names its currency.",
+            "--scenario",
+            support::SCENARIO,
+            "--provenance",
+            name,
+            "--store",
+        ])
+        .arg(&place.store)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null());
+    command
+}
+
+#[test]
+fn two_proposals_at_once_both_land_chained() {
+    let place = Place::new();
+    place.made();
+    let mut one = agents_proposal_command(&place, "money-has-currency")
+        .spawn()
+        .unwrap();
+    let mut two = agents_proposal_command(&place, "refund-within-payment")
+        .spawn()
+        .unwrap();
+    assert_eq!(one.wait().unwrap().code(), Some(0));
+    assert_eq!(two.wait().unwrap().code(), Some(0));
+    let log = place.log();
+    assert_eq!(log.len(), 3);
+    let mut proposed: Vec<String> = log[1..]
+        .iter()
+        .map(|entry| {
+            entry["actor"]["agent"]["provenance"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    proposed.sort();
+    assert_eq!(proposed, ["money-has-currency", "refund-within-payment"]);
+    for at in 1..log.len() {
+        assert_eq!(log[at]["prev"], log[at - 1]["hash"]);
+        assert_eq!(log[at]["counted"], true);
+    }
+}
+
+#[test]
+fn a_read_during_a_write_sees_none_of_it() {
+    let place = Place::new();
+    place.made();
+    place.proposed("money-has-currency", "Every amount names its currency.");
+    let before = place.show("money-has-currency");
+    let writer = place.sqlite();
+    writer.execute_batch("BEGIN IMMEDIATE").unwrap();
+    writer
+        .execute(
+            "INSERT INTO log (seq, prev, hash, signed, signature) VALUES (3, 'p', 'h', '{}', NULL)",
+            [],
+        )
+        .unwrap();
+    let started = std::time::Instant::now();
+    let during = place.show("money-has-currency");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "the read waited on the write: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(during, before);
+    writer.execute_batch("ROLLBACK").unwrap();
+}
+
+#[test]
+fn an_append_and_its_views_are_one_transaction() {
+    let place = Place::new();
+    place.made();
+    place
+        .sqlite()
+        .execute_batch(
+            "CREATE TRIGGER no_versions BEFORE INSERT ON versions \
+             BEGIN SELECT RAISE(ABORT, 'versions refused'); END;",
+        )
+        .unwrap();
+    let rows = place.rows();
+    let outcome = place.run(&[
+        "propose",
+        "invariant",
+        "money-has-currency",
+        "Every amount names its currency.",
+        "--scenario",
+        support::SCENARIO,
+        "--provenance",
+        "run-1",
+    ]);
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    assert!(outcome.stderr.contains("versions refused"), "{outcome:?}");
+    assert_eq!(place.rows(), rows);
+}
