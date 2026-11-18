@@ -1,7 +1,7 @@
 ---
 number: 5
 title: Boom keeps its records in a database on each machine, and the drive orders them when attached
-status: proposed
+status: accepted
 date: 2026-11-18
 decision-makers:
 - Chuck Swanberg
@@ -10,7 +10,7 @@ decision-makers:
 
 # Boom keeps its records in a database on each machine, and the drive orders them when attached
 
-Status: proposed to the user on 2026-11-18, as `briefs.15` has it; accepted only on their yes.
+Status: accepted by the user on 2026-11-18, on their card ("Approved").
 
 Boom keeps decisions and rules in a database on each machine, not in a Git repository. Every change is added to a log that is never edited, each record keeps its earlier versions, and long text is stored once under its fingerprint. On its own, Boom numbers the changes itself. Attached to Boomdrive, the drive in the cloud puts every change in order, every machine keeps a full copy, and the runner carries changes up and down. You review on the rail, not in pull requests. Each repository's specs stay in that repository; Boom holds the decisions and rules that cross repositories. This replaces the plan of 1 November to keep Boom's records as text files on a Git branch.
 
