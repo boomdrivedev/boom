@@ -13,11 +13,12 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
-use crate::claim::{Kind, Proposal};
-use crate::entry::{Act, Actor, Entry};
+use crate::claim::{History, Kind, Proposal};
+use crate::entry::{Act, Actor, Entry, Form, Imported};
+use crate::import::{self, Read, Record};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
-use crate::store::{self, Store, Written};
+use crate::store::{self, Append, Store, Written};
 use crate::Failure;
 
 /// What a command reads from its process: the folders a store's path
@@ -147,10 +148,12 @@ enum Command {
         #[arg(long)]
         key: Option<PathBuf>,
     },
-    /// Accept a version, as a person signing with their security key.
+    /// Accept one or more versions, as a person signing each with their
+    /// security key, all appended together or none.
     Accept {
-        /// The version, `<name>@<version>`.
-        target: String,
+        /// The versions, each `<name>@<version>`.
+        #[arg(required = true, value_name = "TARGET")]
+        targets: Vec<String>,
         /// The accepting person's security key.
         #[arg(long)]
         key: Option<PathBuf>,
@@ -174,6 +177,47 @@ enum Command {
     },
     /// Show the log's entries in order, each with whether it counts.
     Log,
+    /// Import a repository's decision records or rules once, proposing
+    /// each in its file's own words with what its agent drafts.
+    Import {
+        #[command(subcommand)]
+        what: ImportCommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ImportCommand {
+    /// Import a folder of MADR decision records.
+    Adr {
+        /// The folder.
+        dir: PathBuf,
+        #[command(flatten)]
+        options: ImportOptions,
+    },
+    /// Import a rules page, each rule a bullet `**[<id>]**`.
+    Rules {
+        /// The page.
+        page: PathBuf,
+        #[command(flatten)]
+        options: ImportOptions,
+    },
+}
+
+#[derive(clap::Args, Debug)]
+struct ImportOptions {
+    /// The repository the records are of, kebab case.
+    #[arg(long, value_name = "NAME")]
+    repository: Option<String>,
+    /// The drafts file, `boom-import-drafts/1`: each record's scenarios
+    /// and each rule's name, by its source.
+    #[arg(long, value_name = "FILE")]
+    drafts: Option<PathBuf>,
+    /// The agent's session or run.
+    #[arg(long, value_name = "TEXT")]
+    provenance: Option<String>,
+    /// Read and answer, writing nothing.
+    #[arg(long)]
+    dry_run: bool,
 }
 
 /// An answer: one JSON object naming its format, and its words.
@@ -293,7 +337,7 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
             keys,
             env,
         ),
-        Command::Accept { target, key } => accept(path, &target, key.as_deref(), keys, env),
+        Command::Accept { targets, key } => accept(path, &targets, key.as_deref(), keys, env),
         Command::Reject {
             target,
             reason,
@@ -301,6 +345,12 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
         } => reject(path, &target, reason, key.as_deref(), keys, env),
         Command::Show { target } => show(path, &target),
         Command::Log => log(path),
+        Command::Import { what } => match what {
+            ImportCommand::Adr { dir, options } => import(path, Form::Madr, &dir, options, env),
+            ImportCommand::Rules { page, options } => {
+                import(path, Form::Rules, &page, options, env)
+            }
+        },
     }
 }
 
@@ -530,6 +580,7 @@ fn propose(
         proposed.scenarios,
         body.as_deref().map(crate::sha256_hex),
         proposed.amends,
+        None,
     );
     let signer = key.map(|key| keys.signer(key)).transpose()?;
     let (written, state) = write(&mut store, signer.as_deref(), body.as_deref(), |state| {
@@ -544,6 +595,7 @@ fn propose(
             actor,
             act: Act::Proposed {
                 claim: proposal.clone(),
+                imported: None,
             },
         })
     })?;
@@ -586,12 +638,15 @@ fn version_target<'a>(command: &str, target: &'a str) -> Result<(&'a str, &'a st
 
 fn accept(
     path: &Path,
-    target: &str,
+    targets: &[String],
     key: Option<&Path>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
-    let (name, version) = version_target("accept", target)?;
+    let versions = targets
+        .iter()
+        .map(|target| version_target("accept", target))
+        .collect::<Result<Vec<_>, _>>()?;
     let Some(key) = key else {
         return Err(Failure::refused(
             "only a person accepts: boom accept takes the person's --key",
@@ -599,36 +654,97 @@ fn accept(
     };
     let mut store = Store::open(path)?;
     let signer = keys.signer(key)?;
-    let (written, state) = write(&mut store, Some(signer.as_ref()), None, |state| {
-        Ok(Entry {
+    let state = store.state()?;
+    let person = person_of(&state, signer.as_ref(), key)?;
+    // Every target is judged, each against the state the ones before it
+    // build, before the key signs any (design 9).
+    let mut judged = state;
+    let mut to_sign = Vec::new();
+    for &(name, version) in &versions {
+        let entry = Entry {
             at: env.clock.now(),
-            actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
+            actor: Actor::Person(person.clone()),
             act: Act::Accepted {
                 name: name.to_owned(),
                 version: version.to_owned(),
             },
+        };
+        let signed = entry.signed_part();
+        match judge::judge(
+            &judged,
+            &entry,
+            &signed,
+            Proof::ToBeSigned(signer.public_key()),
+        ) {
+            Verdict::Counts => {
+                judge::apply(&mut judged, 0, &entry);
+                to_sign.push(signed);
+            }
+            Verdict::Refused(why) => return Err(Failure::Refused(naming(name, version, why))),
+            Verdict::Repeats(_) => {}
+        }
+    }
+    let mut signatures = Vec::with_capacity(to_sign.len());
+    for signed in &to_sign {
+        signatures.push(signer.sign(signed.as_bytes())?);
+    }
+    let appends: Vec<Append<'_>> = to_sign
+        .iter()
+        .zip(&signatures)
+        .map(|(signed, signature)| Append {
+            signed,
+            signature: Some(signature),
+            blob: None,
         })
-    })?;
-    let accepted = state.claims[name]
-        .version(version)
-        .expect("an accept written is in the state");
-    let by = accepted.decided_by.clone().unwrap_or_default();
-    Ok(Answer {
-        json: json!({
-            "format": "boom-accept/1",
+        .collect();
+    let state = if appends.is_empty() {
+        store.state()?
+    } else {
+        store.append_all(&appends)?.1
+    };
+    let mut accepted = Vec::with_capacity(versions.len());
+    let mut words = String::new();
+    for &(name, version) in &versions {
+        let found = state.claims[name]
+            .version(version)
+            .expect("an accept written is in the state");
+        let by = found.decided_by.clone().unwrap_or_default();
+        let seq = found.decided_in.unwrap_or_default();
+        accepted.push(json!({
             "claim": name,
             "version": version,
-            "status": accepted.status.as_str(),
-            "replaced": accepted.proposal.base,
+            "status": found.status.as_str(),
+            "replaced": found.proposal.base,
             "by": by,
-            "entry": written.seq(),
-        }),
-        words: format!(
-            "{name}@{version} is {}, accepted by {by}, by entry {}\n",
-            accepted.status.as_str(),
-            written.seq()
-        ),
+            "entry": seq,
+        }));
+        words.push_str(&format!(
+            "{name}@{version} is {}, accepted by {by}, by entry {seq}\n",
+            found.status.as_str(),
+        ));
+    }
+    let mut object = serde_json::Map::new();
+    object.insert("format".into(), json!("boom-accept/1"));
+    if let [one] = accepted.as_slice() {
+        if let Some(fields) = one.as_object() {
+            object.extend(fields.clone());
+        }
+    }
+    object.insert("accepted".into(), Value::Array(accepted));
+    Ok(Answer {
+        json: Value::Object(object),
+        words,
     })
+}
+
+/// A refusal of `name@version` that names it.
+fn naming(name: &str, version: &str, why: String) -> String {
+    let target = format!("{name}@{version}");
+    if why.contains(&target) {
+        why
+    } else {
+        format!("{target}: {why}")
+    }
 }
 
 fn reject(
@@ -692,7 +808,7 @@ fn actor_words(actor: &Actor) -> String {
 }
 
 fn version_json(view: &store::VersionView) -> serde_json::Map<String, Value> {
-    let accepted = matches!(view.status.as_str(), "standing" | "replaced");
+    let accepted = matches!(view.status.as_str(), "standing" | "replaced" | "history");
     let rejected = view.status == "rejected";
     let mut object = serde_json::Map::new();
     object.insert("version".into(), json!(view.version));
@@ -791,6 +907,7 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
             ),
             None => None,
         };
+        let (imported, history) = proposed_with(conn, view.proposed_in)?;
         let mut object = serde_json::Map::new();
         object.insert("format".into(), json!("boom-show/1"));
         object.insert("claim".into(), json!(claim.name));
@@ -800,6 +917,8 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
         object.insert("scenarios".into(), json!(view.scenarios));
         object.insert("body_fingerprint".into(), json!(view.body));
         object.insert("body".into(), json!(body));
+        object.insert("imported".into(), json!(imported));
+        object.insert("history".into(), json!(history));
         let mut words = format!(
             "{} {}@{}\n{}\n",
             claim.kind,
@@ -809,6 +928,26 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
         );
         for scenario in &view.scenarios {
             words.push_str(&format!("scenario: {scenario}\n"));
+        }
+        if let Some(history) = &history {
+            words.push_str(&format!("history: {}", history.status.as_str()));
+            if let Some(by) = &history.by {
+                words.push_str(&format!(" by {by}"));
+            }
+            words.push('\n');
+        }
+        if let Some(imported) = &imported {
+            words.push_str(&format!(
+                "imported from {} of {}",
+                imported.from, imported.repository
+            ));
+            if let Some(legacy) = &imported.legacy {
+                words.push_str(&format!(", {legacy}"));
+            }
+            if imported.drafted {
+                words.push_str(", its scenarios drafted");
+            }
+            words.push('\n');
         }
         if let Some(body) = &body {
             words.push('\n');
@@ -822,6 +961,25 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
             words,
         })
     })
+}
+
+/// What the entry that proposed a version says of where it came from
+/// and its history (design 5).
+fn proposed_with(
+    conn: &rusqlite::Connection,
+    seq: u64,
+) -> Result<(Option<Imported>, Option<History>), Failure> {
+    let signed = store::signed_at(conn, seq)?
+        .ok_or_else(|| Failure::not_run(format!("the log holds no entry {seq}")))?;
+    match Entry::parse(&signed) {
+        Ok(Entry {
+            act: Act::Proposed { claim, imported },
+            ..
+        }) => Ok((imported.map(|imported| *imported), claim.history)),
+        _ => Err(Failure::not_run(format!(
+            "entry {seq} is not the proposal its version names"
+        ))),
+    }
 }
 
 fn log(path: &Path) -> Result<Answer, Failure> {
@@ -872,4 +1030,188 @@ fn log(path: &Path) -> Result<Answer, Failure> {
             words,
         })
     })
+}
+
+fn import(
+    path: &Path,
+    form: Form,
+    target: &Path,
+    options: ImportOptions,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    let Some(repository) = options
+        .repository
+        .filter(|repository| !repository.trim().is_empty())
+    else {
+        return Err(Failure::refused(
+            "an import names its repository, with --repository",
+        ));
+    };
+    crate::claim::check_name(&repository)
+        .map_err(|why| Failure::refused(format!("the repository's name: {why}")))?;
+    let provenance = options
+        .provenance
+        .filter(|provenance| !provenance.trim().is_empty());
+    if !options.dry_run && provenance.is_none() {
+        return Err(Failure::refused(
+            "an agent's proposal names its provenance, with --provenance",
+        ));
+    }
+    let mut read = match form {
+        Form::Madr => import::read_adr(target, &repository)?,
+        Form::Rules => import::read_rules(target, &repository)?,
+    };
+    if let Some(drafts) = &options.drafts {
+        import::read_drafts(drafts)?.apply(&mut read)?;
+    }
+    if options.dry_run {
+        return Ok(import_answer(&repository, &read, None));
+    }
+    let needing: Vec<String> = read
+        .records
+        .iter()
+        .filter(|record| !record.needs().is_empty())
+        .map(|record| format!("{} needs {}", record.source, record.needs().join(" and ")))
+        .collect();
+    if !needing.is_empty() {
+        return Err(Failure::refused(format!(
+            "an import proposes a record once its draft gives what it needs: {}",
+            needing.join("; ")
+        )));
+    }
+    import::check_names(&read.records)?;
+    let provenance = provenance.unwrap_or_default();
+    let mut store = Store::open(path)?;
+    let mut judged = store.state()?;
+    let mut entries = Vec::new();
+    for record in &read.records {
+        let entry = Entry {
+            at: env.clock.now(),
+            actor: Actor::Agent {
+                provenance: provenance.clone(),
+            },
+            act: Act::Proposed {
+                claim: record.proposal(),
+                imported: Some(Box::new(record.imported.clone())),
+            },
+        };
+        let signed = entry.signed_part();
+        match judge::judge(&judged, &entry, &signed, Proof::Unsigned) {
+            Verdict::Counts => {
+                judge::apply(&mut judged, 0, &entry);
+                entries.push((signed, record.body.as_deref()));
+            }
+            Verdict::Refused(why) => {
+                return Err(Failure::Refused(format!("{}: {why}", record.source)))
+            }
+            Verdict::Repeats(_) => {}
+        }
+    }
+    let appends: Vec<Append<'_>> = entries
+        .iter()
+        .map(|(signed, body)| Append {
+            signed,
+            signature: None,
+            blob: body.map(str::as_bytes),
+        })
+        .collect();
+    let state = if appends.is_empty() {
+        store.state()?
+    } else {
+        store.append_all(&appends)?.1
+    };
+    Ok(import_answer(&repository, &read, Some(&state)))
+}
+
+/// An import's answer: each record, as read or as proposed, the files
+/// skipped, and the versions to accept together.
+fn import_answer(repository: &str, read: &Read, state: Option<&State>) -> Answer {
+    let mut records = Vec::with_capacity(read.records.len());
+    let mut words = String::new();
+    let mut to_accept = Vec::new();
+    for record in &read.records {
+        let proposal = record.proposal();
+        let found = state.and_then(|state| {
+            state
+                .claims
+                .get(&proposal.name)
+                .and_then(|claim| claim.version(&proposal.version))
+        });
+        let name = record.name.as_deref();
+        records.push(json!({
+            "source": record.source,
+            "kind": record.kind.as_str(),
+            "name": name,
+            "version": found.map(|_| &proposal.version),
+            "status": found.map(|version| version.status.as_str()),
+            "entry": found.map(|version| version.proposed_in),
+            "statement": record.statement,
+            "body": record.body,
+            "scenarios": record.scenarios,
+            "imported": record.imported,
+            "history": record.history,
+            "needs": record.needs(),
+        }));
+        words.push_str(&record_words(
+            record,
+            found.map(|version| {
+                (
+                    proposal.version.as_str(),
+                    version.status.as_str(),
+                    version.proposed_in,
+                )
+            }),
+        ));
+        if found.is_some() && !record.waits() {
+            to_accept.push(format!("{}@{}", proposal.name, proposal.version));
+        }
+    }
+    let skipped: Vec<Value> = read
+        .skipped
+        .iter()
+        .map(|skipped| json!({"file": skipped.file, "why": skipped.why}))
+        .collect();
+    for skipped in &read.skipped {
+        words.push_str(&format!("skipped {}: {}\n", skipped.file, skipped.why));
+    }
+    let accept = state.map(|_| {
+        let command = (!to_accept.is_empty())
+            .then(|| format!("boom accept {} --key <key>", to_accept.join(" ")));
+        if let Some(command) = &command {
+            words.push_str(&format!("accept them together: {command}\n"));
+        }
+        json!({"versions": to_accept, "command": command})
+    });
+    Answer {
+        json: json!({
+            "format": "boom-import/1",
+            "repository": repository,
+            "dry_run": state.is_none(),
+            "records": records,
+            "skipped": skipped,
+            "accept": accept,
+        }),
+        words,
+    }
+}
+
+fn record_words(record: &Record, proposed: Option<(&str, &str, u64)>) -> String {
+    let name = record.name.as_deref().unwrap_or("(no name)");
+    let mut words = format!("{} {name}", record.kind.as_str());
+    if let Some((version, status, seq)) = proposed {
+        words.push_str(&format!("@{version} is {status}, by entry {seq},"));
+    }
+    words.push_str(&format!(" from {}", record.source));
+    if let Some(history) = &record.history {
+        words.push_str(&format!(", history: {}", history.status.as_str()));
+        if let Some(by) = &history.by {
+            words.push_str(&format!(" by {by}"));
+        }
+    }
+    let needs = record.needs();
+    if !needs.is_empty() {
+        words.push_str(&format!(", needs {}", needs.join(" and ")));
+    }
+    words.push('\n');
+    words
 }

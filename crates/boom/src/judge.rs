@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use ssh_key::PublicKey;
 
 use crate::claim::{self, Kind, Proposal};
-use crate::entry::{Act, Actor, Entry};
+use crate::entry::{Act, Actor, Entry, Form, Imported};
 use crate::sign;
 
 /// A person the store registers.
@@ -42,6 +42,9 @@ pub enum Status {
     Replaced,
     /// Rejected.
     Rejected,
+    /// Accepted as history: it never stands and replaces no version
+    /// (design 6).
+    History,
 }
 
 impl Status {
@@ -52,6 +55,7 @@ impl Status {
             Status::Standing => "standing",
             Status::Replaced => "replaced",
             Status::Rejected => "rejected",
+            Status::History => "history",
         }
     }
 }
@@ -73,6 +77,8 @@ pub struct Version {
     pub decided_in: Option<u64>,
     /// Why it was rejected.
     pub reason: Option<String>,
+    /// Where it came in from, for a version an import proposed.
+    pub imported: Option<Imported>,
 }
 
 /// A claim: its kind, its standing version, and its versions in the
@@ -214,7 +220,7 @@ fn check_form(act: &Act) -> Result<(), String> {
             let key = registered_key(key)?;
             sign::check_key_type(&key)
         }
-        Act::Proposed { claim } => claim.check(),
+        Act::Proposed { claim, .. } => claim.check(),
         Act::Accepted { name, .. } => claim::check_name(name),
         Act::Rejected { name, reason, .. } => {
             claim::check_name(name)?;
@@ -316,7 +322,14 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
         Act::Registered { person, key, owner } => {
             check_registration(state, &entry.actor, person, key, *owner)
         }
-        Act::Proposed { claim } => check_proposal(state, claim),
+        Act::Proposed {
+            claim,
+            imported: Some(imported),
+        } => match check_imported(state, claim, imported)? {
+            Some(repeat) => Ok(repeat),
+            None => check_proposal(state, claim),
+        },
+        Act::Proposed { claim, .. } => check_proposal(state, claim),
         Act::Accepted { name, version } => {
             let accepter = actor_name(&entry.actor).unwrap_or_default();
             check_accept(state, name, version, accepter)
@@ -392,6 +405,61 @@ fn check_proposal(state: &State, proposal: &Proposal) -> Result<Verdict, String>
     Ok(Verdict::Counts)
 }
 
+/// The rules an imported proposal is held to, after those every
+/// proposal keeps (design 7): its record read once, its name held by no
+/// claim, and a decision's number held by no other claim that came in
+/// with it. Answers a repeat where the record came in before as this
+/// version.
+fn check_imported(
+    state: &State,
+    proposal: &Proposal,
+    imported: &Imported,
+) -> Result<Option<Verdict>, String> {
+    let name = &proposal.name;
+    let versions = || {
+        state.claims.values().flat_map(|claim| {
+            claim
+                .versions
+                .iter()
+                .filter_map(move |version| Some((claim, version, version.imported.as_ref()?)))
+        })
+    };
+    if let Some((claim, version, _)) =
+        versions().find(|(_, _, from)| from.source() == imported.source())
+    {
+        if &claim.name == name && version.proposal.version == proposal.version {
+            return Ok(Some(Verdict::Repeats(version.proposed_in)));
+        }
+        let held = &version.proposal.version;
+        return Err(format!(
+            "{} came in as {}@{held}: boom keeps the record now and never takes its file again as the record; amend that version, with boom propose --amends {held}",
+            imported.named(),
+            claim.name,
+        ));
+    }
+    if let Some(claim) = state.claims.get(name) {
+        return Err(format!(
+            "the name {name} is held by the {} {name}: name {} otherwise in its draft",
+            claim.kind.as_str(),
+            imported.named(),
+        ));
+    }
+    if let (Form::Madr, Some(number)) = (imported.form, &imported.legacy) {
+        if let Some((claim, _, from)) = versions()
+            .find(|(_, _, from)| from.form == Form::Madr && from.legacy.as_ref() == Some(number))
+        {
+            return Err(format!(
+                "the number {number} of {} is held by the {} {}, which came in with it from {}",
+                imported.named(),
+                claim.kind.as_str(),
+                claim.name,
+                from.named(),
+            ));
+        }
+    }
+    Ok(None)
+}
+
 fn find<'a>(
     state: &'a State,
     name: &str,
@@ -429,6 +497,14 @@ fn check_accept(
             ));
         }
         Status::Rejected => return Err(format!("{name}@{version} is rejected, by {by}")),
+        Status::History if by == accepter => {
+            return Ok(Verdict::Repeats(found.decided_in.unwrap_or_default()))
+        }
+        Status::History => {
+            return Err(format!(
+                "{name}@{version} is history already, accepted by {by}"
+            ))
+        }
         Status::Proposed => {}
     }
     if found.proposer == Actor::Person(accepter.to_owned()) {
@@ -436,7 +512,9 @@ fn check_accept(
             "{name}@{version} waits on another person: no one accepts their own proposal"
         ));
     }
-    if found.proposal.base != claim.standing {
+    // A version that comes in as history never stands, so it is accepted
+    // whatever stands (design 6).
+    if found.proposal.history.is_none() && found.proposal.base != claim.standing {
         let amends = found
             .proposal
             .base
@@ -490,7 +568,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 },
             );
         }
-        Act::Proposed { claim } => {
+        Act::Proposed { claim, imported } => {
             let entry_claim = state
                 .claims
                 .entry(claim.name.clone())
@@ -508,6 +586,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 decided_by: None,
                 decided_in: None,
                 reason: None,
+                imported: imported.as_deref().cloned(),
             });
         }
         Act::Accepted { name, version } => {
@@ -515,6 +594,16 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 .claims
                 .get_mut(name)
                 .expect("a counted accept's claim");
+            let accepted = claim
+                .version_mut(version)
+                .expect("a counted accept's version");
+            if accepted.proposal.history.is_some() {
+                // History never stands and replaces no version.
+                accepted.status = Status::History;
+                accepted.decided_by = actor;
+                accepted.decided_in = Some(seq);
+                return;
+            }
             if let Some(standing) = claim.standing.take() {
                 if let Some(replaced) = claim.version_mut(&standing) {
                     replaced.status = Status::Replaced;

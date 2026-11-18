@@ -6,7 +6,9 @@ decision records, a design book, a context map) computed from the
 ledger, and `boom check` reading the work against the claims that hold.
 The crate keeps a store's claims in a log in one SQLite file on the
 machine: an agent proposes, a person accepts or rejects with a security
-key, and every answer is computed from the log. The views it renders
+key, and every answer is computed from the log. It imports a
+repository's MADR records and rules page once, proposing each in its
+file's own words for a person to accept together. The views it renders
 and `boom check` are not built yet.
 
 ## The family
