@@ -307,3 +307,20 @@ fn another_person_accepts_it() {
     assert_eq!(accepted["act"], "accepted");
     assert_eq!(accepted["actor"], serde_json::json!({"person": "bo"}));
 }
+
+#[test]
+fn a_reject_with_no_reason_is_refused() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    place.refused(
+        &[
+            "reject",
+            &format!("money-has-currency@{version}"),
+            "--key",
+            &ada,
+        ],
+        "a reject gives its reason",
+    );
+    assert_eq!(place.status("money-has-currency", &version), "proposed");
+}

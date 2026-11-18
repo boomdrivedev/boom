@@ -298,3 +298,25 @@ fn proposed_standing_replaced() {
     assert_eq!(versions[1]["status"], "standing");
     assert_eq!(versions[1]["base"], first.as_str());
 }
+
+#[test]
+fn a_rejected_version_gives_who_and_why() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    let target = format!("money-has-currency@{version}");
+    let reason = "An amount in a ledger of one currency names none.";
+    let answer = place.json(&["reject", &target, "--reason", reason, "--key", &ada]);
+    assert_eq!(answer["format"], "boom-reject/1");
+    assert_eq!(answer["status"], "rejected");
+    let again = place.json(&["reject", &target, "--reason", reason, "--key", &ada]);
+    assert_eq!(again, answer);
+    assert_eq!(place.acts(), ["registered", "proposed", "rejected"]);
+    let shown = place.show("money-has-currency");
+    let versions = shown["versions"].as_array().unwrap();
+    assert_eq!(versions[0]["status"], "rejected");
+    assert_eq!(versions[0]["rejected_by"], "ada");
+    assert_eq!(versions[0]["accepted_by"], json!(null));
+    assert_eq!(versions[0]["reason"], reason);
+    assert_eq!(shown["standing"], json!(null));
+}
