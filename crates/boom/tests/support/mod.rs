@@ -467,3 +467,16 @@ pub fn accept_entry(person: &str, name: &str, version: &str) -> boom::entry::Ent
         },
     }
 }
+
+impl Place {
+    /// Writes a folder `name` in the place holding `files`, each a file
+    /// name and its text, giving the folder's path.
+    pub fn folder(&self, name: &str, files: &[(&str, &str)]) -> String {
+        let dir = self.dir.path().join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (file, text) in files {
+            std::fs::write(dir.join(file), text).unwrap();
+        }
+        path_arg(&dir)
+    }
+}

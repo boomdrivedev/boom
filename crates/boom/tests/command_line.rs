@@ -195,3 +195,30 @@ fn not_run_answered_as_json() {
     let reason = answer["not_run"]["reason"].as_str().unwrap();
     assert!(reason.contains("entry 2"), "{reason}");
 }
+
+#[test]
+fn an_import_answered_as_json() {
+    let place = Place::new();
+    place.made();
+    let dir = place.folder(
+        "adr",
+        &[(
+            "0001-record-architecture-decisions.md",
+            "---\nstatus: accepted\n---\n\n# Record architecture decisions\n",
+        )],
+    );
+    let outcome = place.run(&[
+        "import",
+        "adr",
+        &dir,
+        "--repository",
+        "shop",
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
+    let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();
+    assert_eq!(answer["format"], "boom-import/1");
+    assert!(!outcome.stderr.is_empty(), "the words go to standard error");
+}
