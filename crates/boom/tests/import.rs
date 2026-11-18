@@ -342,3 +342,179 @@ fn an_import_with_no_repository_is_refused() {
         "an import names its repository",
     );
 }
+
+const RULES: &str = "# shop rules
+
+The rules that bind wherever the shop changes.
+
+## Rules
+
+### The ledger
+
+- **[core.1]** A record's status is read from its events, never stored
+  on the record.
+- **[core.2]** A view is computed from the ledger and never stored as
+  the truth.
+
+## Details
+
+- **core.1** Rules out: a status field on a record.
+  Source: record 0001.
+- **core.9** Rules out: nothing, since no rule is core.9.
+";
+
+const RULES_ALONE: &str = "# shop rules
+
+## Rules
+
+### The ledger
+
+- **[core.1]** A record's status is read from its events, never stored
+  on the record.
+- **[core.2]** A view is computed from the ledger and never stored as
+  the truth.
+";
+
+const CORE_1: &str = "A record's status is read from its events, never stored on the record.";
+const CORE_2: &str = "A view is computed from the ledger and never stored as the truth.";
+
+/// The page `core.md` in the folder `rules` of the place, with the
+/// details page beside it where one is given.
+fn rules_page(place: &Place, page: &str, details: Option<&str>) -> String {
+    let mut files = vec![("core.md", page)];
+    if let Some(details) = details {
+        files.push(("core-details.md", details));
+    }
+    let dir = place.folder("rules", &files);
+    format!("{dir}/core.md")
+}
+
+/// `boom import rules <page> --repository shop --dry-run --json`'s
+/// answer.
+fn rules_dry_run(place: &Place, page: &str) -> Value {
+    place.json(&["import", "rules", page, "--repository", "shop", "--dry-run"])
+}
+
+#[test]
+fn a_rules_page_read() {
+    let place = Place::new();
+    place.made();
+    let page = rules_page(&place, RULES, None);
+    let before = place.log();
+    let answer = rules_dry_run(&place, &page);
+    assert_eq!(answer["format"], "boom-import/1");
+    let records = answer["records"].as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    let first = record(&answer, "core.1");
+    assert_eq!(first["kind"], "invariant");
+    assert_eq!(first["name"], Value::Null);
+    assert_eq!(first["statement"], CORE_1);
+    assert_eq!(
+        first["body"],
+        "- **core.1** Rules out: a status field on a record.\n  Source: record 0001.\n"
+    );
+    assert_eq!(
+        first["imported"],
+        json!({
+            "repository": "shop",
+            "from": "core.md",
+            "form": "rules",
+            "legacy": "core.1",
+            "status": null,
+            "date": null,
+            "deciders": [],
+            "section": "The ledger",
+            "drafted": true,
+        })
+    );
+    let second = record(&answer, "core.2");
+    assert_eq!(second["statement"], CORE_2);
+    assert_eq!(second["imported"]["legacy"], "core.2");
+    assert_eq!(second["imported"]["section"], "The ledger");
+    assert_eq!(second["body"], Value::Null);
+    assert_eq!(place.log(), before);
+}
+
+#[test]
+fn details_on_the_page_beside_it() {
+    let place = Place::new();
+    place.made();
+    let page = rules_page(
+        &place,
+        RULES_ALONE,
+        Some(
+            "# shop rules, their details\n\n- **core.1** Rules out: a status field on a record.\n",
+        ),
+    );
+    let answer = rules_dry_run(&place, &page);
+    assert_eq!(
+        record(&answer, "core.1")["body"],
+        "- **core.1** Rules out: a status field on a record.\n"
+    );
+    assert_eq!(record(&answer, "core.1")["statement"], CORE_1);
+    assert_eq!(record(&answer, "core.2")["body"], Value::Null);
+}
+
+#[test]
+fn a_page_with_no_rules_is_refused() {
+    let place = Place::new();
+    place.made();
+    let page = rules_page(
+        &place,
+        "# shop rules\n\n## Details\n\n- **core.1** Rules out: x.\n",
+        None,
+    );
+    place.refused(
+        &[
+            "import",
+            "rules",
+            &page,
+            "--repository",
+            "shop",
+            "--provenance",
+            "run-1",
+        ],
+        "core.md: has no `## Rules` section",
+    );
+}
+
+#[test]
+fn one_id_twice_is_refused() {
+    let place = Place::new();
+    place.made();
+    let page = rules_page(
+        &place,
+        "# shop rules\n\n## Rules\n\n- **[core.1]** One rule.\n- **[core.1]** Another rule.\n",
+        None,
+    );
+    let refused = place.refused(
+        &[
+            "import",
+            "rules",
+            &page,
+            "--repository",
+            "shop",
+            "--provenance",
+            "run-1",
+        ],
+        "core.md",
+    );
+    assert!(refused.stderr.contains("core.1"), "{refused:?}");
+}
+
+#[test]
+fn what_a_draft_still_needs() {
+    let place = Place::new();
+    place.made();
+    let page = rules_page(&place, RULES, None);
+    let before = place.log();
+    let answer = rules_dry_run(&place, &page);
+    for source in ["core.1", "core.2"] {
+        assert_eq!(
+            record(&answer, source)["needs"],
+            json!(["a name", "a scenario"]),
+            "{source}"
+        );
+    }
+    assert_eq!(place.log(), before);
+}
