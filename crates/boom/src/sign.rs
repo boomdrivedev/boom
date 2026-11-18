@@ -232,3 +232,11 @@ impl Signer for SshKeygenSigner<'_> {
             .map_err(|_| did_not_sign("wrote a signature that is not text"))
     }
 }
+
+/// A public key as one OpenSSH line, its type and its key, with no
+/// comment.
+pub fn key_line(key: &PublicKey) -> String {
+    PublicKey::new(key.key_data().clone(), "")
+        .to_openssh()
+        .expect("a public key writes as an OpenSSH line")
+}

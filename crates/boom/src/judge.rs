@@ -1,2 +1,576 @@
 //! The rules that decide whether an entry counts, and the state a
-//! replay of the log builds.
+//! replay of the log builds (design 6).
+//!
+//! One judge, asked before a write signs, again inside the write's
+//! transaction, and for every entry whenever the views are rebuilt, so
+//! an entry no write would have made counts for nothing
+//! (`validated-on-read`). Its rules, in order: the entry's form; for a
+//! person's entry, a signature that verifies by the key registered to
+//! that person before it, with presence (for the store's first entry,
+//! the key it registers); for an agent's, an act that is `proposed` and
+//! a provenance; then the act's own rules.
+
+use std::collections::BTreeMap;
+
+use ssh_key::PublicKey;
+
+use crate::claim::{self, Kind, Proposal};
+use crate::entry::{Act, Actor, Entry};
+use crate::sign;
+
+/// A person the store registers.
+#[derive(Debug, Clone)]
+pub struct Person {
+    /// Their name, kebab case.
+    pub name: String,
+    /// Their security key's public half.
+    pub key: PublicKey,
+    /// Whether they are an owner, who registers persons.
+    pub owner: bool,
+    /// The entry that registered them.
+    pub registered_in: u64,
+}
+
+/// A version's status, read from the log (claim-versions).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    /// Waiting on a person.
+    Proposed,
+    /// Accepted, and no later version of its claim is.
+    Standing,
+    /// Accepted, and a later version of its claim is.
+    Replaced,
+    /// Rejected.
+    Rejected,
+}
+
+impl Status {
+    /// The status as an answer names it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Status::Proposed => "proposed",
+            Status::Standing => "standing",
+            Status::Replaced => "replaced",
+            Status::Rejected => "rejected",
+        }
+    }
+}
+
+/// A version of a claim and what the log says of it.
+#[derive(Debug, Clone)]
+pub struct Version {
+    /// The version as proposed.
+    pub proposal: Proposal,
+    /// Who proposed it.
+    pub proposer: Actor,
+    /// The entry that proposed it.
+    pub proposed_in: u64,
+    /// Its status.
+    pub status: Status,
+    /// The person who accepted or rejected it.
+    pub decided_by: Option<String>,
+    /// The entry that accepted or rejected it.
+    pub decided_in: Option<u64>,
+    /// Why it was rejected.
+    pub reason: Option<String>,
+}
+
+/// A claim: its kind, its standing version, and its versions in the
+/// order proposed.
+#[derive(Debug, Clone)]
+pub struct Claim {
+    /// Its name.
+    pub name: String,
+    /// Its kind.
+    pub kind: Kind,
+    /// The version that stands, where one does.
+    pub standing: Option<String>,
+    /// Its versions, in the order proposed.
+    pub versions: Vec<Version>,
+}
+
+impl Claim {
+    /// The version named `version`.
+    pub fn version(&self, version: &str) -> Option<&Version> {
+        self.versions
+            .iter()
+            .find(|candidate| candidate.proposal.version == version)
+    }
+
+    fn version_mut(&mut self, version: &str) -> Option<&mut Version> {
+        self.versions
+            .iter_mut()
+            .find(|candidate| candidate.proposal.version == version)
+    }
+}
+
+/// What the counted entries of a log, replayed in order, build.
+#[derive(Debug, Clone, Default)]
+pub struct State {
+    /// The persons registered, by name.
+    pub persons: BTreeMap<String, Person>,
+    /// The claims, by name.
+    pub claims: BTreeMap<String, Claim>,
+    /// The store's first owner, the person its first counted entry
+    /// registers.
+    pub first_owner: Option<String>,
+}
+
+impl State {
+    /// The person `key` is registered to.
+    pub fn person_by_key(&self, key: &PublicKey) -> Option<&Person> {
+        self.persons
+            .values()
+            .find(|person| person.key.key_data() == key.key_data())
+    }
+}
+
+/// What an entry carries, or will carry, as its signature.
+#[derive(Debug, Clone, Copy)]
+pub enum Proof<'a> {
+    /// No signature: an agent's entry.
+    Unsigned,
+    /// A signature this key is about to make: the judge asked before a
+    /// person is asked to touch their key.
+    ToBeSigned(&'a PublicKey),
+    /// An armored SSH signature over the entry's signed part.
+    Signed(&'a str),
+}
+
+impl<'a> Proof<'a> {
+    /// The proof an entry's stored signature gives.
+    pub fn of(signature: Option<&'a str>) -> Self {
+        signature.map_or(Proof::Unsigned, Proof::Signed)
+    }
+}
+
+/// The judge's answer for one entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    /// It counts.
+    Counts,
+    /// It does not count, and why.
+    Refused(String),
+    /// It repeats a counted entry, numbered here, and adds nothing.
+    Repeats(u64),
+}
+
+/// Whether an entry of the log counts, and why not where it does not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Judgment {
+    /// Whether it counts.
+    pub counted: bool,
+    /// Why it does not.
+    pub reason: Option<String>,
+}
+
+impl Judgment {
+    fn of(verdict: Verdict) -> Self {
+        match verdict {
+            Verdict::Counts => Judgment {
+                counted: true,
+                reason: None,
+            },
+            Verdict::Refused(why) => Judgment {
+                counted: false,
+                reason: Some(why),
+            },
+            Verdict::Repeats(seq) => Judgment {
+                counted: false,
+                reason: Some(format!("repeats entry {seq}")),
+            },
+        }
+    }
+
+    /// The judgment of an entry that counts.
+    pub fn counted() -> Self {
+        Judgment::of(Verdict::Counts)
+    }
+}
+
+/// Judges `entry`, whose signed part is `signed`, against the state
+/// built so far.
+pub fn judge(state: &State, entry: &Entry, signed: &str, proof: Proof<'_>) -> Verdict {
+    match check(state, entry, signed, proof) {
+        Ok(verdict) => verdict,
+        Err(why) => Verdict::Refused(why),
+    }
+}
+
+fn check(state: &State, entry: &Entry, signed: &str, proof: Proof<'_>) -> Result<Verdict, String> {
+    check_form(&entry.act)?;
+    match &entry.actor {
+        Actor::Person(name) => check_person(state, entry, name, signed, proof)?,
+        Actor::Agent { provenance } => check_agent(&entry.act, provenance, proof)?,
+    }
+    check_act(state, entry)
+}
+
+/// An act's form: what holds of it whatever the store holds.
+fn check_form(act: &Act) -> Result<(), String> {
+    match act {
+        Act::Registered { person, key, .. } => {
+            claim::check_name(person)?;
+            let key = registered_key(key)?;
+            sign::check_key_type(&key)
+        }
+        Act::Proposed { claim } => claim.check(),
+        Act::Accepted { name, .. } => claim::check_name(name),
+        Act::Rejected { name, reason, .. } => {
+            claim::check_name(name)?;
+            if reason.trim().is_empty() {
+                Err("a reject gives its reason".to_owned())
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+fn registered_key(key: &str) -> Result<PublicKey, String> {
+    PublicKey::from_openssh(key)
+        .map_err(|error| format!("its key is not an OpenSSH public key: {error}"))
+}
+
+/// A person's entry: signed by the key the store registered to them
+/// before it, or, for the store's first entry, by the key it registers.
+fn check_person(
+    state: &State,
+    entry: &Entry,
+    name: &str,
+    signed: &str,
+    proof: Proof<'_>,
+) -> Result<(), String> {
+    let key = if state.persons.is_empty() {
+        match &entry.act {
+            Act::Registered { person, key, owner } if person == name && *owner => {
+                registered_key(key)?
+            }
+            _ => return Err(
+                "a store's first entry registers its first owner, signed by the key it registers"
+                    .to_owned(),
+            ),
+        }
+    } else {
+        match state.persons.get(name) {
+            Some(person) => person.key.clone(),
+            None => return Err(format!("no person {name} is registered")),
+        }
+    };
+    match proof {
+        Proof::Unsigned => Err("a person's act needs their signature".to_owned()),
+        Proof::ToBeSigned(signer) if signer.key_data() == key.key_data() => Ok(()),
+        Proof::ToBeSigned(_) => Err(format!("the key is not the one registered to {name}")),
+        Proof::Signed(signature) => {
+            sign::verify(&key, signed.as_bytes(), signature).map_err(|why| {
+                if why != "its signature is by another key" {
+                    return why;
+                }
+                match sign::signing_key(signature)
+                    .as_ref()
+                    .and_then(|signer| state.person_by_key(signer))
+                {
+                    Some(other) => format!("it is signed by {}'s key, not {name}'s", other.name),
+                    None => "its key is not registered".to_owned(),
+                }
+            })
+        }
+    }
+}
+
+/// An agent's entry: unsigned, a proposal, naming its provenance.
+fn check_agent(act: &Act, provenance: &str, proof: Proof<'_>) -> Result<(), String> {
+    if !matches!(proof, Proof::Unsigned) {
+        return Err("an agent's entry carries no signature".to_owned());
+    }
+    match act {
+        Act::Proposed { .. } => {}
+        Act::Accepted { .. } => {
+            return Err("only a person accepts: a person's act needs their signature".to_owned())
+        }
+        Act::Rejected { .. } => {
+            return Err("only a person rejects: a person's act needs their signature".to_owned())
+        }
+        Act::Registered { .. } => {
+            return Err(
+                "only an owner registers a person: a person's act needs their signature".to_owned(),
+            )
+        }
+    }
+    if provenance.trim().is_empty() {
+        return Err("an agent's proposal names its provenance, with --provenance".to_owned());
+    }
+    Ok(())
+}
+
+fn actor_name(actor: &Actor) -> Option<&str> {
+    match actor {
+        Actor::Person(name) => Some(name),
+        Actor::Agent { .. } => None,
+    }
+}
+
+/// The act's own rules, against the state built so far.
+fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
+    match &entry.act {
+        Act::Registered { person, key, owner } => {
+            check_registration(state, &entry.actor, person, key, *owner)
+        }
+        Act::Proposed { claim } => check_proposal(state, claim),
+        Act::Accepted { name, version } => {
+            let accepter = actor_name(&entry.actor).unwrap_or_default();
+            check_accept(state, name, version, accepter)
+        }
+        Act::Rejected { name, version, .. } => {
+            let rejecter = actor_name(&entry.actor).unwrap_or_default();
+            check_reject(state, name, version, rejecter)
+        }
+    }
+}
+
+fn check_registration(
+    state: &State,
+    actor: &Actor,
+    person: &str,
+    key: &str,
+    owner: bool,
+) -> Result<Verdict, String> {
+    let key = registered_key(key)?;
+    if state.persons.is_empty() {
+        // The first owner registers themselves (check_person).
+        return Ok(Verdict::Counts);
+    }
+    let registrar = actor_name(actor).and_then(|name| state.persons.get(name));
+    if !registrar.is_some_and(|registrar| registrar.owner) {
+        return Err("only an owner registers a person".to_owned());
+    }
+    if let Some(registered) = state.persons.get(person) {
+        if registered.key.key_data() == key.key_data() && registered.owner == owner {
+            return Ok(Verdict::Repeats(registered.registered_in));
+        }
+        return Err(format!(
+            "{person} is registered already, by entry {}",
+            registered.registered_in
+        ));
+    }
+    if let Some(other) = state.person_by_key(&key) {
+        return Err(format!("that key is registered to {}", other.name));
+    }
+    Ok(Verdict::Counts)
+}
+
+fn check_proposal(state: &State, proposal: &Proposal) -> Result<Verdict, String> {
+    let name = &proposal.name;
+    let claim = state.claims.get(name);
+    if let Some(claim) = claim {
+        if let Some(version) = claim.version(&proposal.version) {
+            return Ok(Verdict::Repeats(version.proposed_in));
+        }
+        if claim.kind != proposal.kind {
+            return Err(format!(
+                "the name {name} is taken by the {} {name}",
+                claim.kind.as_str()
+            ));
+        }
+    }
+    match (&proposal.base, claim) {
+        (Some(base), Some(claim)) if claim.version(base).is_some() => {}
+        (Some(base), _) => return Err(format!("the claim {name} has no version {base}")),
+        (
+            None,
+            Some(Claim {
+                standing: Some(standing),
+                ..
+            }),
+        ) => {
+            return Err(format!(
+                "{name}@{standing} stands: amend it, with --amends {standing}"
+            ))
+        }
+        (None, _) => {}
+    }
+    Ok(Verdict::Counts)
+}
+
+fn find<'a>(
+    state: &'a State,
+    name: &str,
+    version: &str,
+) -> Result<(&'a Claim, &'a Version), String> {
+    let claim = state
+        .claims
+        .get(name)
+        .ok_or_else(|| format!("no claim has the name {name}"))?;
+    let found = claim
+        .version(version)
+        .ok_or_else(|| format!("the claim {name} has no version {version}"))?;
+    Ok((claim, found))
+}
+
+fn check_accept(
+    state: &State,
+    name: &str,
+    version: &str,
+    accepter: &str,
+) -> Result<Verdict, String> {
+    let (claim, found) = find(state, name, version)?;
+    let by = found.decided_by.as_deref().unwrap_or_default();
+    match found.status {
+        Status::Standing if by == accepter => {
+            return Ok(Verdict::Repeats(found.decided_in.unwrap_or_default()))
+        }
+        Status::Standing => {
+            return Err(format!("{name}@{version} stands already, accepted by {by}"))
+        }
+        Status::Replaced => {
+            let standing = claim.standing.as_deref().unwrap_or_default();
+            return Err(format!(
+                "{name}@{version} is replaced: {name}@{standing} stands"
+            ));
+        }
+        Status::Rejected => return Err(format!("{name}@{version} is rejected, by {by}")),
+        Status::Proposed => {}
+    }
+    if found.proposer == Actor::Person(accepter.to_owned()) {
+        return Err(format!(
+            "{name}@{version} waits on another person: no one accepts their own proposal"
+        ));
+    }
+    if found.proposal.base != claim.standing {
+        let amends = found
+            .proposal
+            .base
+            .as_deref()
+            .map_or("no version".to_owned(), |base| format!("{name}@{base}"));
+        return Err(match &claim.standing {
+            Some(standing) => format!(
+                "{name}@{standing} stands, and {name}@{version} amends {amends}: propose its words again amending {standing}"
+            ),
+            None => format!("{name}@{version} amends {amends}, which does not stand"),
+        });
+    }
+    Ok(Verdict::Counts)
+}
+
+fn check_reject(
+    state: &State,
+    name: &str,
+    version: &str,
+    rejecter: &str,
+) -> Result<Verdict, String> {
+    let (_, found) = find(state, name, version)?;
+    let by = found.decided_by.as_deref().unwrap_or_default();
+    match found.status {
+        Status::Proposed => Ok(Verdict::Counts),
+        Status::Rejected if by == rejecter => {
+            Ok(Verdict::Repeats(found.decided_in.unwrap_or_default()))
+        }
+        Status::Rejected => Err(format!("{name}@{version} is rejected already, by {by}")),
+        status => Err(format!(
+            "only a proposed version is rejected: {name}@{version} is {}",
+            status.as_str()
+        )),
+    }
+}
+
+/// Applies an entry that counts, numbered `seq`, to the state.
+pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
+    let actor = actor_name(&entry.actor).map(str::to_owned);
+    match &entry.act {
+        Act::Registered { person, key, owner } => {
+            let key = registered_key(key).expect("a counted registration's key reads");
+            state.first_owner.get_or_insert_with(|| person.clone());
+            state.persons.insert(
+                person.clone(),
+                Person {
+                    name: person.clone(),
+                    key,
+                    owner: *owner,
+                    registered_in: seq,
+                },
+            );
+        }
+        Act::Proposed { claim } => {
+            let entry_claim = state
+                .claims
+                .entry(claim.name.clone())
+                .or_insert_with(|| Claim {
+                    name: claim.name.clone(),
+                    kind: claim.kind,
+                    standing: None,
+                    versions: Vec::new(),
+                });
+            entry_claim.versions.push(Version {
+                proposal: claim.clone(),
+                proposer: entry.actor.clone(),
+                proposed_in: seq,
+                status: Status::Proposed,
+                decided_by: None,
+                decided_in: None,
+                reason: None,
+            });
+        }
+        Act::Accepted { name, version } => {
+            let claim = state
+                .claims
+                .get_mut(name)
+                .expect("a counted accept's claim");
+            if let Some(standing) = claim.standing.take() {
+                if let Some(replaced) = claim.version_mut(&standing) {
+                    replaced.status = Status::Replaced;
+                }
+            }
+            let accepted = claim
+                .version_mut(version)
+                .expect("a counted accept's version");
+            accepted.status = Status::Standing;
+            accepted.decided_by = actor;
+            accepted.decided_in = Some(seq);
+            claim.standing = Some(version.clone());
+        }
+        Act::Rejected {
+            name,
+            version,
+            reason,
+        } => {
+            let claim = state
+                .claims
+                .get_mut(name)
+                .expect("a counted reject's claim");
+            let rejected = claim
+                .version_mut(version)
+                .expect("a counted reject's version");
+            rejected.status = Status::Rejected;
+            rejected.decided_by = actor;
+            rejected.decided_in = Some(seq);
+            rejected.reason = Some(reason.clone());
+        }
+    }
+}
+
+/// Judges one entry of the log, as stored, and applies it where it
+/// counts.
+pub fn step(state: &mut State, seq: u64, signed: &str, signature: Option<&str>) -> Judgment {
+    let entry = match Entry::parse(signed) {
+        Ok(entry) => entry,
+        Err(why) => return Judgment::of(Verdict::Refused(why)),
+    };
+    let verdict = judge(state, &entry, signed, Proof::of(signature));
+    if verdict == Verdict::Counts {
+        apply(state, seq, &entry);
+    }
+    Judgment::of(verdict)
+}
+
+/// Replays a log's entries, `(seq, signed, signature)` in order, through
+/// the judge: the state they build, and each entry's judgment.
+pub fn replay<'a>(
+    entries: impl IntoIterator<Item = (u64, &'a str, Option<&'a str>)>,
+) -> (State, Vec<(u64, Judgment)>) {
+    let mut state = State::default();
+    let judgments = entries
+        .into_iter()
+        .map(|(seq, signed, signature)| (seq, step(&mut state, seq, signed, signature)))
+        .collect();
+    (state, judgments)
+}

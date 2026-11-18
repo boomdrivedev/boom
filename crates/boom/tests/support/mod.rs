@@ -168,3 +168,134 @@ impl Keys for SoftKeys {
         }))
     }
 }
+
+/// A test's own folder: its keys, its store, and the environment its
+/// commands run in, `XDG_DATA_HOME` and `HOME` inside it.
+pub struct Place {
+    /// The folder, removed when the test ends.
+    pub dir: tempfile::TempDir,
+    /// The test's keys, in `<dir>/keys`.
+    pub keys: SoftKeys,
+    /// The environment commands run in.
+    pub env: boom::cli::Env,
+    /// The store's path, `<dir>/boom.sqlite`.
+    pub store: PathBuf,
+}
+
+impl Place {
+    /// A new folder with no store in it.
+    pub fn new() -> Place {
+        let dir = tempfile::tempdir().unwrap();
+        let keys_dir = dir.path().join("keys");
+        std::fs::create_dir(&keys_dir).unwrap();
+        let env = boom::cli::Env {
+            xdg_data_home: Some(dir.path().join("data")),
+            home: Some(dir.path().join("home")),
+            clock: boom::cli::Clock::Fixed(1_763_424_000),
+        };
+        let store = dir.path().join("boom.sqlite");
+        Place {
+            keys: SoftKeys::new(&keys_dir),
+            env,
+            store,
+            dir,
+        }
+    }
+
+    /// Sets the clock commands read.
+    pub fn at(&mut self, at: u64) {
+        self.env.clock = boom::cli::Clock::Fixed(at);
+    }
+
+    /// A security key, its path as an argument.
+    pub fn key(&self, name: &str, seed: u8) -> String {
+        path_arg(&self.keys.security_key(name, seed))
+    }
+
+    /// The store's path as an argument.
+    pub fn store_arg(&self) -> String {
+        path_arg(&self.store)
+    }
+
+    /// Runs `args` with no `--store`, signing with the test's keys.
+    pub fn run_bare(&self, args: &[&str]) -> boom::cli::Outcome {
+        boom::cli::run(args.iter().copied(), &self.keys, &self.env)
+    }
+
+    /// Runs `args` on the place's store with `keys`.
+    pub fn run_with(&self, keys: &dyn Keys, args: &[&str]) -> boom::cli::Outcome {
+        let store = self.store_arg();
+        let mut all: Vec<&str> = args.to_vec();
+        all.extend(["--store", &store]);
+        boom::cli::run(all, keys, &self.env)
+    }
+
+    /// Runs `args` on the place's store, signing with the test's keys.
+    pub fn run(&self, args: &[&str]) -> boom::cli::Outcome {
+        self.run_with(&self.keys, args)
+    }
+
+    /// Runs `args` with `--json`, asserting it answers, and gives its
+    /// answer.
+    pub fn json(&self, args: &[&str]) -> serde_json::Value {
+        let mut all: Vec<&str> = args.to_vec();
+        all.push("--json");
+        let outcome = self.run(&all);
+        assert_eq!(outcome.code, 0, "{args:?}: {outcome:?}");
+        serde_json::from_str(&outcome.stdout).unwrap()
+    }
+
+    /// Makes the store with `ada` its first owner, giving ada's key.
+    pub fn made(&self) -> String {
+        let ada = self.key("ada", 1);
+        let outcome = self.run(&["init", "--person", "ada", "--key", &ada]);
+        assert_eq!(outcome.code, 0, "{outcome:?}");
+        ada
+    }
+
+    /// Registers `name` with a new security key, signed by `owner`'s
+    /// key, giving the new key.
+    pub fn registered(&self, owner: &str, name: &str, seed: u8) -> String {
+        let key = self.key(name, seed);
+        let public = format!("{key}.pub");
+        let outcome = self.run(&["register", name, &public, "--key", owner]);
+        assert_eq!(outcome.code, 0, "{outcome:?}");
+        key
+    }
+
+    /// An agent's proposal of a first version of an invariant, giving
+    /// its version.
+    pub fn proposed(&self, name: &str, statement: &str) -> String {
+        let answer = self.json(&[
+            "propose",
+            "invariant",
+            name,
+            statement,
+            "--scenario",
+            "Given an amount, then it names its currency.",
+            "--provenance",
+            "run-1",
+        ]);
+        answer["version"].as_str().unwrap().to_owned()
+    }
+
+    /// The log's entries, as `boom log --json` gives them.
+    pub fn log(&self) -> Vec<serde_json::Value> {
+        self.json(&["log"])["entries"].as_array().unwrap().clone()
+    }
+
+    /// The claim `name`, as `boom show --json` gives it.
+    pub fn show(&self, target: &str) -> serde_json::Value {
+        self.json(&["show", target])
+    }
+
+    /// A connection of the test's own to the store's file.
+    pub fn sqlite(&self) -> rusqlite::Connection {
+        rusqlite::Connection::open(&self.store).unwrap()
+    }
+}
+
+/// A path as an argument.
+pub fn path_arg(path: &Path) -> String {
+    path.to_str().unwrap().to_owned()
+}
