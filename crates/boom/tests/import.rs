@@ -1070,3 +1070,129 @@ fn another_repositorys_page_of_the_same_name() {
     assert_eq!(shown["imported"]["legacy"], "core.1");
     assert_eq!(shown["statement"], "Every invoice is billed once.");
 }
+
+/// Runs the accept an import's answer gives, with `key`, giving its
+/// answer.
+fn accept_given(place: &Place, answer: &Value, key: &str) -> Value {
+    let versions: Vec<&str> = answer["accept"]["versions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|version| version.as_str().unwrap())
+        .collect();
+    let mut args = vec!["accept"];
+    args.extend(&versions);
+    args.extend(["--key", key]);
+    place.json(&args)
+}
+
+#[test]
+fn an_import_accepted_together() {
+    let place = Place::new();
+    let ada = place.made();
+    let dir = adr(
+        &place,
+        &[
+            (
+                "0001-record-architecture-decisions.md",
+                RECORD_ARCHITECTURE_DECISIONS,
+            ),
+            ("0002-amounts-as-floats.md", AMOUNTS_AS_FLOATS),
+            ("0003-amounts-in-cents.md", AMOUNTS_IN_CENTS),
+        ],
+    );
+    let drafts = two_drafts(&place);
+    let mut args = import_args(&dir, "shop", &drafts);
+    let words = place.run(&args);
+    assert_eq!(words.code, 0, "{words:?}");
+    args.push("--json");
+    let outcome = place.run(&args);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
+    let versions = answer["accept"]["versions"].as_array().unwrap();
+    assert_eq!(versions.len(), 3);
+    let command = answer["accept"]["command"].as_str().unwrap();
+    assert!(command.starts_with("boom accept "), "{command}");
+    assert!(command.ends_with(" --key <key>"), "{command}");
+    for version in versions {
+        assert!(command.contains(version.as_str().unwrap()), "{command}");
+    }
+    assert!(
+        words.stdout.trim_end().ends_with(command),
+        "the command is printed last: {words:?}"
+    );
+    let before = place.log().len();
+    accept_given(&place, &answer, &ada);
+    for (source, status) in [
+        ("0001-record-architecture-decisions.md", "standing"),
+        ("0002-amounts-as-floats.md", "history"),
+        ("0003-amounts-in-cents.md", "standing"),
+    ] {
+        let found = record(&answer, source);
+        let name = found["name"].as_str().unwrap();
+        let version = found["version"].as_str().unwrap();
+        assert_eq!(place.status(name, version), status, "{source}");
+    }
+    assert_eq!(place.show("amounts-as-floats")["standing"], Value::Null);
+    let log = place.log();
+    assert_eq!(log.len(), before + 3);
+    let ada_public = place.keys.public_key(std::path::Path::new(&ada));
+    for entry in &log[before..] {
+        assert_eq!(entry["act"], "accepted");
+        assert_eq!(entry["actor"], json!({"person": "ada"}));
+        assert_eq!(
+            boom::sign::verify(
+                &ada_public,
+                entry["signed"].as_str().unwrap().as_bytes(),
+                entry["signature"].as_str().unwrap()
+            ),
+            Ok(())
+        );
+    }
+}
+
+#[test]
+fn a_record_left_proposed_waits() {
+    let place = Place::new();
+    let ada = place.made();
+    let dir = adr(
+        &place,
+        &[
+            (
+                "0001-record-architecture-decisions.md",
+                RECORD_ARCHITECTURE_DECISIONS,
+            ),
+            (
+                "0004-one-database.md",
+                "---\nstatus: proposed\n---\n\n# One database\n\nThe shop keeps one database.\n",
+            ),
+        ],
+    );
+    let drafts = drafts(
+        &place,
+        "drafts.json",
+        json!({
+            "0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]},
+            "0004-one-database.md": {"scenarios": ["Given an order, then it is kept in the one database."]},
+        }),
+    );
+    let answer = imported(&place, &dir, "shop", &drafts);
+    let one = record(&answer, "0004-one-database.md");
+    let waiting = format!("one-database@{}", one["version"].as_str().unwrap());
+    let versions = answer["accept"]["versions"].as_array().unwrap();
+    assert_eq!(versions.len(), 1);
+    assert!(versions.iter().all(|version| version != &json!(waiting)));
+    accept_given(&place, &answer, &ada);
+    assert_eq!(
+        place.status("one-database", one["version"].as_str().unwrap()),
+        "proposed"
+    );
+    let first = record(&answer, "0001-record-architecture-decisions.md");
+    assert_eq!(
+        place.status(
+            "record-architecture-decisions",
+            first["version"].as_str().unwrap()
+        ),
+        "standing"
+    );
+}
