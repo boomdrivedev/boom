@@ -111,8 +111,9 @@ pub enum Act {
     Proposed {
         /// The claim's version.
         claim: Proposal,
-        /// Where it came in from, for a version an import proposes.
-        imported: Option<Imported>,
+        /// Where it came in from, for a version an import proposes,
+        /// boxed so a proposal is no larger than the other acts by it.
+        imported: Option<Box<Imported>>,
     },
     /// A version accepted.
     Accepted {
@@ -176,7 +177,7 @@ struct ProposedPart {
     actor: Actor,
     claim: Proposal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    imported: Option<Imported>,
+    imported: Option<Box<Imported>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -374,7 +375,7 @@ mod tests {
     fn imported_proposal() -> Entry {
         let mut entry = proposal();
         if let Act::Proposed { imported, .. } = &mut entry.act {
-            *imported = Some(Imported {
+            *imported = Some(Box::new(Imported {
                 repository: "shop".to_owned(),
                 from: "0003-amounts-in-cents.md".to_owned(),
                 form: Form::Madr,
@@ -384,7 +385,7 @@ mod tests {
                 deciders: vec!["ada".to_owned(), "bo".to_owned()],
                 section: None,
                 drafted: true,
-            });
+            }));
         }
         entry
     }

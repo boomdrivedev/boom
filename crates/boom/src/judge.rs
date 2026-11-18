@@ -586,7 +586,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 decided_by: None,
                 decided_in: None,
                 reason: None,
-                imported: imported.clone(),
+                imported: imported.as_deref().cloned(),
             });
         }
         Act::Accepted { name, version } => {

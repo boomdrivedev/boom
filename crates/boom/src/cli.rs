@@ -975,7 +975,7 @@ fn proposed_with(
         Ok(Entry {
             act: Act::Proposed { claim, imported },
             ..
-        }) => Ok((imported, claim.history)),
+        }) => Ok((imported.map(|imported| *imported), claim.history)),
         _ => Err(Failure::not_run(format!(
             "entry {seq} is not the proposal its version names"
         ))),
@@ -1092,7 +1092,7 @@ fn import(
             },
             act: Act::Proposed {
                 claim: record.proposal(),
-                imported: Some(record.imported.clone()),
+                imported: Some(Box::new(record.imported.clone())),
             },
         };
         let signed = entry.signed_part();
