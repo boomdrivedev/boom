@@ -530,6 +530,7 @@ fn propose(
         proposed.scenarios,
         body.as_deref().map(crate::sha256_hex),
         proposed.amends,
+        None,
     );
     let signer = key.map(|key| keys.signer(key)).transpose()?;
     let (written, state) = write(&mut store, signer.as_deref(), body.as_deref(), |state| {

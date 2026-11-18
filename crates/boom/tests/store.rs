@@ -200,6 +200,7 @@ fn views_behind_the_log_are_rebuilt_before_an_answer() {
         vec![support::SCENARIO.to_owned()],
         None,
         None,
+        None,
     );
     let entry = boom::entry::Entry {
         at: 1_763_424_600,

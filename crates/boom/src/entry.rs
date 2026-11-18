@@ -291,6 +291,7 @@ mod tests {
                     vec!["Given an order paid 40.00, a refund of 45.00 is refused.".to_owned()],
                     None,
                     None,
+                    None,
                 ),
             },
         }
