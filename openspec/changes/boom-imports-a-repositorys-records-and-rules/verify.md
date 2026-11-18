@@ -1,80 +1,40 @@
 # Verify
 
 The verify stage's report on `change/boom-imports-a-repositorys-records-and-rules`
-at `2ab9592`, cut from `bolt/boom-holds-the-rules-agents-read`.
+at `ad37401`, cut from `bolt/boom-holds-the-rules-agents-read`.
 
-**Outcome: not archived.** The gate's checks fail on `boom:lint`. Every
-spec scenario has a test that passes and every task is ticked, so the
-work holds once the lint passes. The change goes back to its code stage.
+**Outcome: archived.** The gate's checks pass, every spec scenario has a
+test that passes, and every task is ticked.
 
 ## The whole checks
 
 Run once, `sluice exec main`, against `main` (`54c73d1`), the checks
-`2ab9592` affects, the layer `#check-fast`:
+`ad37401` affects, the layer `#check-fast`:
 
 | task | outcome |
 |---|---|
 | `boom:format` | passed |
 | `boom:typecheck` | passed |
+| `boom:lint` | passed: `cargo clippy -D warnings`, no warning |
 | `boom:test` | passed: 122 tests, none failed |
-| `boom:lint` | **failed** |
-| `root:format` | passed |
+| `root:format` | passed: 73 files formatted, 0 changed |
 | `root:specs` | passed: 5 specs valid |
 | `root:changes` | passed: 1 open change, valid under `openspec validate --strict` and archiving to valid specs |
 
-The `site` project's tasks were not affected and did not run.
+The `site` project's tasks and `root:changes-cases` were not affected and
+did not run.
 
-`moon` reported `Tasks: 6 completed, 1 failed`, and sluice exited 1.
-
-### What fails
-
-`cargo clippy -D warnings` refuses the crate's library and its tests:
-
-```
-error: large size difference between variants
-   --> crates/boom/src/entry.rs:100:1
-    |
-100 | /   pub enum Act {
-...
-111 | | /     Proposed {
-112 | | |         /// The claim's version.
-113 | | |         claim: Proposal,
-114 | | |         /// Where it came in from, for a version an import proposes.
-115 | | |         imported: Option<Imported>,
-116 | | |     },
-    | | |_____- the largest variant contains at least 360 bytes
-...
-125 | | /     Rejected {
-...
-132 | | |     },
-    | | |_____- the second-largest variant contains at least 72 bytes
-    = note: `-D clippy::large-enum-variant` implied by `-D warnings`
-help: consider boxing the large fields or introducing indirection in some other way
-    |
-113 +         claim: Box<Proposal>,
-error: could not compile `boom` (lib) due to 1 previous error
-error: could not compile `boom` (lib test) due to 1 previous error
-```
-
-`imported: Option<Imported>`, added to `Act::Proposed` by task 1.2, makes
-that variant at least 360 bytes against the next largest variant's 72.
-The fix belongs to the code stage. clippy suggests boxing a field,
-`Box<Proposal>` or `Option<Box<Imported>>`. The fix runs the gate again.
-
-sluice also counted `boom:lint` as a run it could not record. Its
-sandbox refused moon's name lookups (`network-outbound remote:*:53`,
-`/private/var/run/mDNSResponder`), cargo's write of
-`~/.cargo/.package-cache`, and 10 more. It said
-`nothing was recorded for a test that could not run`. clippy finished
-its check and reported the error above, so the error is real whatever the
-sandbox refused. The gate's next run shows whether the refusals stop
-`boom:lint` from recording once clippy passes.
+`moon` reported `Tasks: 7 completed`. sluice exited 0 and said
+`recorded 7 results under their keys for ad37401`. moon warned on each
+task that it could not write the task's output archive under
+`.moon/cache/outputs`. This did not fail a task or stop sluice recording
+it.
 
 ## The specs
 
 Each scenario of the change's delta specs and the test that proves it.
-Each test is in `crates/boom/tests/` unless named in `src/`, and passed in
-the run above.
+Each test is in `crates/boom/tests/` unless it is named in `src/`. Each
+passed in the run above.
 
 ### record-import
 
@@ -113,8 +73,8 @@ the run above.
 | | A record left proposed waits | `a_record_left_proposed_waits` |
 
 Each refusal goes through the tests' `Place::refused`. It asserts exit 2,
-the words the scenario names and the log unchanged, so "nothing is
-appended" is proved for each.
+the words the scenario names and the log unchanged, so it proves for each
+refusal that nothing is appended.
 
 ### claim-versions
 
@@ -142,26 +102,27 @@ appended" is proved for each.
 | | The version, The log of a new store | unchanged and passing |
 
 The code meets design decisions 1 to 9 as written, with the departures
-record 0007 keeps under "More information". The judge holds an imported
-proposal to the import's rules before the rules of any proposal
-(`src/judge.rs` `check_imported`, called first in `check_act`), where
-design 7 says "after". A dry run reads no store. A draft holding a field
-other than `scenarios` and `name` is refused. A rule's body is its
-details' bullet as written. Each is the code stage's own, cheap to
-change, and recorded.
+record 0007 keeps under "More information". The judge checks an imported
+proposal against the import's rules first, before the rules every
+proposal meets (`src/judge.rs` `check_imported`, called first in
+`check_act`). Design 7 says "after". A dry run reads no store. A draft
+holding a field other than `scenarios` and `name` is refused. A rule's
+body is its details' bullet as written. The code stage made each of these
+choices, each is cheap to change, and record 0007 holds each.
 
 ## The tasks
 
-All ten tasks, 1.1 to 5.1, are ticked done. Each task's named tests are
-in the tree and passed in the gate's `boom:test`. Task 3.1's dependency,
-`yaml-rust2` 0.13.0, is in `crates/boom/Cargo.toml` and locked in
-`Cargo.lock`. Task 5.1's README and `CLAUDE.md` say what the import does.
-`devenv shell -- vale README.md` gives `0 errors, 0 warnings and 0
-suggestions`.
+All eleven tasks, 1.1 to 5.1, are ticked done. Each test a task names is
+in the tree and passed in the gate's `boom:test`, 46 in all.
 
-## What goes back
-
-- `boom:lint` fails: `clippy::large_enum_variant` on `Act` in
-  `crates/boom/src/entry.rs:100`, the variant `Proposed` at least 360
-  bytes since it gained `imported`. The code stage makes the lint pass,
-  boxing a field as clippy suggests or otherwise, and runs the gate again.
+- Task 1.3 boxes `Act::Proposed`'s `imported` as `Option<Box<Imported>>`
+  in `crates/boom/src/entry.rs` and in the signed part. serde writes a box
+  as its contents, so the signed part's bytes are as before, and
+  `an_imported_proposal_keeps_where_it_came_from` passes. The state a
+  replay builds keeps it unboxed: `src/judge.rs` `apply` takes
+  `imported.as_deref().cloned()`. `boom:lint` and `boom:test` pass.
+- Task 3.1's dependency, `yaml-rust2` 0.13.0, is in
+  `crates/boom/Cargo.toml` and locked in `Cargo.lock`.
+- Task 5.1's README and `CLAUDE.md` say what the import does.
+  `devenv shell -- vale README.md` gives `0 errors, 0 warnings and 0
+  suggestions`.
