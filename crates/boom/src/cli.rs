@@ -545,6 +545,7 @@ fn propose(
             actor,
             act: Act::Proposed {
                 claim: proposal.clone(),
+                imported: None,
             },
         })
     })?;

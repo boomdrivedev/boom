@@ -214,7 +214,7 @@ fn check_form(act: &Act) -> Result<(), String> {
             let key = registered_key(key)?;
             sign::check_key_type(&key)
         }
-        Act::Proposed { claim } => claim.check(),
+        Act::Proposed { claim, .. } => claim.check(),
         Act::Accepted { name, .. } => claim::check_name(name),
         Act::Rejected { name, reason, .. } => {
             claim::check_name(name)?;
@@ -316,7 +316,7 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
         Act::Registered { person, key, owner } => {
             check_registration(state, &entry.actor, person, key, *owner)
         }
-        Act::Proposed { claim } => check_proposal(state, claim),
+        Act::Proposed { claim, .. } => check_proposal(state, claim),
         Act::Accepted { name, version } => {
             let accepter = actor_name(&entry.actor).unwrap_or_default();
             check_accept(state, name, version, accepter)
@@ -490,7 +490,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 },
             );
         }
-        Act::Proposed { claim } => {
+        Act::Proposed { claim, .. } => {
             let entry_claim = state
                 .claims
                 .entry(claim.name.clone())
