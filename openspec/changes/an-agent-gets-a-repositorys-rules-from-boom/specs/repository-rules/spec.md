@@ -46,7 +46,7 @@ repository, so no one edits by hand the rules an agent reads (record
 
 ### Requirement: Every claim that stands for the repository
 
-`boom query` SHALL give every claim whose standing version is attached to the repository or to the whole system, each once with its kind, name, version, statement, scenarios, body fingerprint, `repositories`, and the person who accepted it and that entry's number. It SHALL give no version proposed, rejected or replaced, and no claim whose standing version is attached only to other repositories.
+`boom query` SHALL give every claim whose standing version is attached to the repository or to the whole system, each once with its kind, name, version, statement, scenarios, body fingerprint, `repositories`, and the person who accepted it and that entry's number. It SHALL give no version proposed, rejected, replaced or history, and no claim whose standing version is attached only to other repositories.
 
 #### Scenario: What stands for a repository
 
@@ -67,6 +67,11 @@ repository, so no one edits by hand the rules an agent reads (record
 
 - **WHEN** the only version of a claim attached to `shop` is rejected
 - **THEN** `boom query --repository shop` does not give that claim
+
+#### Scenario: A version that came in as history
+
+- **WHEN** an import for `shop` of `0002-amounts-as-floats.md`, superseded by `0003-amounts-in-cents.md`, and of `0003-amounts-in-cents.md` is accepted together
+- **THEN** `boom query --repository shop --json` gives `amounts-in-cents` and not `amounts-as-floats`, whose version is history
 
 #### Scenario: Nothing stands
 

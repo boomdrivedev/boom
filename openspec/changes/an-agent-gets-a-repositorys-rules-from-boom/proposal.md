@@ -39,6 +39,10 @@ as the person accepted them, with nothing in the repository to edit.
   agent's context as it is; with `--json` it answers `boom-query/1`.
 - `boom show` gives each version's attachment, so the person reads what
   a version binds before accepting it.
+- `boom import` attaches each record it proposes to the repository its
+  `--repository` names, so a repository's imported records and rules
+  stand for that repository alone; a record that came in as history
+  never stands, so `boom query` never gives it (design 7).
 
 ## Capabilities
 
@@ -56,9 +60,13 @@ as the person accepted them, with nothing in the repository to edit.
 
 ### Modified Capabilities
 
-None. `claim-versions` keeps its fingerprint unchanged and `command-line`
-its commands' common rules; the new flags, fields and command are the
-two new capabilities', each added within its format's major.
+- `record-import`: an import's proposals carry `attach`, naming the
+  repository the import names, after `imported`, so a record accepted
+  stands for that repository alone.
+
+`claim-versions` keeps its fingerprint unchanged and `command-line` its
+commands' common rules; the new flags, fields and command are the two
+new capabilities', each added within its format's major.
 
 ## Impact
 
@@ -71,10 +79,11 @@ two new capabilities', each added within its format's major.
   and the README the hook a repository's agent settings name.
 - `docs/adr/0008-an-agent-gets-a-repositorys-rules-from-boom-query-each-claim-attached-to-the-repositories-it-binds.md`
   records this change's choices.
-- The open change `boom-imports-a-repositorys-records-and-rules` adds
-  `imported` beside `attach` and `boom import --repository`; whichever
-  lands second has an import attach its proposals to that repository
-  (design 7).
+- `boom-imports-a-repositorys-records-and-rules` landed in the bolt
+  first, adding a proposal's `imported` and `boom import --repository`;
+  this change merges the bolt and reconciles the two, a proposal's part
+  holding `claim`, `imported` and `attach` in that order and an import's
+  proposals attached to its repository (design 7).
 - Out of this change: paths and contexts, moving an attachment, the
   Claude Code and herdr plugins, `boom mcp`, flume's launch, `boom
   render`, `boom check`, and moving this repository's own rules and

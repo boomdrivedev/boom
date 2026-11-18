@@ -7,7 +7,7 @@ agent proposes a version, a person accepts or rejects it with a
 signature by their security key (record 0006), and every answer is
 judged from the log by one judge (`src/judge.rs`), whose replay builds
 the view tables `Store::read` answers from. Its commands are `init`,
-`register`, `propose`, `accept`, `reject`, `show` and `log`
+`register`, `propose`, `accept`, `reject`, `show`, `log` and `import`
 (`src/cli.rs`). Nothing says which repository a claim binds, and no
 command gives the claims that stand for one.
 
@@ -178,17 +178,29 @@ command with that folder as `cwd`. A test that edits the views or
 appends to the log opens the file with `rusqlite` itself, appending a
 chained row with `entry`'s hash, as `log.rs` does.
 
-### 7. Reconciling with the open change boom-imports-a-repositorys-records-and-rules
+### 7. An import's proposals attached to its repository
 
-That change, open beside this one in the bolt, adds `imported` after a
-proposal's `claim`, `history` to a version's content, and a required
-`--repository` to `boom import`. Whichever of the two lands second
-reconciles them: the proposed part's fields are `claim`, `imported`,
-`attach`, each after the one before and only where present; an
-import's proposals carry `attach` naming the repository its
-`--repository` names, so a repository's imported records and rules
-stand for it alone; a `history` version never stands, so `boom query`
-never gives it. Its record is 0007; this one's is 0008.
+The change `boom-imports-a-repositorys-records-and-rules` landed in the
+bolt before this one: it adds `imported` after a proposal's `claim`,
+`history` to a version's content, and a required `--repository` to
+`boom import` (record 0007). This change, landing second, merges the
+bolt and reconciles them. The proposed part's fields are `claim`,
+`imported`, `attach`, each after the one before and only where present,
+so a proposal with neither is written as before. An import's proposals
+carry `attach` naming the repository its `--repository` names, so a
+repository's imported records and rules stand for it alone, and the
+import's answer and `boom show` give that attachment before a person
+accepts them. A `history` version never stands, so `boom query` never
+gives it.
+
+The judge holds an imported proposal to the import's rules first and
+then to every proposal's, design 2's among them, so a record that came
+in before as this version is a repeat only under the same attachment.
+The judge does not
+require an imported proposal's `attach` to name its `imported`
+repository: the import writes it, the person reads `repositories`
+before accepting, and an agent may propose for any attachment anyway
+(record 0008, point 6).
 
 ## Risks / Trade-offs
 
