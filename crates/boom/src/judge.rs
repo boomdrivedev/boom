@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use ssh_key::PublicKey;
 
 use crate::claim::{self, Kind, Proposal};
-use crate::entry::{Act, Actor, Entry};
+use crate::entry::{Act, Actor, Entry, Form, Imported};
 use crate::sign;
 
 /// A person the store registers.
@@ -77,6 +77,8 @@ pub struct Version {
     pub decided_in: Option<u64>,
     /// Why it was rejected.
     pub reason: Option<String>,
+    /// Where it came in from, for a version an import proposed.
+    pub imported: Option<Imported>,
 }
 
 /// A claim: its kind, its standing version, and its versions in the
@@ -320,6 +322,13 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
         Act::Registered { person, key, owner } => {
             check_registration(state, &entry.actor, person, key, *owner)
         }
+        Act::Proposed {
+            claim,
+            imported: Some(imported),
+        } => match check_imported(state, claim, imported)? {
+            Some(repeat) => Ok(repeat),
+            None => check_proposal(state, claim),
+        },
         Act::Proposed { claim, .. } => check_proposal(state, claim),
         Act::Accepted { name, version } => {
             let accepter = actor_name(&entry.actor).unwrap_or_default();
@@ -394,6 +403,61 @@ fn check_proposal(state: &State, proposal: &Proposal) -> Result<Verdict, String>
         (None, _) => {}
     }
     Ok(Verdict::Counts)
+}
+
+/// The rules an imported proposal is held to, after those every
+/// proposal keeps (design 7): its record read once, its name held by no
+/// claim, and a decision's number held by no other claim that came in
+/// with it. Answers a repeat where the record came in before as this
+/// version.
+fn check_imported(
+    state: &State,
+    proposal: &Proposal,
+    imported: &Imported,
+) -> Result<Option<Verdict>, String> {
+    let name = &proposal.name;
+    let versions = || {
+        state.claims.values().flat_map(|claim| {
+            claim
+                .versions
+                .iter()
+                .filter_map(move |version| Some((claim, version, version.imported.as_ref()?)))
+        })
+    };
+    if let Some((claim, version, _)) =
+        versions().find(|(_, _, from)| from.source() == imported.source())
+    {
+        if &claim.name == name && version.proposal.version == proposal.version {
+            return Ok(Some(Verdict::Repeats(version.proposed_in)));
+        }
+        let held = &version.proposal.version;
+        return Err(format!(
+            "{} came in as {}@{held}: boom keeps the record now and never takes its file again as the record; amend that version, with boom propose --amends {held}",
+            imported.named(),
+            claim.name,
+        ));
+    }
+    if let Some(claim) = state.claims.get(name) {
+        return Err(format!(
+            "the name {name} is held by the {} {name}: name {} otherwise in its draft",
+            claim.kind.as_str(),
+            imported.named(),
+        ));
+    }
+    if let (Form::Madr, Some(number)) = (imported.form, &imported.legacy) {
+        if let Some((claim, _, from)) = versions()
+            .find(|(_, _, from)| from.form == Form::Madr && from.legacy.as_ref() == Some(number))
+        {
+            return Err(format!(
+                "the number {number} of {} is held by the {} {}, which came in with it from {}",
+                imported.named(),
+                claim.kind.as_str(),
+                claim.name,
+                from.named(),
+            ));
+        }
+    }
+    Ok(None)
 }
 
 fn find<'a>(
@@ -504,7 +568,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 },
             );
         }
-        Act::Proposed { claim, .. } => {
+        Act::Proposed { claim, imported } => {
             let entry_claim = state
                 .claims
                 .entry(claim.name.clone())
@@ -522,6 +586,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 decided_by: None,
                 decided_in: None,
                 reason: None,
+                imported: imported.clone(),
             });
         }
         Act::Accepted { name, version } => {

@@ -825,3 +825,248 @@ fn a_superseded_record_comes_in_as_history() {
         "superseded by [ADR-0003](0003-amounts-in-cents.md)"
     );
 }
+
+const MONEY_HAS_CURRENCY: &str = "---
+status: accepted
+---
+
+# Every amount names its currency
+";
+
+/// The folder holding `0002-money-has-currency.md`.
+fn money_folder(place: &Place) -> String {
+    adr(place, &[("0002-money-has-currency.md", MONEY_HAS_CURRENCY)])
+}
+
+/// Drafts for `0002-money-has-currency.md`, naming it `name` where one
+/// is given.
+fn money_drafts(place: &Place, name: Option<&str>) -> String {
+    let mut draft = json!({"scenarios": ["Given an amount, then it names its currency."]});
+    if let Some(name) = name {
+        draft["name"] = json!(name);
+    }
+    drafts(
+        place,
+        "money-drafts.json",
+        json!({"0002-money-has-currency.md": draft}),
+    )
+}
+
+/// The arguments of an import of `dir` for `repository` with `drafts`.
+fn import_args<'a>(dir: &'a str, repository: &'a str, drafts: &'a str) -> Vec<&'a str> {
+    vec![
+        "import",
+        "adr",
+        dir,
+        "--repository",
+        repository,
+        "--drafts",
+        drafts,
+        "--provenance",
+        "run-1",
+    ]
+}
+
+#[test]
+fn a_name_the_store_holds_is_refused() {
+    let place = Place::new();
+    place.made();
+    place.proposed("money-has-currency", "Every amount names its currency.");
+    let dir = money_folder(&place);
+    let drafts = money_drafts(&place, None);
+    let refused = place.refused(
+        &import_args(&dir, "shop", &drafts),
+        "the invariant money-has-currency",
+    );
+    assert!(
+        refused.stderr.contains("otherwise in its draft"),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn named_otherwise_by_its_draft() {
+    let place = Place::new();
+    place.made();
+    place.proposed("money-has-currency", "Every amount names its currency.");
+    let dir = money_folder(&place);
+    let drafts = money_drafts(&place, Some("money-carries-currency"));
+    let answer = imported(&place, &dir, "shop", &drafts);
+    let money = record(&answer, "0002-money-has-currency.md");
+    assert_eq!(money["name"], "money-carries-currency");
+    assert_eq!(money["kind"], "decision");
+    let version = money["version"].as_str().unwrap();
+    let shown = place.show(&format!("money-carries-currency@{version}"));
+    assert_eq!(shown["kind"], "decision");
+    assert_eq!(shown["status"], "proposed");
+    assert_eq!(shown["imported"]["legacy"], "0002");
+}
+
+#[test]
+fn a_number_the_store_holds_is_refused() {
+    let place = Place::new();
+    place.made();
+    let shop = adr(
+        &place,
+        &[(
+            "0001-record-architecture-decisions.md",
+            RECORD_ARCHITECTURE_DECISIONS,
+        )],
+    );
+    let shop_drafts = drafts(
+        &place,
+        "shop-drafts.json",
+        json!({"0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]}}),
+    );
+    imported(&place, &shop, "shop", &shop_drafts);
+    let billing = place.folder(
+        "billing-adr",
+        &[(
+            "0001-use-postgres.md",
+            "---\nstatus: accepted\n---\n\n# Use Postgres\n",
+        )],
+    );
+    let billing_drafts = drafts(
+        &place,
+        "billing-drafts.json",
+        json!({"0001-use-postgres.md": {"scenarios": ["Given an invoice, then Postgres keeps it."]}}),
+    );
+    let refused = place.refused(
+        &import_args(&billing, "billing", &billing_drafts),
+        "the number 0001",
+    );
+    assert!(
+        refused.stderr.contains("record-architecture-decisions"),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn two_records_under_one_name_are_refused() {
+    let place = Place::new();
+    place.made();
+    let dir = two_records(&place);
+    let drafts = drafts(
+        &place,
+        "drafts.json",
+        json!({
+            "0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO], "name": "money"},
+            "0003-amounts-in-cents.md": {"scenarios": [CENTS_SCENARIO], "name": "money"},
+        }),
+    );
+    let refused = place.refused(&import_args(&dir, "shop", &drafts), "money");
+    for file in [
+        "0001-record-architecture-decisions.md",
+        "0003-amounts-in-cents.md",
+    ] {
+        assert!(refused.stderr.contains(file), "{file}: {refused:?}");
+    }
+}
+
+#[test]
+fn the_same_import_twice_adds_nothing() {
+    let place = Place::new();
+    place.made();
+    let dir = two_records(&place);
+    let drafts = two_drafts(&place);
+    let first = imported(&place, &dir, "shop", &drafts);
+    let log = place.log();
+    let second = imported(&place, &dir, "shop", &drafts);
+    assert_eq!(second, first);
+    assert_eq!(place.log(), log);
+}
+
+#[test]
+fn a_file_edited_after_its_import_is_refused() {
+    let place = Place::new();
+    place.made();
+    let dir = two_records(&place);
+    let drafts = two_drafts(&place);
+    let first = imported(&place, &dir, "shop", &drafts);
+    let version = record(&first, "0003-amounts-in-cents.md")["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    adr(
+        &place,
+        &[(
+            "0003-amounts-in-cents.md",
+            &AMOUNTS_IN_CENTS.replace(
+                "# Amounts are kept in cents",
+                "# Amounts are kept in whole cents",
+            ),
+        )],
+    );
+    let refused = place.refused(
+        &import_args(&dir, "shop", &drafts),
+        "0003-amounts-in-cents.md",
+    );
+    assert!(
+        refused
+            .stderr
+            .contains(&format!("amounts-in-cents@{version}")),
+        "{refused:?}"
+    );
+    assert!(
+        refused.stderr.contains("boom propose --amends"),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn another_repositorys_page_of_the_same_name() {
+    let place = Place::new();
+    place.made();
+    let shop = rules_page(&place, RULES, None);
+    let shop_drafts = drafts(
+        &place,
+        "shop-drafts.json",
+        json!({
+            "core.1": {"name": "status-from-events", "scenarios": ["Given a record accepted, then its status is read from its events."]},
+            "core.2": {"name": "views-computed", "scenarios": ["Given a view, then it is computed from the ledger."]},
+        }),
+    );
+    place.json(&[
+        "import",
+        "rules",
+        &shop,
+        "--repository",
+        "shop",
+        "--drafts",
+        &shop_drafts,
+        "--provenance",
+        "run-1",
+    ]);
+    let billing_dir = place.folder(
+        "billing-rules",
+        &[(
+            "core.md",
+            "# billing rules\n\n## Rules\n\n- **[core.1]** Every invoice is billed once.\n",
+        )],
+    );
+    let billing = format!("{billing_dir}/core.md");
+    let billing_drafts = drafts(
+        &place,
+        "billing-drafts.json",
+        json!({"core.1": {"name": "invoices-billed-once", "scenarios": ["Given an invoice billed, then it is not billed again."]}}),
+    );
+    let answer = place.json(&[
+        "import",
+        "rules",
+        &billing,
+        "--repository",
+        "billing",
+        "--drafts",
+        &billing_drafts,
+        "--provenance",
+        "run-2",
+    ]);
+    let rule = record(&answer, "core.1");
+    assert_eq!(rule["name"], "invoices-billed-once");
+    assert_eq!(rule["status"], "proposed");
+    let version = rule["version"].as_str().unwrap();
+    let shown = place.show(&format!("invoices-billed-once@{version}"));
+    assert_eq!(shown["imported"]["repository"], "billing");
+    assert_eq!(shown["imported"]["legacy"], "core.1");
+    assert_eq!(shown["statement"], "Every invoice is billed once.");
+}

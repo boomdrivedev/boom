@@ -84,6 +84,15 @@ impl Imported {
     pub fn source(&self) -> (&str, &str, Option<&str>) {
         (&self.repository, &self.from, self.legacy.as_deref())
     }
+
+    /// The record as a refusal names it: an ADR by its file, a rule by
+    /// its id and its page, each of its repository.
+    pub fn named(&self) -> String {
+        match (self.form, &self.legacy) {
+            (Form::Rules, Some(id)) => format!("{id} of {} of {}", self.from, self.repository),
+            _ => format!("{} of {}", self.from, self.repository),
+        }
+    }
 }
 
 /// What an entry does.
