@@ -314,3 +314,47 @@ fn amended_for_another_repository() {
         json!({"repositories": ["ledger"]})
     );
 }
+
+#[test]
+fn a_version_shown_gives_what_it_binds() {
+    let place = Place::new();
+    place.made();
+    let answer = place.json(&money(&["--repository", "shop"]));
+    let target = format!("money-has-currency@{}", answer["version"].as_str().unwrap());
+    let shown = place.show(&target);
+    assert_eq!(shown["repositories"], json!(["shop"]));
+    assert_eq!(shown["statement"], MONEY);
+    assert_eq!(shown["status"], "proposed");
+    let words = place.run(&["show", &target]);
+    assert_eq!(words.code, 0, "{words:?}");
+    assert!(words.stdout.contains("\nbinds: shop\n"), "{words:?}");
+    let schema: i64 = place
+        .sqlite()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(schema, 1);
+}
+
+#[test]
+fn a_claim_shown_gives_each_versions_repositories() {
+    let place = Place::new();
+    let ada = place.made();
+    let first = place.json(&money(&["--system"]));
+    let base = first["version"].as_str().unwrap().to_owned();
+    place.accepted("money-has-currency", &base, &ada);
+    let amendment = place.json(&amending(&base, &["--repository", "shop"]));
+    let shown = place.show("money-has-currency");
+    let versions = shown["versions"].as_array().unwrap();
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[0]["version"], base.as_str());
+    assert_eq!(versions[0]["repositories"], json!([]));
+    assert_eq!(versions[1]["version"], amendment["version"]);
+    assert_eq!(versions[1]["repositories"], json!(["shop"]));
+    let words = place.run(&["show", "money-has-currency"]);
+    assert_eq!(words.code, 0, "{words:?}");
+    assert!(
+        words.stdout.contains("    binds: the whole system\n"),
+        "{words:?}"
+    );
+    assert!(words.stdout.contains("    binds: shop\n"), "{words:?}");
+}

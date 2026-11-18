@@ -761,6 +761,7 @@ fn version_json(view: &store::VersionView) -> serde_json::Map<String, Value> {
     object.insert("version".into(), json!(view.version));
     object.insert("status".into(), json!(view.status));
     object.insert("base".into(), json!(view.base));
+    object.insert("repositories".into(), json!(view.repositories));
     object.insert("proposer".into(), json!(view.proposer));
     object.insert("proposed_in".into(), json!(view.proposed_in));
     object.insert(
@@ -827,7 +828,11 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
                     ))
             );
             for view in &claim.versions {
-                words.push_str(&format!("  {}\n", version_words(view)));
+                words.push_str(&format!(
+                    "  {}\n    binds: {}\n",
+                    version_words(view),
+                    repository::words(&view.repositories)
+                ));
             }
             return Ok(Answer {
                 json: json!({
@@ -873,6 +878,10 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
         for scenario in &view.scenarios {
             words.push_str(&format!("scenario: {scenario}\n"));
         }
+        words.push_str(&format!(
+            "binds: {}\n",
+            repository::words(&view.repositories)
+        ));
         if let Some(body) = &body {
             words.push('\n');
             words.push_str(body);
