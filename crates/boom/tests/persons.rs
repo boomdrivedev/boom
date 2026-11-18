@@ -76,6 +76,19 @@ fn a_plain_key_file_is_refused() {
         assert!(refused.stderr.contains(named), "{named}: {refused:?}");
     }
     assert!(!place.store.exists());
+
+    let ada = place.made();
+    let bo = support::path_arg(&place.keys.plain_key("bo", 2));
+    let refused = place.refused(
+        &["register", "bo", &format!("{bo}.pub"), "--key", &ada],
+        "ssh-ed25519",
+    );
+    for named in [
+        "sk-ssh-ed25519@openssh.com",
+        "sk-ecdsa-sha2-nistp256@openssh.com",
+    ] {
+        assert!(refused.stderr.contains(named), "{named}: {refused:?}");
+    }
 }
 
 #[test]
@@ -118,5 +131,58 @@ fn an_agents_proposal_with_no_provenance_is_refused() {
             support::SCENARIO,
         ],
         "an agent's proposal names its provenance",
+    );
+}
+
+#[test]
+fn an_owner_registers_a_second_person() {
+    let place = Place::new();
+    let ada = place.made();
+    let bo = place.key("bo", 2);
+    let answer = place.json(&["register", "bo", &format!("{bo}.pub"), "--key", &ada]);
+    assert_eq!(answer["format"], "boom-register/1");
+    assert_eq!(answer["person"], "bo");
+    assert_eq!(answer["owner"], false);
+    let log = place.log();
+    assert_eq!(log.len(), 2);
+    let entry = &log[1];
+    assert_eq!(entry["act"], "registered");
+    assert_eq!(entry["actor"], serde_json::json!({"person": "ada"}));
+    let signed = entry["signed"].as_str().unwrap();
+    let fields: serde_json::Value = serde_json::from_str(signed).unwrap();
+    assert_eq!(fields["person"], "bo");
+    let bo_public = place.keys.public_key(std::path::Path::new(&bo));
+    assert_eq!(fields["key"], boom::sign::key_line(&bo_public));
+    let ada_public = place.keys.public_key(std::path::Path::new(&ada));
+    assert_eq!(
+        boom::sign::verify(
+            &ada_public,
+            signed.as_bytes(),
+            entry["signature"].as_str().unwrap()
+        ),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_register_by_someone_not_an_owner_is_refused() {
+    let place = Place::new();
+    let ada = place.made();
+    let bo = place.registered(&ada, "bo", 2);
+    let cy = place.key("cy", 3);
+    place.refused(
+        &["register", "cy", &format!("{cy}.pub"), "--key", &bo],
+        "only an owner registers a person",
+    );
+}
+
+#[test]
+fn a_key_registered_to_another_is_refused() {
+    let place = Place::new();
+    let ada = place.made();
+    let bo = place.registered(&ada, "bo", 2);
+    place.refused(
+        &["register", "cy", &format!("{bo}.pub"), "--key", &ada],
+        "registered to bo",
     );
 }

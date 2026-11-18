@@ -87,3 +87,22 @@ fn no_terminal() {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert_eq!(place.acts(), ["registered", "proposed"]);
 }
+
+#[test]
+fn a_registration_repeated_adds_nothing() {
+    let place = Place::new();
+    let ada = place.made();
+    let bo = place.key("bo", 2);
+    let public = format!("{bo}.pub");
+    let first = place.json(&["register", "bo", &public, "--key", &ada]);
+    let second = place.run(&["register", "bo", &public, "--key", &ada, "--json"]);
+    assert_eq!(second.code, 0, "{second:?}");
+    let second: serde_json::Value = serde_json::from_str(&second.stdout).unwrap();
+    assert_eq!(second, first);
+    let registrations = place
+        .log()
+        .into_iter()
+        .filter(|entry| entry["act"] == "registered")
+        .count();
+    assert_eq!(registrations, 2, "ada's and bo's");
+}
