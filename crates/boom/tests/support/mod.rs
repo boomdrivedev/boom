@@ -323,3 +323,33 @@ impl Place {
 
 /// The scenario the tests' proposals give.
 pub const SCENARIO: &str = "Given an amount, then it names its currency.";
+
+impl Place {
+    /// Writes `text` to a file in the place, giving its path.
+    pub fn file(&self, name: &str, text: &str) -> String {
+        let path = self.dir.path().join(name);
+        std::fs::write(&path, text).unwrap();
+        path_arg(&path)
+    }
+
+    /// An agent's proposal of a first version of `name` with the body
+    /// in `body`, giving its answer.
+    pub fn proposed_with_body(&self, name: &str, statement: &str, body: &str) -> serde_json::Value {
+        self.json(&[
+            "propose",
+            "invariant",
+            name,
+            statement,
+            "--scenario",
+            SCENARIO,
+            "--body",
+            body,
+            "--provenance",
+            "run-1",
+        ])
+    }
+}
+
+/// A body of a few lines, with a character past ASCII.
+pub const BODY: &str =
+    "# Money\n\nAn amount is a number and a currency,\nnever a number alone: 40.00 €.\n";

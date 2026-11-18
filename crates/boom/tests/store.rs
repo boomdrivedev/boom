@@ -63,3 +63,86 @@ fn no_store_yet_exits_3_and_makes_nothing() {
         .collect();
     assert_eq!(made, ["keys"]);
 }
+
+fn fingerprint(text: &str) -> String {
+    boom::sha256_hex(text.as_bytes())
+}
+
+#[test]
+fn one_body_two_versions_one_blob() {
+    let place = Place::new();
+    place.made();
+    let body = place.file("money.md", support::BODY);
+    let first = place.proposed_with_body(
+        "money-has-currency",
+        "Every amount names its currency.",
+        &body,
+    );
+    let second = place.proposed_with_body(
+        "money-has-currency",
+        "Every amount names one currency.",
+        &body,
+    );
+    assert_ne!(first["version"], second["version"]);
+    let blobs: i64 = place
+        .sqlite()
+        .query_row("SELECT count(*) FROM blobs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(blobs, 1);
+    for answer in [&first, &second] {
+        let target = format!("money-has-currency@{}", answer["version"].as_str().unwrap());
+        assert_eq!(
+            place.show(&target)["body_fingerprint"],
+            fingerprint(support::BODY)
+        );
+    }
+}
+
+#[test]
+fn a_body_read_back_is_its_bytes() {
+    let place = Place::new();
+    place.made();
+    let body = place.file("money.md", support::BODY);
+    let answer = place.proposed_with_body(
+        "money-has-currency",
+        "Every amount names its currency.",
+        &body,
+    );
+    let target = format!("money-has-currency@{}", answer["version"].as_str().unwrap());
+    assert_eq!(place.show(&target)["body"], support::BODY);
+    let words = place.run(&["show", &target]);
+    assert_eq!(words.code, 0, "{words:?}");
+    assert!(words.stdout.ends_with(support::BODY), "{words:?}");
+}
+
+#[test]
+fn an_altered_blob_is_unreadable() {
+    let place = Place::new();
+    place.made();
+    let body = place.file("money.md", support::BODY);
+    let answer = place.proposed_with_body(
+        "money-has-currency",
+        "Every amount names its currency.",
+        &body,
+    );
+    let target = format!("money-has-currency@{}", answer["version"].as_str().unwrap());
+    let altered = place
+        .sqlite()
+        .execute(
+            "UPDATE blobs SET bytes = ?1 WHERE fingerprint = ?2",
+            rusqlite::params![
+                b"An amount is a number.".to_vec(),
+                fingerprint(support::BODY)
+            ],
+        )
+        .unwrap();
+    assert_eq!(altered, 1);
+    let outcome = place.run(&["show", &target, "--json"]);
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();
+    assert_eq!(answer["format"], "boom-not-run/1");
+    let reason = answer["not_run"]["reason"].as_str().unwrap();
+    assert!(reason.contains(&fingerprint(support::BODY)), "{reason}");
+    assert!(!outcome.stdout.contains("An amount is"), "{outcome:?}");
+    assert!(!outcome.stderr.contains("An amount is"), "{outcome:?}");
+}

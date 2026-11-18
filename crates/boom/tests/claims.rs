@@ -185,3 +185,19 @@ fn an_unknown_name_is_refused() {
         "{outcome:?}"
     );
 }
+
+#[test]
+fn a_version_shown_gives_its_body() {
+    let place = Place::new();
+    place.made();
+    let body = place.file("money.md", support::BODY);
+    let answer = place.proposed_with_body("money-has-currency", MONEY, &body);
+    let version = answer["version"].as_str().unwrap();
+    let shown = place.show(&format!("money-has-currency@{version}"));
+    assert_eq!(shown["format"], "boom-show/1");
+    assert_eq!(shown["version"], version);
+    assert_eq!(shown["statement"], MONEY);
+    assert_eq!(shown["scenarios"], json!([SCENARIO]));
+    assert_eq!(shown["status"], "proposed");
+    assert_eq!(shown["body"], support::BODY);
+}
