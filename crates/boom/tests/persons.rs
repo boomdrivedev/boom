@@ -77,3 +77,46 @@ fn a_plain_key_file_is_refused() {
     }
     assert!(!place.store.exists());
 }
+
+#[test]
+fn an_agents_proposal_names_its_provenance() {
+    let place = Place::new();
+    place.made();
+    let outcome = place.run(&[
+        "propose",
+        "invariant",
+        "money-has-currency",
+        "Every amount names its currency.",
+        "--scenario",
+        support::SCENARIO,
+        "--provenance",
+        "flume:place-7",
+    ]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    let log = place.log();
+    let proposed = &log[1];
+    assert_eq!(proposed["act"], "proposed");
+    assert_eq!(
+        proposed["actor"],
+        serde_json::json!({"agent": {"provenance": "flume:place-7"}})
+    );
+    assert_eq!(proposed["signature"], serde_json::Value::Null);
+    assert_eq!(proposed["counted"], true);
+}
+
+#[test]
+fn an_agents_proposal_with_no_provenance_is_refused() {
+    let place = Place::new();
+    place.made();
+    place.refused(
+        &[
+            "propose",
+            "invariant",
+            "money-has-currency",
+            "Every amount names its currency.",
+            "--scenario",
+            support::SCENARIO,
+        ],
+        "an agent's proposal names its provenance",
+    );
+}

@@ -299,3 +299,27 @@ impl Place {
 pub fn path_arg(path: &Path) -> String {
     path.to_str().unwrap().to_owned()
 }
+
+impl Place {
+    /// Runs `args`, asserting it refuses saying `words` and appends
+    /// nothing.
+    pub fn refused(&self, args: &[&str], words: &str) -> boom::cli::Outcome {
+        let before = self.log();
+        let outcome = self.run(args);
+        assert_eq!(outcome.code, 2, "{args:?}: {outcome:?}");
+        assert!(outcome.stderr.contains(words), "{words}: {outcome:?}");
+        assert_eq!(self.log(), before, "{args:?} appended");
+        outcome
+    }
+
+    /// The acts of the log's entries, in order.
+    pub fn acts(&self) -> Vec<String> {
+        self.log()
+            .iter()
+            .map(|entry| entry["act"].as_str().unwrap().to_owned())
+            .collect()
+    }
+}
+
+/// The scenario the tests' proposals give.
+pub const SCENARIO: &str = "Given an amount, then it names its currency.";

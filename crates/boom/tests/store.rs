@@ -36,3 +36,30 @@ fn a_store_named_outright_is_used_and_nothing_else_made() {
     made.sort();
     assert_eq!(made, ["boom.sqlite", "keys"]);
 }
+
+#[test]
+fn no_store_yet_exits_3_and_makes_nothing() {
+    let place = Place::new();
+    let outcome = place.run(&[
+        "propose",
+        "invariant",
+        "money-has-currency",
+        "Every amount names its currency.",
+        "--scenario",
+        support::SCENARIO,
+        "--provenance",
+        "run-1",
+    ]);
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    assert!(outcome.stderr.contains(&place.store_arg()), "{outcome:?}");
+    assert!(
+        outcome.stderr.contains("boom init makes one"),
+        "{outcome:?}"
+    );
+    assert!(!place.store.exists());
+    let made: Vec<_> = std::fs::read_dir(place.dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(made, ["keys"]);
+}

@@ -30,3 +30,60 @@ fn the_log_of_a_new_store() {
     assert_eq!(lines.len(), 1, "{log:?}");
     assert!(lines[0].starts_with("1 registered by ada"), "{log:?}");
 }
+
+const PROPOSAL: [&str; 8] = [
+    "propose",
+    "invariant",
+    "money-has-currency",
+    "Every amount names its currency.",
+    "--scenario",
+    support::SCENARIO,
+    "--provenance",
+    "run-1",
+];
+
+#[test]
+fn a_proposal_answered_as_json() {
+    let place = Place::new();
+    place.made();
+    let mut args = PROPOSAL.to_vec();
+    args.push("--json");
+    let outcome = place.run(&args);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
+    let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();
+    assert_eq!(answer["format"], "boom-propose/1");
+    assert_eq!(answer["claim"], "money-has-currency");
+    assert_eq!(answer["version"].as_str().unwrap().len(), 12);
+    assert_eq!(answer["status"], "proposed");
+    assert!(!outcome.stderr.is_empty(), "the words go to standard error");
+}
+
+#[test]
+fn an_unknown_kind_is_refused_naming_the_kinds() {
+    let place = Place::new();
+    place.made();
+    let mut args = PROPOSAL.to_vec();
+    args[1] = "rule";
+    let outcome = place.run(&args);
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    for kind in ["invariant", "decision", "assumption"] {
+        assert!(outcome.stderr.contains(kind), "{kind}: {outcome:?}");
+    }
+}
+
+#[test]
+fn no_terminal() {
+    let place = Place::new();
+    place.made();
+    let store = place.store_arg();
+    let mut args = PROPOSAL.to_vec();
+    args.extend(["--store", &store]);
+    let output = Command::new(env!("CARGO_BIN_EXE_boom"))
+        .args(&args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("the binary runs");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(place.acts(), ["registered", "proposed"]);
+}
