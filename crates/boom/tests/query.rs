@@ -400,3 +400,89 @@ fn a_declaration_it_cannot_read_is_refused() {
     assert!(words.contains(file.to_str().unwrap()), "{words}");
     assert!(words.contains("context"), "{words}");
 }
+
+#[test]
+fn a_statement_edited_in_the_views_changes_nothing() {
+    let place = Place::new();
+    let (_, version) = money_in_shop(&place);
+    let target = format!("money-has-currency@{version}");
+    let edited = place
+        .sqlite()
+        .execute(
+            "UPDATE versions SET statement = 'Any amount will do.' \
+             WHERE name = 'money-has-currency' AND version = ?1",
+            [&version],
+        )
+        .unwrap();
+    assert_eq!(edited, 1);
+    assert_eq!(
+        place.show(&target)["statement"],
+        "Any amount will do.",
+        "the views were edited and left as fresh"
+    );
+    let answer = query(&place, "shop");
+    assert_eq!(answer["claims"][0]["version"], version.as_str());
+    assert_eq!(answer["claims"][0]["statement"], MONEY);
+    let words = place.run(&["query", "--repository", "shop"]);
+    assert!(words.stdout.contains(MONEY), "{words:?}");
+    assert!(!words.stdout.contains("Any amount"), "{words:?}");
+}
+
+#[test]
+fn a_status_edited_in_the_views_changes_nothing() {
+    let place = Place::new();
+    place.made();
+    let version = proposed(
+        &place,
+        "invariant",
+        "money-has-currency",
+        MONEY,
+        &["--repository", "shop"],
+    );
+    let conn = place.sqlite();
+    let marked = conn
+        .execute(
+            "UPDATE versions SET status = 'standing', decided_by = 'ada', decided_in = 2 \
+             WHERE name = 'money-has-currency' AND version = ?1",
+            [&version],
+        )
+        .unwrap();
+    assert_eq!(marked, 1);
+    let standing = conn
+        .execute(
+            "UPDATE claims SET standing = ?1 WHERE name = 'money-has-currency'",
+            [&version],
+        )
+        .unwrap();
+    assert_eq!(standing, 1);
+    drop(conn);
+    assert_eq!(
+        place.status("money-has-currency", &version),
+        "standing",
+        "the views were edited and left as fresh"
+    );
+    assert_eq!(query(&place, "shop")["claims"], json!([]));
+}
+
+#[test]
+fn an_accept_written_by_hand_binds_nothing() {
+    let place = Place::new();
+    place.made();
+    let version = proposed(
+        &place,
+        "invariant",
+        "money-has-currency",
+        MONEY,
+        &["--repository", "shop"],
+    );
+    place.append_by_hand(
+        &support::accept_entry("ada", "money-has-currency", &version),
+        None,
+    );
+    let accepted = place.log().pop().unwrap();
+    assert_eq!(accepted["act"], "accepted");
+    assert_eq!(accepted["counted"], false);
+    let answer = query(&place, "shop");
+    assert_eq!(answer["claims"], json!([]));
+    assert_eq!(answer["head"]["number"], accepted["number"]);
+}
