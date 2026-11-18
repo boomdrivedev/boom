@@ -308,3 +308,95 @@ fn the_same_log_the_same_answer() {
     assert_eq!(second.stdout.as_bytes(), first.stdout.as_bytes());
     assert_eq!(log_rows(&place), before);
 }
+
+/// Runs `boom query` with no `--repository` in `cwd`, asserting it
+/// refuses, writing nothing and appending nothing, and gives its words.
+fn refused_in(place: &Place, cwd: &std::path::Path) -> String {
+    let before = log_rows(place);
+    let outcome = place.run_in(cwd, &["query"]);
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    assert_eq!(outcome.stdout, "", "{outcome:?}");
+    assert_eq!(log_rows(place), before);
+    outcome.stderr
+}
+
+#[test]
+fn declared_by_the_repository() {
+    let place = Place::new();
+    money_in_shop(&place);
+    place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let inside = place.folder("shop-repo/src/money");
+    let answer = place.json_in(&inside, &["query"]);
+    assert_eq!(answer["repository"], "shop");
+    assert_eq!(names(&answer), ["money-has-currency"]);
+    let words = place.run_in(&inside, &["query"]);
+    assert!(
+        words
+            .stdout
+            .starts_with("1 claim stands for shop, at entry "),
+        "{words:?}"
+    );
+}
+
+#[test]
+fn named_outright() {
+    let place = Place::new();
+    money_in_shop(&place);
+    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let answer = place.json_in(&repo, &["query", "--repository", "ledger"]);
+    assert_eq!(answer["repository"], "ledger");
+    assert_eq!(answer["claims"], json!([]));
+}
+
+#[test]
+fn neither_named_nor_declared_is_refused() {
+    let place = Place::new();
+    money_in_shop(&place);
+    let repo = place.repository("undeclared", None);
+    let words = refused_in(&place, &repo);
+    assert!(words.contains("--repository"), "{words}");
+    assert!(words.contains(".config/boom.toml"), "{words}");
+}
+
+#[test]
+fn a_declaration_above_the_repository_is_not_read() {
+    let place = Place::new();
+    money_in_shop(&place);
+    let above = place.folder("above");
+    place.declare(&above, "repository = \"shop\"\n");
+    let repo = place.repository("above/repo", None);
+    let words = refused_in(&place, &repo);
+    assert!(words.contains("--repository"), "{words}");
+}
+
+#[test]
+fn outside_a_repository_no_declaration_is_read() {
+    let place = Place::new();
+    money_in_shop(&place);
+    let outside = place.folder("outside");
+    place.declare(&outside, "repository = \"shop\"\n");
+    let words = refused_in(&place, &outside);
+    assert!(words.contains("--repository"), "{words}");
+}
+
+#[test]
+fn a_declaration_it_cannot_read_is_refused() {
+    let place = Place::new();
+    money_in_shop(&place);
+    let named = place.repository("named", Some("repository = \"Shop\"\n"));
+    let file = named.join(".config/boom.toml");
+    let words = refused_in(&place, &named);
+    assert!(words.contains(file.to_str().unwrap()), "{words}");
+    assert!(
+        words.contains("a repository's name is kebab case"),
+        "{words}"
+    );
+    let other = place.repository(
+        "other",
+        Some("repository = \"shop\"\ncontext = \"billing\"\n"),
+    );
+    let file = other.join(".config/boom.toml");
+    let words = refused_in(&place, &other);
+    assert!(words.contains(file.to_str().unwrap()), "{words}");
+    assert!(words.contains("context"), "{words}");
+}
