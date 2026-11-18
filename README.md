@@ -1,7 +1,8 @@
 # boom
 
-**Designed, not built.** The binary prints its version and nothing more;
-the site shows what boom will do.
+**Built in part.** The binary keeps a store's claims in a log on the
+machine and answers from it. The views and `boom check` are designed,
+and the site shows what boom will do.
 
 A ledger of what a project has claimed about itself: its invariants,
 its decisions and its assumptions, each recorded with who proposed it,
@@ -16,12 +17,41 @@ claims that hold.
 
 ## What it does
 
-- **One ledger.** Claims, and the narratives, contexts, relationships
-  and terms around them, as plain-text recfiles in a Git repository the
-  project owns.
-- **Status read from events.** Proposed, accepted, rejected, superseded
-  and annotated are events, appended and never edited. An agent
-  proposes; only a person accepts.
+- **One store on the machine.** A store is one SQLite file,
+  `boom/boom.sqlite` under `$XDG_DATA_HOME` unless `--store` names
+  another. Its log holds the truth: boom appends each entry and never
+  edits one, and each entry carries the hash of the one before it, so
+  boom finds an entry changed or removed.
+- **Claims by name, versions by fingerprint.** A claim, an invariant, a
+  decision or an assumption, keeps its name for life and gains a
+  version for each change, named by the fingerprint of its words. An
+  amendment names the version it amends. boom keeps a long body once,
+  under the fingerprint of its bytes.
+- **An agent proposes; a person accepts.** An agent's proposal names
+  its provenance. Only a person accepts or rejects, and signs the entry
+  with a security key the store registers to them, the person present
+  (record 0006). `ssh-keygen -Y verify` checks that signature with no
+  boom.
+- **Every answer computed from the log.** boom reads whether a version
+  is proposed, standing, replaced or rejected from the log. It judges
+  each entry it reads as it judges a write, so an entry written by hand
+  that breaks a rule counts for nothing.
+
+```sh
+boom init --person ada --key ~/.ssh/id_ed25519_sk
+boom propose invariant money-has-currency "Every amount names its currency." \
+  --scenario "Given an amount, then it names its currency." --provenance run-1
+boom accept money-has-currency@<version> --key ~/.ssh/id_ed25519_sk
+boom show money-has-currency --json
+boom log
+```
+
+Each command answers in words, or with `--json` as one JSON object
+that names its format. It exits 0 when it answers, 2 when it refuses
+and 3 when it cannot run, and on 2 and 3 it writes nothing.
+
+## What it will do
+
 - **Views computed.** The rules for a scope, the decision records in
   MADR, the design book in mdBook and the context map are computed from
   the ledger, and `boom sync` writes what each repository needs into it.
@@ -33,7 +63,7 @@ claims that hold.
 
 | path | what |
 |---|---|
-| `crates/boom` | the binary; for now it answers `--version` |
+| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show` and `log` |
 | `site/` | the site, Astro with Starlight; its diagrams are drawn at build time (`site/README.md`) |
 | `docs/architecture/core.md` | the rules every change keeps |
 | `docs/adr/` | the decisions behind them, one MADR record each |

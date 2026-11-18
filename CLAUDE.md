@@ -4,7 +4,10 @@ A ledger of what a project has claimed about itself, invariants,
 decisions and assumptions, with every view of it (rules for a scope,
 decision records, a design book, a context map) computed from the
 ledger, and `boom check` reading the work against the claims that hold.
-For now the crate prints its version and nothing more.
+The crate keeps a store's claims in a log in one SQLite file on the
+machine: an agent proposes, a person accepts or rejects with a security
+key, and every answer is computed from the log. The views it renders
+and `boom check` are not built yet.
 
 ## The family
 
