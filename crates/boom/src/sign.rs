@@ -4,9 +4,81 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use ssh_key::PublicKey;
+use ssh_key::{Algorithm, HashAlg, PublicKey, SshSig};
 
 use crate::Failure;
+
+/// The two key types boom registers: security keys, whose signatures
+/// carry the authenticator's user-presence flag (record 0006).
+pub const TYPES: [&str; 2] = [
+    "sk-ssh-ed25519@openssh.com",
+    "sk-ecdsa-sha2-nistp256@openssh.com",
+];
+
+/// The user-presence bit of a security key signature's flags.
+const USER_PRESENT: u8 = 0x01;
+
+/// Refuses a key of any type but the two security key types, naming its
+/// type and the two boom registers.
+pub fn check_key_type(key: &PublicKey) -> Result<(), String> {
+    match key.algorithm() {
+        Algorithm::SkEd25519 | Algorithm::SkEcdsaSha2NistP256 => Ok(()),
+        other => Err(format!(
+            "a key of type {} signs without showing its person present; boom registers {} and {}",
+            other.as_str(),
+            TYPES[0],
+            TYPES[1]
+        )),
+    }
+}
+
+/// The public key an armored SSH signature names as its signer, where
+/// it is one.
+pub fn signing_key(signature: &str) -> Option<PublicKey> {
+    let signature = SshSig::from_pem(signature.trim_end().as_bytes()).ok()?;
+    Some(PublicKey::new(signature.public_key().clone(), ""))
+}
+
+/// Verifies `signature`, an armored SSH signature, over `signed` by
+/// `public_key`: one of the two security key types, in the namespace
+/// `boom`, hashed with SHA-512, and its user-presence flag set (design
+/// 7). Answers why where it does not.
+pub fn verify(public_key: &PublicKey, signed: &[u8], signature: &str) -> Result<(), String> {
+    check_key_type(public_key)?;
+    let signature = SshSig::from_pem(signature.trim_end().as_bytes())
+        .map_err(|error| format!("its signature is not an SSH signature: {error}"))?;
+    if signature.namespace() != NAMESPACE {
+        return Err(format!(
+            "its signature is in the namespace {}, not {NAMESPACE}",
+            signature.namespace()
+        ));
+    }
+    if signature.hash_alg() != HashAlg::Sha512 {
+        return Err(format!(
+            "its signature hashes with {}, not sha512",
+            signature.hash_alg().as_str()
+        ));
+    }
+    if signature.public_key() != public_key.key_data() {
+        return Err("its signature is by another key".to_owned());
+    }
+    public_key
+        .verify(NAMESPACE, signed, &signature)
+        .map_err(|error| format!("its signature does not verify: {error}"))?;
+    let bytes = signature.signature().as_bytes();
+    let flags = bytes
+        .len()
+        .checked_sub(5)
+        .map(|at| bytes[at])
+        .ok_or("its signature carries no security key flags")?;
+    if flags & USER_PRESENT == 0 {
+        return Err(
+            "the signature does not show its person present: its user-presence flag is unset"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
 
 /// Something that signs with one key: a person's security key, through
 /// their `ssh-keygen`, or a test's key made in software.
