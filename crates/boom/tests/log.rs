@@ -33,3 +33,78 @@ fn a_clock_set_back_changes_no_status() {
     assert!(log[2]["at"].as_u64() < log[1]["at"].as_u64());
     assert_eq!(place.status("money-has-currency", &version), "standing");
 }
+
+#[test]
+fn every_entry_names_its_format() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &version, &ada);
+    let other = place.proposed(
+        "refund-within-payment",
+        "A refund never exceeds the payment.",
+    );
+    place.json(&[
+        "reject",
+        &format!("refund-within-payment@{other}"),
+        "--reason",
+        "Partial refunds are out of scope.",
+        "--key",
+        &ada,
+    ]);
+    let log = place.log();
+    assert_eq!(log.len(), 5);
+    for entry in &log {
+        assert_eq!(entry["format"], "boom-entry/1", "{entry}");
+    }
+    assert_eq!(place.json(&["log"])["format"], "boom-log/1");
+}
+
+#[test]
+fn entries_are_numbered_from_one_in_order() {
+    let place = Place::new();
+    place.made();
+    let first = place.proposed("money-has-currency", MONEY);
+    let second = place.proposed(
+        "refund-within-payment",
+        "A refund never exceeds the payment.",
+    );
+    let log = place.log();
+    let numbers: Vec<u64> = log
+        .iter()
+        .map(|entry| entry["number"].as_u64().unwrap())
+        .collect();
+    assert_eq!(numbers, [1, 2, 3]);
+    assert_eq!(log[0]["act"], "registered");
+    let version = |entry: &serde_json::Value| {
+        let signed: serde_json::Value =
+            serde_json::from_str(entry["signed"].as_str().unwrap()).unwrap();
+        signed["claim"]["version"].as_str().unwrap().to_owned()
+    };
+    assert_eq!(version(&log[1]), first);
+    assert_eq!(version(&log[2]), second);
+}
+
+#[test]
+fn each_entry_gives_its_hash_and_the_one_before() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &version, &ada);
+    let log = place.log();
+    assert_eq!(log.len(), 3);
+    assert_eq!(log[0]["prev"], boom::entry::GENESIS);
+    for (at, entry) in log.iter().enumerate() {
+        if at > 0 {
+            assert_eq!(entry["prev"], log[at - 1]["hash"]);
+        }
+        assert_eq!(
+            entry["hash"],
+            boom::entry::hash(
+                entry["prev"].as_str().unwrap(),
+                entry["signed"].as_str().unwrap(),
+                entry["signature"].as_str()
+            )
+        );
+    }
+}

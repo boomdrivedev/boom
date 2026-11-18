@@ -324,3 +324,30 @@ fn a_reject_with_no_reason_is_refused() {
     );
     assert_eq!(place.status("money-has-currency", &version), "proposed");
 }
+
+#[test]
+fn a_signature_verifies_with_no_boom() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &version, &ada);
+    let accepted = place.log().pop().unwrap();
+    assert_eq!(accepted["act"], "accepted");
+    let signed = accepted["signed"].as_str().unwrap();
+    let signature =
+        ssh_key::SshSig::from_pem(accepted["signature"].as_str().unwrap().trim_end()).unwrap();
+    let registration: serde_json::Value =
+        serde_json::from_str(place.log()[0]["signed"].as_str().unwrap()).unwrap();
+    let registered =
+        ssh_key::PublicKey::from_openssh(registration["key"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        registered.algorithm().as_str(),
+        "sk-ssh-ed25519@openssh.com"
+    );
+    registered
+        .verify("boom", signed.as_bytes(), &signature)
+        .expect("the accept's signature verifies by ada's registered key");
+    assert!(registered
+        .verify("boom", b"other words", &signature)
+        .is_err());
+}
