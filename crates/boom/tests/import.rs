@@ -518,3 +518,275 @@ fn what_a_draft_still_needs() {
     }
     assert_eq!(place.log(), before);
 }
+
+const CENTS_SCENARIO: &str =
+    "Given an amount of 0.30, when it is kept, then it is kept as 30 cents.";
+const RECORDS_SCENARIO: &str =
+    "Given a decision that shapes the shop, when it is made, then a MADR file records it.";
+
+/// A drafts file in the place holding `records`, giving its path.
+fn drafts(place: &Place, file: &str, records: Value) -> String {
+    let text = json!({"format": "boom-import-drafts/1", "records": records}).to_string();
+    place.file(file, &text)
+}
+
+/// The two records of the shop's folder, `0001` and `0003`.
+fn two_records(place: &Place) -> String {
+    adr(
+        place,
+        &[
+            (
+                "0001-record-architecture-decisions.md",
+                RECORD_ARCHITECTURE_DECISIONS,
+            ),
+            ("0003-amounts-in-cents.md", AMOUNTS_IN_CENTS),
+        ],
+    )
+}
+
+/// Drafts giving each of the two records a scenario.
+fn two_drafts(place: &Place) -> String {
+    drafts(
+        place,
+        "drafts.json",
+        json!({
+            "0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]},
+            "0003-amounts-in-cents.md": {"scenarios": [CENTS_SCENARIO]},
+        }),
+    )
+}
+
+/// `boom import adr <dir> --repository <repository> --drafts <drafts>
+/// --provenance run-1 --json`'s answer.
+fn imported(place: &Place, dir: &str, repository: &str, drafts: &str) -> Value {
+    place.json(&[
+        "import",
+        "adr",
+        dir,
+        "--repository",
+        repository,
+        "--drafts",
+        drafts,
+        "--provenance",
+        "run-1",
+    ])
+}
+
+#[test]
+fn imported_with_drafts() {
+    let place = Place::new();
+    place.made();
+    let dir = two_records(&place);
+    let drafts = two_drafts(&place);
+    let answer = imported(&place, &dir, "shop", &drafts);
+    assert_eq!(answer["format"], "boom-import/1");
+    let cents = record(&answer, "0003-amounts-in-cents.md");
+    assert_eq!(cents["status"], "proposed");
+    let version = cents["version"].as_str().unwrap();
+    assert_eq!(version.len(), 12);
+    let shown = place.show(&format!("amounts-in-cents@{version}"));
+    assert_eq!(shown["kind"], "decision");
+    assert_eq!(shown["statement"], "Amounts are kept in cents");
+    assert_eq!(
+        shown["body"],
+        "## Context\n\nFloats round: 0.1 + 0.2 is not 0.3.\n\n## Decision\n\nEvery amount is an integer of cents.\n"
+    );
+    assert_eq!(shown["scenarios"], json!([CENTS_SCENARIO]));
+    assert_eq!(
+        shown["imported"],
+        json!({
+            "repository": "shop",
+            "from": "0003-amounts-in-cents.md",
+            "form": "madr",
+            "legacy": "0003",
+            "status": "accepted",
+            "date": "2026-01-04",
+            "deciders": ["ada"],
+            "section": null,
+            "drafted": true,
+        })
+    );
+    assert_eq!(shown["history"], Value::Null);
+    assert_eq!(shown["status"], "proposed");
+}
+
+#[test]
+fn a_rule_named_by_its_draft() {
+    let place = Place::new();
+    place.made();
+    let page = rules_page(&place, RULES, None);
+    let drafts = drafts(
+        &place,
+        "drafts.json",
+        json!({
+            "core.1": {"name": "status-from-events", "scenarios": ["Given a record accepted, then its status is read from its events."]},
+            "core.2": {"name": "views-computed", "scenarios": ["Given a view, then it is computed from the ledger."]},
+        }),
+    );
+    let answer = place.json(&[
+        "import",
+        "rules",
+        &page,
+        "--repository",
+        "shop",
+        "--drafts",
+        &drafts,
+        "--provenance",
+        "run-1",
+    ]);
+    let rule = record(&answer, "core.1");
+    assert_eq!(rule["name"], "status-from-events");
+    assert_eq!(rule["kind"], "invariant");
+    assert_eq!(rule["status"], "proposed");
+    let version = rule["version"].as_str().unwrap();
+    let shown = place.show(&format!("status-from-events@{version}"));
+    assert_eq!(shown["kind"], "invariant");
+    assert_eq!(shown["statement"], CORE_1);
+    assert_eq!(shown["imported"]["legacy"], "core.1");
+    assert_eq!(shown["imported"]["from"], "core.md");
+    assert_eq!(shown["imported"]["section"], "The ledger");
+}
+
+#[test]
+fn a_draft_missing_is_refused() {
+    let place = Place::new();
+    place.made();
+    let dir = two_records(&place);
+    let drafts = drafts(
+        &place,
+        "drafts.json",
+        json!({"0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]}}),
+    );
+    place.refused(
+        &[
+            "import",
+            "adr",
+            &dir,
+            "--repository",
+            "shop",
+            "--drafts",
+            &drafts,
+            "--provenance",
+            "run-1",
+        ],
+        "0003-amounts-in-cents.md needs a scenario",
+    );
+}
+
+#[test]
+fn a_draft_for_no_record_is_refused() {
+    let place = Place::new();
+    place.made();
+    let dir = two_records(&place);
+    let drafts = drafts(
+        &place,
+        "drafts.json",
+        json!({
+            "0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]},
+            "0003-amounts-in-cents.md": {"scenarios": [CENTS_SCENARIO]},
+            "0009-gone.md": {"scenarios": ["Given nothing, then nothing."]},
+        }),
+    );
+    place.refused(
+        &[
+            "import",
+            "adr",
+            &dir,
+            "--repository",
+            "shop",
+            "--drafts",
+            &drafts,
+            "--provenance",
+            "run-1",
+        ],
+        "0009-gone.md",
+    );
+}
+
+#[test]
+fn an_import_proposes_and_accepts_nothing() {
+    let place = Place::new();
+    place.made();
+    let dir = two_records(&place);
+    let drafts = two_drafts(&place);
+    let before = place.log().len();
+    let answer = imported(&place, &dir, "shop", &drafts);
+    let log = place.log();
+    assert_eq!(log.len(), before + 2);
+    for entry in &log[before..] {
+        assert_eq!(entry["act"], "proposed");
+        assert_eq!(entry["actor"], json!({"agent": {"provenance": "run-1"}}));
+        assert_eq!(entry["signature"], Value::Null);
+        assert_eq!(entry["counted"], true);
+    }
+    assert!(log.iter().all(|entry| entry["act"] != "accepted"));
+    for source in [
+        "0001-record-architecture-decisions.md",
+        "0003-amounts-in-cents.md",
+    ] {
+        let proposed = record(&answer, source);
+        let name = proposed["name"].as_str().unwrap();
+        let version = proposed["version"].as_str().unwrap();
+        assert_eq!(place.status(name, version), "proposed");
+    }
+}
+
+#[test]
+fn one_record_refused_appends_none() {
+    let place = Place::new();
+    place.made();
+    let dir = adr(
+        &place,
+        &[
+            (
+                "0001-record-architecture-decisions.md",
+                RECORD_ARCHITECTURE_DECISIONS,
+            ),
+            ("0003-amounts-in-cents.md", AMOUNTS_IN_CENTS),
+            ("0004-one-database.md", ONE_DATABASE),
+        ],
+    );
+    let drafts = drafts(
+        &place,
+        "drafts.json",
+        json!({
+            "0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]},
+            "0003-amounts-in-cents.md": {"scenarios": [CENTS_SCENARIO], "name": "Bad_Name"},
+            "0004-one-database.md": {"scenarios": ["Given an order, then it is kept in the one database."]},
+        }),
+    );
+    place.refused(
+        &[
+            "import",
+            "adr",
+            &dir,
+            "--repository",
+            "shop",
+            "--drafts",
+            &drafts,
+            "--provenance",
+            "run-1",
+        ],
+        "Bad_Name",
+    );
+}
+
+#[test]
+fn an_import_with_no_provenance_is_refused() {
+    let place = Place::new();
+    place.made();
+    let dir = two_records(&place);
+    let drafts = two_drafts(&place);
+    place.refused(
+        &[
+            "import",
+            "adr",
+            &dir,
+            "--repository",
+            "shop",
+            "--drafts",
+            &drafts,
+        ],
+        "an agent's proposal names its provenance",
+    );
+}

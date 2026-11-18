@@ -725,6 +725,17 @@ pub fn claim_view(conn: &Connection, name: &str) -> Result<Option<ClaimView>, Fa
     }))
 }
 
+/// The signed part of the entry numbered `seq`, where there is one.
+pub fn signed_at(conn: &Connection, seq: u64) -> Result<Option<String>, Failure> {
+    Ok(conn
+        .query_row(
+            "SELECT signed FROM log WHERE seq = ?1",
+            [sql_int(seq)],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
 /// The bytes of the blob named `fingerprint`, checked against it: not
 /// run where they do not hash to it, or there are none.
 pub fn blob(conn: &Connection, fingerprint: &str) -> Result<Vec<u8>, Failure> {

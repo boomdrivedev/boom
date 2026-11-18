@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
-use crate::claim::{Kind, Proposal};
-use crate::entry::{Act, Actor, Entry, Form};
+use crate::claim::{History, Kind, Proposal};
+use crate::entry::{Act, Actor, Entry, Form, Imported};
 use crate::import::{self, Read, Record};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
@@ -907,6 +907,7 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
             ),
             None => None,
         };
+        let (imported, history) = proposed_with(conn, view.proposed_in)?;
         let mut object = serde_json::Map::new();
         object.insert("format".into(), json!("boom-show/1"));
         object.insert("claim".into(), json!(claim.name));
@@ -916,6 +917,8 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
         object.insert("scenarios".into(), json!(view.scenarios));
         object.insert("body_fingerprint".into(), json!(view.body));
         object.insert("body".into(), json!(body));
+        object.insert("imported".into(), json!(imported));
+        object.insert("history".into(), json!(history));
         let mut words = format!(
             "{} {}@{}\n{}\n",
             claim.kind,
@@ -925,6 +928,26 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
         );
         for scenario in &view.scenarios {
             words.push_str(&format!("scenario: {scenario}\n"));
+        }
+        if let Some(history) = &history {
+            words.push_str(&format!("history: {}", history.status.as_str()));
+            if let Some(by) = &history.by {
+                words.push_str(&format!(" by {by}"));
+            }
+            words.push('\n');
+        }
+        if let Some(imported) = &imported {
+            words.push_str(&format!(
+                "imported from {} of {}",
+                imported.from, imported.repository
+            ));
+            if let Some(legacy) = &imported.legacy {
+                words.push_str(&format!(", {legacy}"));
+            }
+            if imported.drafted {
+                words.push_str(", its scenarios drafted");
+            }
+            words.push('\n');
         }
         if let Some(body) = &body {
             words.push('\n');
@@ -938,6 +961,25 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
             words,
         })
     })
+}
+
+/// What the entry that proposed a version says of where it came from
+/// and its history (design 5).
+fn proposed_with(
+    conn: &rusqlite::Connection,
+    seq: u64,
+) -> Result<(Option<Imported>, Option<History>), Failure> {
+    let signed = store::signed_at(conn, seq)?
+        .ok_or_else(|| Failure::not_run(format!("the log holds no entry {seq}")))?;
+    match Entry::parse(&signed) {
+        Ok(Entry {
+            act: Act::Proposed { claim, imported },
+            ..
+        }) => Ok((imported, claim.history)),
+        _ => Err(Failure::not_run(format!(
+            "entry {seq} is not the proposal its version names"
+        ))),
+    }
 }
 
 fn log(path: &Path) -> Result<Answer, Failure> {
