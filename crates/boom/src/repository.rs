@@ -31,6 +31,16 @@ pub fn check_name(name: &str) -> Result<(), String> {
     })
 }
 
+/// What `repositories` binds, in words: the repositories by name, or the
+/// whole system where there are none.
+pub fn words(repositories: &[String]) -> String {
+    match repositories {
+        [] => "the whole system".to_owned(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
 /// The nearest folder holding `.git`, a file or a folder, from `cwd` up.
 pub fn root(cwd: &Path) -> Option<PathBuf> {
     cwd.ancestors()

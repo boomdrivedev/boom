@@ -14,11 +14,11 @@ use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
 use crate::claim::{Kind, Proposal};
-use crate::entry::{Act, Actor, Entry};
+use crate::entry::{Act, Actor, Attach, Entry};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
 use crate::store::{self, Store, Written};
-use crate::Failure;
+use crate::{repository, Failure};
 
 /// What a command reads from its process: the folders a store's path
 /// is resolved under, the working folder a repository is declared from,
@@ -150,6 +150,15 @@ enum Command {
         /// A person's security key, to propose as that person.
         #[arg(long)]
         key: Option<PathBuf>,
+        /// A repository the version binds; any number of times. Naming
+        /// none, an amendment binds what its base binds, and a first
+        /// version the repository the working folder declares, else the
+        /// whole system.
+        #[arg(long = "repository", value_name = "NAME", conflicts_with = "system")]
+        repositories: Vec<String>,
+        /// Bind the version to the whole system, every repository.
+        #[arg(long)]
+        system: bool,
     },
     /// Accept a version, as a person signing with their security key.
     Accept {
@@ -282,6 +291,8 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
             body,
             provenance,
             key,
+            repositories,
+            system,
         } => propose(
             path,
             Proposed {
@@ -292,6 +303,8 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
                 amends,
                 body,
                 provenance,
+                repositories,
+                system,
             },
             key.as_deref(),
             keys,
@@ -489,6 +502,43 @@ struct Proposed {
     amends: Option<String>,
     body: Option<PathBuf>,
     provenance: Option<String>,
+    repositories: Vec<String>,
+    system: bool,
+}
+
+/// What a proposal binds, in the order record 0008 (point 4) gives:
+/// the repositories it names, sorted and each once; else, with
+/// `--system`, the whole system; else, for an amendment, what its base
+/// binds in `state`; else the repository `declared`; else the whole
+/// system.
+fn attachment(
+    proposed: &Proposed,
+    proposal: &Proposal,
+    declared: Option<&str>,
+    state: &State,
+) -> Option<Attach> {
+    let named = |repositories: Vec<String>| {
+        Some(repositories)
+            .filter(|repositories| !repositories.is_empty())
+            .map(|repositories| Attach { repositories })
+    };
+    if !proposed.repositories.is_empty() {
+        let mut repositories = proposed.repositories.clone();
+        repositories.sort();
+        repositories.dedup();
+        return named(repositories);
+    }
+    if proposed.system {
+        return None;
+    }
+    if let Some(base) = &proposal.base {
+        let base = state
+            .claims
+            .get(&proposal.name)
+            .and_then(|claim| claim.version(base));
+        return base.and_then(|base| named(base.repositories.clone()));
+    }
+    declared.and_then(|name| named(vec![name.to_owned()]))
 }
 
 fn propose(
@@ -527,13 +577,19 @@ fn propose(
         }
         None => None,
     };
+    let declared =
+        if proposed.repositories.is_empty() && !proposed.system && proposed.amends.is_none() {
+            repository::find(None, env.cwd.as_deref())?
+        } else {
+            None
+        };
     let proposal = Proposal::new(
         proposed.kind,
         &proposed.name,
         &proposed.statement,
-        proposed.scenarios,
+        proposed.scenarios.clone(),
         body.as_deref().map(crate::sha256_hex),
-        proposed.amends,
+        proposed.amends.clone(),
     );
     let signer = key.map(|key| keys.signer(key)).transpose()?;
     let (written, state) = write(&mut store, signer.as_deref(), body.as_deref(), |state| {
@@ -548,7 +604,7 @@ fn propose(
             actor,
             act: Act::Proposed {
                 claim: proposal.clone(),
-                attach: None,
+                attach: attachment(&proposed, &proposal, declared.as_deref(), state),
             },
         })
     })?;
@@ -566,13 +622,15 @@ fn propose(
             "base": proposal.base,
             "status": status,
             "entry": written.seq(),
+            "repositories": version.repositories,
         }),
         words: format!(
-            "{} {}@{} is {status}, by entry {}\n",
+            "{} {}@{} is {status}, by entry {}\nit binds {}\n",
             claim.kind.as_str(),
             proposal.name,
             proposal.version,
-            written.seq()
+            written.seq(),
+            repository::words(&version.repositories)
         ),
     })
 }

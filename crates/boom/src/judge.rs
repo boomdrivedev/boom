@@ -15,8 +15,8 @@ use std::collections::BTreeMap;
 use ssh_key::PublicKey;
 
 use crate::claim::{self, Kind, Proposal};
-use crate::entry::{Act, Actor, Entry};
-use crate::sign;
+use crate::entry::{Act, Actor, Attach, Entry};
+use crate::{repository, sign};
 
 /// A person the store registers.
 #[derive(Debug, Clone)]
@@ -61,6 +61,9 @@ impl Status {
 pub struct Version {
     /// The version as proposed.
     pub proposal: Proposal,
+    /// What it binds: the repositories its proposal names, or none for
+    /// the whole system.
+    pub repositories: Vec<String>,
     /// Who proposed it.
     pub proposer: Actor,
     /// The entry that proposed it.
@@ -214,7 +217,10 @@ fn check_form(act: &Act) -> Result<(), String> {
             let key = registered_key(key)?;
             sign::check_key_type(&key)
         }
-        Act::Proposed { claim, .. } => claim.check(),
+        Act::Proposed { claim, attach } => {
+            claim.check()?;
+            check_attach(attach.as_ref())
+        }
         Act::Accepted { name, .. } => claim::check_name(name),
         Act::Rejected { name, reason, .. } => {
             claim::check_name(name)?;
@@ -225,6 +231,43 @@ fn check_form(act: &Act) -> Result<(), String> {
             }
         }
     }
+}
+
+/// An attachment's form: a repository at least, each kebab case, in
+/// ascending order and none twice (claim-attachments; design 2).
+fn check_attach(attach: Option<&Attach>) -> Result<(), String> {
+    let Some(attach) = attach else {
+        return Ok(());
+    };
+    if attach.repositories.is_empty() {
+        return Err(
+            "an attach names a repository at least: one of the whole system holds no attach"
+                .to_owned(),
+        );
+    }
+    for name in &attach.repositories {
+        repository::check_name(name)?;
+    }
+    for pair in attach.repositories.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(format!(
+                "an attach names each repository once: {} is named twice",
+                pair[0]
+            ));
+        }
+        if pair[0] > pair[1] {
+            return Err(format!(
+                "an attach names its repositories in order: {} comes before {}",
+                pair[1], pair[0]
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The repositories an attachment names, none for the whole system.
+pub fn repositories(attach: Option<&Attach>) -> &[String] {
+    attach.map_or(&[], |attach| attach.repositories.as_slice())
 }
 
 fn registered_key(key: &str) -> Result<PublicKey, String> {
@@ -490,7 +533,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 },
             );
         }
-        Act::Proposed { claim, .. } => {
+        Act::Proposed { claim, attach } => {
             let entry_claim = state
                 .claims
                 .entry(claim.name.clone())
@@ -502,6 +545,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 });
             entry_claim.versions.push(Version {
                 proposal: claim.clone(),
+                repositories: repositories(attach.as_ref()).to_vec(),
                 proposer: entry.actor.clone(),
                 proposed_in: seq,
                 status: Status::Proposed,
