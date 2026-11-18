@@ -387,3 +387,30 @@ impl Place {
             .to_owned()
     }
 }
+
+impl Place {
+    /// A store of three entries: ada's registration and two agents'
+    /// proposals, of `money-has-currency` and `refund-within-payment`.
+    pub fn three_entries(&self) -> String {
+        let ada = self.made();
+        self.proposed("money-has-currency", "Every amount names its currency.");
+        self.proposed(
+            "refund-within-payment",
+            "A refund never exceeds the payment.",
+        );
+        ada
+    }
+
+    /// The log's rows as the file holds them, `(seq, signed)`.
+    pub fn rows(&self) -> Vec<(i64, String)> {
+        let conn = self.sqlite();
+        let mut statement = conn
+            .prepare("SELECT seq, signed FROM log ORDER BY seq")
+            .unwrap();
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+}

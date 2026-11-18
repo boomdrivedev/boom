@@ -108,3 +108,58 @@ fn each_entry_gives_its_hash_and_the_one_before() {
         );
     }
 }
+
+#[test]
+fn an_entrys_words_changed_is_found() {
+    let place = Place::new();
+    place.three_entries();
+    let changed = place
+        .sqlite()
+        .execute(
+            "UPDATE log SET signed = replace(signed, 'its currency', 'any currency') WHERE seq = 2",
+            [],
+        )
+        .unwrap();
+    assert_eq!(changed, 1);
+    let rows = place.rows();
+    let outcome = place.run(&["show", "money-has-currency"]);
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    assert!(
+        outcome.stderr.contains("is altered: entry 2 "),
+        "{outcome:?}"
+    );
+    assert!(outcome.stdout.is_empty(), "{outcome:?}");
+    assert_eq!(place.rows(), rows);
+}
+
+#[test]
+fn an_entry_removed_is_found() {
+    let place = Place::new();
+    place.three_entries();
+    let removed = place
+        .sqlite()
+        .execute("DELETE FROM log WHERE seq = 2", [])
+        .unwrap();
+    assert_eq!(removed, 1);
+    let rows = place.rows();
+    let outcome = place.run(&[
+        "propose",
+        "assumption",
+        "orders-are-paid-once",
+        "An order is paid once.",
+        "--scenario",
+        support::SCENARIO,
+        "--provenance",
+        "run-3",
+    ]);
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    assert!(
+        outcome.stderr.contains("is altered: entry 3 "),
+        "{outcome:?}"
+    );
+    assert!(
+        outcome.stderr.contains("previous hash does not match"),
+        "{outcome:?}"
+    );
+    assert_eq!(place.rows(), rows);
+}

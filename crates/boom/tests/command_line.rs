@@ -175,3 +175,23 @@ fn a_key_whose_program_cannot_sign_could_not_run() {
     );
     assert_eq!(place.log(), log);
 }
+
+#[test]
+fn not_run_answered_as_json() {
+    let place = Place::new();
+    place.three_entries();
+    place
+        .sqlite()
+        .execute(
+            "UPDATE log SET signed = replace(signed, 'its currency', 'any currency') WHERE seq = 2",
+            [],
+        )
+        .unwrap();
+    let outcome = place.run(&["show", "money-has-currency", "--json"]);
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
+    let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();
+    assert_eq!(answer["format"], "boom-not-run/1");
+    let reason = answer["not_run"]["reason"].as_str().unwrap();
+    assert!(reason.contains("entry 2"), "{reason}");
+}
