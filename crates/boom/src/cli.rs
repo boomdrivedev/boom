@@ -14,7 +14,7 @@ use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
 use crate::claim::{Kind, Proposal};
-use crate::entry::{Act, Actor, Attach, Entry};
+use crate::entry::{Act, Actor, Attach, Entry, GENESIS};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
 use crate::store::{self, Store, Written};
@@ -187,6 +187,15 @@ enum Command {
     },
     /// Show the log's entries in order, each with whether it counts.
     Log,
+    /// Give every claim that stands for a repository, as the person
+    /// accepted it, replayed from the log: words an agent's harness can
+    /// put in its context as they are.
+    Query {
+        /// The repository; by default the one the working folder's
+        /// `.config/boom.toml` declares.
+        #[arg(long, value_name = "NAME")]
+        repository: Option<String>,
+    },
 }
 
 /// An answer: one JSON object naming its format, and its words.
@@ -318,6 +327,7 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
         } => reject(path, &target, reason, key.as_deref(), keys, env),
         Command::Show { target } => show(path, &target),
         Command::Log => log(path),
+        Command::Query { repository } => query(path, repository.as_deref(), env),
     }
 }
 
@@ -942,6 +952,93 @@ fn log(path: &Path) -> Result<Answer, Failure> {
         Ok(Answer {
             json: json!({"format": "boom-log/1", "entries": entries}),
             words,
+        })
+    })
+}
+
+/// The claims that stand for the repository `named`, or else the one the
+/// working folder declares (repository-rules; design 5): taken from the
+/// judge's replay of the whole log for this answer, never from the views
+/// (record 0008, point 2), and appending nothing.
+fn query(path: &Path, named: Option<&str>, env: &Env) -> Result<Answer, Failure> {
+    let Some(repository) = repository::find(named, env.cwd.as_deref())? else {
+        return Err(Failure::refused(format!(
+            "boom query answers for a repository: name it with --repository, or in {}",
+            repository::DECLARATION
+        )));
+    };
+    let mut store = Store::open(path)?;
+    store.read(|conn| {
+        let rows = store::log_rows(conn)?;
+        let (state, _) = judge::replay(
+            rows.iter()
+                .map(|row| (row.seq, row.signed.as_str(), row.signature.as_deref())),
+        );
+        let (number, hash) = rows
+            .last()
+            .map_or((0, GENESIS), |row| (row.seq, row.hash.as_str()));
+        let mut claims = Vec::new();
+        let mut lines = String::new();
+        for kind in [Kind::Invariant, Kind::Decision, Kind::Assumption] {
+            for claim in state.claims.values().filter(|claim| claim.kind == kind) {
+                let Some(standing) = claim
+                    .standing
+                    .as_deref()
+                    .and_then(|version| claim.version(version))
+                else {
+                    continue;
+                };
+                let binds = &standing.repositories;
+                if !binds.is_empty() && !binds.contains(&repository) {
+                    continue;
+                }
+                let proposal = &standing.proposal;
+                claims.push(json!({
+                    "name": claim.name,
+                    "kind": kind.as_str(),
+                    "version": proposal.version,
+                    "statement": proposal.statement,
+                    "scenarios": proposal.scenarios,
+                    "body": proposal.body,
+                    "repositories": binds,
+                    "accepted": {
+                        "by": standing.decided_by,
+                        "entry": standing.decided_in,
+                    },
+                }));
+                lines.push_str(&format!(
+                    "{} {}@{}: {}\n",
+                    kind.as_str(),
+                    claim.name,
+                    proposal.version,
+                    proposal.statement
+                ));
+                for scenario in &proposal.scenarios {
+                    lines.push_str(&format!("  - {scenario}\n"));
+                }
+                if proposal.body.is_some() {
+                    lines.push_str(&format!(
+                        "  body: boom show {}@{}\n",
+                        claim.name, proposal.version
+                    ));
+                }
+            }
+        }
+        let stand = match claims.len() {
+            0 => "No claim stands".to_owned(),
+            1 => "1 claim stands".to_owned(),
+            n => format!("{n} claims stand"),
+        };
+        Ok(Answer {
+            json: json!({
+                "format": "boom-query/1",
+                "repository": repository,
+                "head": {"number": number, "hash": hash},
+                "claims": claims,
+            }),
+            words: format!(
+                "{stand} for {repository}, at entry {number} of the store's log.\n{lines}"
+            ),
         })
     })
 }

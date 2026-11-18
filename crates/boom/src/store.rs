@@ -539,6 +539,12 @@ fn write_claim(conn: &Connection, claim: &Claim) -> Result<(), Failure> {
     Ok(())
 }
 
+/// The log's entries in order, as stored, for a reader inside
+/// [`Store::read`] to replay with [`judge::replay`].
+pub fn log_rows(conn: &Connection) -> Result<Vec<Row>, Failure> {
+    read_log(conn)
+}
+
 /// An entry of the log as `boom log` gives it: as stored, with its
 /// judgment.
 #[derive(Debug, Clone)]
