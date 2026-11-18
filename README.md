@@ -57,9 +57,11 @@ claims that hold.
 - **A repository's records, imported once.** `boom import adr` reads a
   folder of MADR records and `boom import rules` a rules page, and
   proposes each record in its file's own words, with the names and
-  scenarios the agent that runs the import drafts. A person accepts
-  them together, one signed entry each. From then on boom keeps them,
-  and never takes a file again as the record (record 0007).
+  scenarios the agent that runs the import drafts, each attached to the
+  repository `--repository` names, so it stands for that repository
+  alone. A person accepts them together, one signed entry each. From
+  then on boom keeps them, and never takes a file again as the record
+  (records 0007 and 0008).
 
 ```sh
 boom init --person ada --key ~/.ssh/id_ed25519_sk

@@ -109,6 +109,20 @@ For what binds a claim to a repository:
    one outright. The name is the one an import gives `--repository`.
    Not taken: a name read from the git remote, which differs from host
    to host and from fork to upstream.
+6. **An import attaches what it proposes to its repository.** The
+   import (record 0007) landed first, so this change reconciles the
+   two: a proposal's signed part holds `claim`, then `imported`, then
+   `attach`, each only where present, and each record an import
+   proposes is attached to the repository its `--repository` names, so
+   a repository's records and rules stand for it alone, and a record
+   that came in as history never stands, so `boom query` never gives
+   it. The judge holds an imported proposal to the import's rules and
+   then to every proposal's, so the same record imported again is a
+   repeat only under the same attachment. Not taken: the judge refusing
+   an imported proposal attached otherwise than to its `imported`
+   repository, which would add a rule an agent's other proposals are
+   not held to, since any agent may propose for any attachment and the
+   person reads `repositories` before accepting.
 
 ## Consequences
 
