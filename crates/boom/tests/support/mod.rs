@@ -414,3 +414,40 @@ impl Place {
             .unwrap()
     }
 }
+
+impl Place {
+    /// Appends `entry` to the log as another program would, chained
+    /// correctly and leaving the views as they are, giving its signed
+    /// part.
+    pub fn append_by_hand(&self, entry: &boom::entry::Entry, sign_with: Option<&Path>) -> String {
+        let signed = entry.signed_part();
+        let signature = sign_with.map(|key| self.keys.sign_with(key, "boom", signed.as_bytes()));
+        let conn = self.sqlite();
+        let (seq, prev): (i64, String) = conn
+            .query_row(
+                "SELECT seq, hash FROM log ORDER BY seq DESC LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let hash = boom::entry::hash(&prev, &signed, signature.as_deref());
+        conn.execute(
+            "INSERT INTO log (seq, prev, hash, signed, signature) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![seq + 1, prev, hash, signed, signature],
+        )
+        .unwrap();
+        signed
+    }
+}
+
+/// An accept of `name@version` by `person`, at a fixed time.
+pub fn accept_entry(person: &str, name: &str, version: &str) -> boom::entry::Entry {
+    boom::entry::Entry {
+        at: 1_763_424_500,
+        actor: boom::entry::Actor::Person(person.to_owned()),
+        act: boom::entry::Act::Accepted {
+            name: name.to_owned(),
+            version: version.to_owned(),
+        },
+    }
+}

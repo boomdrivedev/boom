@@ -146,3 +146,96 @@ fn an_altered_blob_is_unreadable() {
     assert!(!outcome.stdout.contains("An amount is"), "{outcome:?}");
     assert!(!outcome.stderr.contains("An amount is"), "{outcome:?}");
 }
+
+const VIEWS: [&str; 5] = ["views_head", "persons", "claims", "versions", "judgments"];
+
+fn tables(place: &Place) -> Vec<String> {
+    let conn = place.sqlite();
+    let mut statement = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .unwrap();
+    statement
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+#[test]
+fn views_deleted_change_no_answer() {
+    let place = Place::new();
+    let ada = place.made();
+    let first = place.proposed("money-has-currency", "Every amount names its currency.");
+    place.accepted("money-has-currency", &first, &ada);
+    place.amended(
+        "money-has-currency",
+        "Every amount names one currency.",
+        &first,
+    );
+    let before = place.show("money-has-currency");
+    let log = place.log();
+    let made = tables(&place);
+    let conn = place.sqlite();
+    for table in VIEWS {
+        conn.execute_batch(&format!("DROP TABLE {table}")).unwrap();
+    }
+    drop(conn);
+    assert!(VIEWS
+        .iter()
+        .all(|view| !tables(&place).iter().any(|table| table == view)));
+    assert_eq!(place.show("money-has-currency"), before);
+    assert_eq!(tables(&place), made);
+    assert_eq!(place.log(), log);
+}
+
+#[test]
+fn views_behind_the_log_are_rebuilt_before_an_answer() {
+    let place = Place::new();
+    place.made();
+    place.proposed("money-has-currency", "Every amount names its currency.");
+    let proposal = boom::claim::Proposal::new(
+        boom::claim::Kind::Assumption,
+        "orders-are-paid-once",
+        "An order is paid once.",
+        vec![support::SCENARIO.to_owned()],
+        None,
+        None,
+    );
+    let entry = boom::entry::Entry {
+        at: 1_763_424_600,
+        actor: boom::entry::Actor::Agent {
+            provenance: "another-program".to_owned(),
+        },
+        act: boom::entry::Act::Proposed {
+            claim: proposal.clone(),
+        },
+    };
+    place.append_by_hand(&entry, None);
+    let head: i64 = place
+        .sqlite()
+        .query_row("SELECT seq FROM views_head", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(head, 2, "the views were left behind");
+    let shown = place.show("orders-are-paid-once");
+    assert_eq!(shown["kind"], "assumption");
+    assert_eq!(shown["versions"][0]["version"], proposal.version.as_str());
+    assert_eq!(shown["versions"][0]["status"], "proposed");
+    let head: i64 = place
+        .sqlite()
+        .query_row("SELECT seq FROM views_head", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(head, 3);
+
+    // The same proposal again, by hand, repeats it and counts for nothing.
+    place.append_by_hand(&entry, None);
+    let repeat = place.log().pop().unwrap();
+    assert_eq!(repeat["counted"], false);
+    assert_eq!(repeat["reason"], "repeats entry 3");
+    assert_eq!(
+        place.show("orders-are-paid-once")["versions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}

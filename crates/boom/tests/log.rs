@@ -163,3 +163,42 @@ fn an_entry_removed_is_found() {
     );
     assert_eq!(place.rows(), rows);
 }
+
+#[test]
+fn an_accept_written_by_hand_counts_for_nothing() {
+    let place = Place::new();
+    place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    place.append_by_hand(
+        &support::accept_entry("ada", "money-has-currency", &version),
+        None,
+    );
+    assert_eq!(place.status("money-has-currency", &version), "proposed");
+    let accepted = place.log().pop().unwrap();
+    assert_eq!(accepted["act"], "accepted");
+    assert_eq!(accepted["counted"], false);
+    assert_eq!(accepted["reason"], "a person's act needs their signature");
+    let words = place.run(&["log"]);
+    assert!(
+        words
+            .stdout
+            .contains("3 accepted by ada, not counted: a person's act needs their signature"),
+        "{words:?}"
+    );
+}
+
+#[test]
+fn an_accept_by_a_key_no_one_registered_counts_for_nothing() {
+    let place = Place::new();
+    place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    let cy = place.keys.security_key("cy", 3);
+    place.append_by_hand(
+        &support::accept_entry("ada", "money-has-currency", &version),
+        Some(&cy),
+    );
+    assert_eq!(place.status("money-has-currency", &version), "proposed");
+    let accepted = place.log().pop().unwrap();
+    assert_eq!(accepted["counted"], false);
+    assert_eq!(accepted["reason"], "its key is not registered");
+}
