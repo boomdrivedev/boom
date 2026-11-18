@@ -1,38 +1,16 @@
-//! `boom`, the claims ledger. For now it answers `--version`
-//! and nothing else.
+//! `boom`, the claims ledger: a thin command line over [`boom::cli::run`].
 
+use std::io::Write;
 use std::process::ExitCode;
 
-/// What `boom --version` prints.
-fn version() -> String {
-    format!("boom {}", env!("CARGO_PKG_VERSION"))
-}
-
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match args
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>()
-        .as_slice()
-    {
-        ["--version"] | ["-V"] => {
-            println!("{}", version());
-            ExitCode::SUCCESS
-        }
-        _ => {
-            eprintln!("usage: boom --version");
-            ExitCode::from(2)
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::version;
-
-    #[test]
-    fn version_names_the_binary_and_the_crate_version() {
-        assert_eq!(version(), format!("boom {}", env!("CARGO_PKG_VERSION")));
-    }
+    let outcome = boom::cli::run(
+        std::env::args_os().skip(1),
+        &boom::sign::SshKeygen::default(),
+        &boom::cli::Env::from_process(),
+    );
+    // A closed pipe is the reader's choice; the exit code still says what happened.
+    let _ = std::io::stdout().write_all(outcome.stdout.as_bytes());
+    let _ = std::io::stderr().write_all(outcome.stderr.as_bytes());
+    ExitCode::from(outcome.code)
 }
