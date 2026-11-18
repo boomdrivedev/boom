@@ -1264,7 +1264,11 @@ fn import(
             act: Act::Proposed {
                 claim: record.proposal(),
                 imported: Some(Box::new(record.imported.clone())),
-                attach: None,
+                // Imported for one repository, it stands for that one
+                // alone (design 7).
+                attach: Some(Attach {
+                    repositories: vec![repository.clone()],
+                }),
             },
         };
         let signed = entry.signed_part();

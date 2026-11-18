@@ -556,6 +556,27 @@ mod tests {
     }
 
     #[test]
+    fn an_imported_proposal_is_attached_after_imported() {
+        let mut entry = imported_proposal();
+        if let Act::Proposed { attach, .. } = &mut entry.act {
+            *attach = Some(Attach {
+                repositories: vec!["shop".to_owned()],
+            });
+        }
+        let signed = entry.signed_part();
+        assert_eq!(
+            keys(&signed),
+            ["format", "act", "at", "actor", "claim", "imported", "attach"]
+        );
+        assert!(
+            signed.ends_with(r#","attach":{"repositories":["shop"]}}"#),
+            "{signed}"
+        );
+        assert_eq!(Entry::parse(&signed), Ok(entry.clone()));
+        assert_eq!(Entry::parse(&signed).unwrap().signed_part(), signed);
+    }
+
+    #[test]
     fn a_proposal_with_nothing_imported_writes_no_imported_field() {
         let signed = proposal().signed_part();
         assert_eq!(keys(&signed), ["format", "act", "at", "actor", "claim"]);

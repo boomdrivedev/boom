@@ -486,3 +486,65 @@ fn an_accept_written_by_hand_binds_nothing() {
     assert_eq!(answer["claims"], json!([]));
     assert_eq!(answer["head"]["number"], accepted["number"]);
 }
+
+const AMOUNTS_AS_FLOATS: &str = "---
+status: superseded by [ADR-0003](0003-amounts-in-cents.md)
+---
+
+# Amounts are floats
+
+Amounts are kept as floats.
+";
+
+const AMOUNTS_IN_CENTS: &str = "---
+status: accepted
+---
+
+# Amounts are kept in cents
+
+Every amount is an integer of cents.
+";
+
+#[test]
+fn a_version_that_came_in_as_history_is_not_given() {
+    let place = Place::new();
+    let ada = place.made();
+    let dir = place.folder(
+        "adr",
+        &[
+            ("0002-amounts-as-floats.md", AMOUNTS_AS_FLOATS),
+            ("0003-amounts-in-cents.md", AMOUNTS_IN_CENTS),
+        ],
+    );
+    let drafts = place.file(
+        "drafts.json",
+        &json!({
+            "format": "boom-import-drafts/1",
+            "records": {"0003-amounts-in-cents.md": {"scenarios": [SCENARIO]}},
+        })
+        .to_string(),
+    );
+    let answer = place.json(&[
+        "import",
+        "adr",
+        &dir,
+        "--repository",
+        "shop",
+        "--drafts",
+        &drafts,
+        "--provenance",
+        "run-1",
+    ]);
+    let mut accept = vec!["accept"];
+    let versions = answer["accept"]["versions"].as_array().unwrap();
+    assert_eq!(versions.len(), 2, "{answer}");
+    accept.extend(versions.iter().map(|version| version.as_str().unwrap()));
+    accept.extend(["--key", &ada]);
+    place.json(&accept);
+    assert_eq!(
+        place.show("amounts-as-floats")["versions"][0]["status"],
+        "history"
+    );
+    let answer = query(&place, "shop");
+    assert_eq!(names(&answer), ["amounts-in-cents"]);
+}
