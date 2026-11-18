@@ -355,7 +355,7 @@ impl Store {
         write_judgment(&tx, seq, &Judgment::counted())?;
         match &entry.act {
             Act::Registered { person, .. } => write_person(&tx, &state.persons[person])?,
-            Act::Proposed { claim } => write_claim(&tx, &state.claims[&claim.name])?,
+            Act::Proposed { claim, .. } => write_claim(&tx, &state.claims[&claim.name])?,
             Act::Accepted { name, .. } | Act::Rejected { name, .. } => {
                 write_claim(&tx, &state.claims[name])?
             }

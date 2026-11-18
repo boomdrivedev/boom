@@ -47,6 +47,9 @@ pub enum Act {
     Proposed {
         /// The claim's version.
         claim: Proposal,
+        /// What it binds: the repositories it names, or, where it is
+        /// `None`, the whole system.
+        attach: Option<Attach>,
     },
     /// A version accepted.
     Accepted {
@@ -76,6 +79,16 @@ impl Act {
             Act::Rejected { .. } => "rejected",
         }
     }
+}
+
+/// What a proposed version binds, written after its claim and no part
+/// of its fingerprint (claim-attachments; design 1): an object, so a
+/// context can join it later as one more field.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Attach {
+    /// The repositories, each kebab case, sorted and each once.
+    pub repositories: Vec<String>,
 }
 
 /// An entry: its time, its actor and its act.
@@ -109,6 +122,8 @@ struct ProposedPart {
     at: u64,
     actor: Actor,
     claim: Proposal,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attach: Option<Attach>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -152,12 +167,13 @@ impl Entry {
                 key: key.clone(),
                 owner: *owner,
             }),
-            Act::Proposed { claim } => serde_json::to_string(&ProposedPart {
+            Act::Proposed { claim, attach } => serde_json::to_string(&ProposedPart {
                 format,
                 act,
                 at,
                 actor,
                 claim: claim.clone(),
+                attach: attach.clone(),
             }),
             Act::Accepted { name, version } => serde_json::to_string(&AcceptedPart {
                 format,
@@ -214,7 +230,10 @@ impl Entry {
                 Ok(Entry {
                     at: part.at,
                     actor: part.actor,
-                    act: Act::Proposed { claim: part.claim },
+                    act: Act::Proposed {
+                        claim: part.claim,
+                        attach: part.attach,
+                    },
                 })
             }
             Some("accepted") => {
@@ -278,6 +297,10 @@ mod tests {
     }
 
     fn proposal() -> Entry {
+        attached(None)
+    }
+
+    fn attached(attach: Option<Attach>) -> Entry {
         Entry {
             at: 1_763_424_100,
             actor: Actor::Agent {
@@ -292,6 +315,7 @@ mod tests {
                     None,
                     None,
                 ),
+                attach,
             },
         }
     }
@@ -364,5 +388,41 @@ mod tests {
         }
         assert_eq!(Entry::parse(&registered), Ok(registration()));
         assert_eq!(Entry::parse(&proposed), Ok(proposal()));
+    }
+
+    #[test]
+    fn an_attachment_follows_the_claim_in_the_signed_part() {
+        let attach = Attach {
+            repositories: vec!["ledger".to_owned(), "shop".to_owned()],
+        };
+        let entry = attached(Some(attach));
+        let signed = entry.signed_part();
+        assert_eq!(
+            keys(&signed),
+            ["format", "act", "at", "actor", "claim", "attach"]
+        );
+        assert!(
+            signed.ends_with(r#","attach":{"repositories":["ledger","shop"]}}"#),
+            "{signed}"
+        );
+        assert_eq!(Entry::parse(&signed), Ok(entry));
+        let unknown = signed.replace(r#"{"repositories":"#, r#"{"contexts":[],"repositories":"#);
+        let refused = Entry::parse(&unknown).unwrap_err();
+        assert!(refused.contains("unknown field `contexts`"), "{refused}");
+    }
+
+    #[test]
+    fn a_proposal_with_no_attachment_is_written_as_before() {
+        let entry = proposal();
+        let Act::Proposed { claim, .. } = &entry.act else {
+            unreachable!("a proposal");
+        };
+        let before = format!(
+            r#"{{"format":"boom-entry/1","act":"proposed","at":1763424100,"actor":{{"agent":{{"provenance":"run-1"}}}},"claim":{}}}"#,
+            serde_json::to_string(claim).unwrap()
+        );
+        assert_eq!(entry.signed_part().as_bytes(), before.as_bytes());
+        assert!(!entry.signed_part().contains("attach"));
+        assert_eq!(Entry::parse(&before), Ok(entry));
     }
 }
