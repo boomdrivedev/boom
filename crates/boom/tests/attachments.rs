@@ -108,7 +108,7 @@ fn the_repository_the_working_folder_declares() {
     let place = Place::new();
     place.made();
     let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
-    let inside = place.folder("shop-repo/src/money");
+    let inside = place.empty_folder("shop-repo/src/money");
     let answer = place.json_in(&inside, &money(&[]));
     assert_eq!(answer["repositories"], json!(["shop"]));
     assert_eq!(
@@ -152,7 +152,9 @@ fn a_repository_named_twice_by_hand_counts_for_nothing() {
                 vec![SCENARIO.to_owned()],
                 None,
                 None,
+                None,
             ),
+            imported: None,
             attach: Some(boom::entry::Attach {
                 repositories: vec!["shop".to_owned(), "shop".to_owned()],
             }),
@@ -192,6 +194,7 @@ fn one_fingerprint_wherever_it_binds() {
         "money-has-currency",
         MONEY,
         vec![SCENARIO.to_owned()],
+        None,
         None,
         None,
     );
@@ -241,7 +244,9 @@ fn the_same_words_for_another_repository_are_refused() {
                 vec![SCENARIO.to_owned()],
                 None,
                 None,
+                None,
             ),
+            imported: None,
             attach: Some(boom::entry::Attach {
                 repositories: vec!["ledger".to_owned()],
             }),

@@ -12,6 +12,7 @@
 pub mod claim;
 pub mod cli;
 pub mod entry;
+pub mod import;
 pub mod judge;
 pub mod repository;
 pub mod sign;

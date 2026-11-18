@@ -325,7 +325,7 @@ fn declared_by_the_repository() {
     let place = Place::new();
     money_in_shop(&place);
     place.repository("shop-repo", Some("repository = \"shop\"\n"));
-    let inside = place.folder("shop-repo/src/money");
+    let inside = place.empty_folder("shop-repo/src/money");
     let answer = place.json_in(&inside, &["query"]);
     assert_eq!(answer["repository"], "shop");
     assert_eq!(names(&answer), ["money-has-currency"]);
@@ -362,7 +362,7 @@ fn neither_named_nor_declared_is_refused() {
 fn a_declaration_above_the_repository_is_not_read() {
     let place = Place::new();
     money_in_shop(&place);
-    let above = place.folder("above");
+    let above = place.empty_folder("above");
     place.declare(&above, "repository = \"shop\"\n");
     let repo = place.repository("above/repo", None);
     let words = refused_in(&place, &repo);
@@ -373,7 +373,7 @@ fn a_declaration_above_the_repository_is_not_read() {
 fn outside_a_repository_no_declaration_is_read() {
     let place = Place::new();
     money_in_shop(&place);
-    let outside = place.folder("outside");
+    let outside = place.empty_folder("outside");
     place.declare(&outside, "repository = \"shop\"\n");
     let words = refused_in(&place, &outside);
     assert!(words.contains("--repository"), "{words}");

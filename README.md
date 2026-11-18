@@ -34,7 +34,7 @@ claims that hold.
   (record 0006). `ssh-keygen -Y verify` checks that signature with no
   boom.
 - **Every answer computed from the log.** boom reads whether a version
-  is proposed, standing, replaced or rejected from the log. It judges
+  is proposed, standing, replaced, rejected or history from the log. It judges
   each entry it reads as it judges a write, so an entry written by hand
   that breaks a rule counts for nothing.
 - **A version binds a repository, or the whole system.** A proposal
@@ -54,6 +54,12 @@ claims that hold.
   replays the log for each answer and reads no view, so a view edited
   by hand changes nothing an agent gets, and it writes nothing into the
   repository for anyone to edit (record 0008).
+- **A repository's records, imported once.** `boom import adr` reads a
+  folder of MADR records and `boom import rules` a rules page, and
+  proposes each record in its file's own words, with the names and
+  scenarios the agent that runs the import drafts. A person accepts
+  them together, one signed entry each. From then on boom keeps them,
+  and never takes a file again as the record (record 0007).
 
 ```sh
 boom init --person ada --key ~/.ssh/id_ed25519_sk
@@ -61,6 +67,7 @@ boom propose invariant money-has-currency "Every amount names its currency." \
   --scenario "Given an amount, then it names its currency." \
   --repository shop --provenance run-1
 boom accept money-has-currency@<version> --key ~/.ssh/id_ed25519_sk
+boom import adr docs/adr --repository shop --drafts drafts.json --provenance run-1
 boom show money-has-currency --json
 boom query --repository shop
 boom log
@@ -101,7 +108,7 @@ and 3 when it cannot run, and on 2 and 3 it writes nothing.
 
 | path | what |
 |---|---|
-| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log` and `query` |
+| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `import` and `query` |
 | `site/` | the site, Astro with Starlight; its diagrams are drawn at build time (`site/README.md`) |
 | `docs/architecture/core.md` | the rules every change keeps |
 | `docs/adr/` | the decisions behind them, one MADR record each |

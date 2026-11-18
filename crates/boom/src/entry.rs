@@ -31,6 +31,70 @@ pub enum Actor {
     },
 }
 
+/// The form of the file a record came in from.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Form {
+    /// A MADR decision record.
+    Madr,
+    /// A rules page in the family's form.
+    Rules,
+}
+
+impl Form {
+    /// The form as an entry writes it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Form::Madr => "madr",
+            Form::Rules => "rules",
+        }
+    }
+}
+
+/// Where an imported version came from: the repository, the file and
+/// what the file said of it (record-import; design 5). It is where a
+/// version came from, not what it says, and no part of its fingerprint.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Imported {
+    /// The repository the import names.
+    pub repository: String,
+    /// The file's name, `0003-amounts-in-cents.md` or `core.md`.
+    pub from: String,
+    /// The file's form.
+    pub form: Form,
+    /// The record's number, `0003`, or the rule's id, `core.1`; none
+    /// for an unnumbered record.
+    pub legacy: Option<String>,
+    /// The file's status as written, or none.
+    pub status: Option<String>,
+    /// The file's date, or none.
+    pub date: Option<String>,
+    /// The file's decision-makers.
+    pub deciders: Vec<String>,
+    /// A rule's `###` heading, or none.
+    pub section: Option<String>,
+    /// Whether the scenarios were drafted at import.
+    pub drafted: bool,
+}
+
+impl Imported {
+    /// The record's source: its repository, its file and its number or
+    /// id (design 7).
+    pub fn source(&self) -> (&str, &str, Option<&str>) {
+        (&self.repository, &self.from, self.legacy.as_deref())
+    }
+
+    /// The record as a refusal names it: an ADR by its file, a rule by
+    /// its id and its page, each of its repository.
+    pub fn named(&self) -> String {
+        match (self.form, &self.legacy) {
+            (Form::Rules, Some(id)) => format!("{id} of {} of {}", self.from, self.repository),
+            _ => format!("{} of {}", self.from, self.repository),
+        }
+    }
+}
+
 /// What an entry does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Act {
@@ -47,6 +111,9 @@ pub enum Act {
     Proposed {
         /// The claim's version.
         claim: Proposal,
+        /// Where it came in from, for a version an import proposes,
+        /// boxed so a proposal is no larger than the other acts by it.
+        imported: Option<Box<Imported>>,
         /// What it binds: the repositories it names, or, where it is
         /// `None`, the whole system.
         attach: Option<Attach>,
@@ -123,6 +190,8 @@ struct ProposedPart {
     actor: Actor,
     claim: Proposal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    imported: Option<Box<Imported>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     attach: Option<Attach>,
 }
 
@@ -151,7 +220,9 @@ struct RejectedPart {
 
 impl Entry {
     /// The entry's signed part: one JSON object, its fields `format`,
-    /// `act`, `at`, `actor` and then the act's own, in that order.
+    /// `act`, `at`, `actor` and then the act's own, in that order; a
+    /// proposal's `imported` after its `claim` and its `attach` after
+    /// that, each only where present (design 7).
     pub fn signed_part(&self) -> String {
         let format = FORMAT.to_owned();
         let act = self.act.name().to_owned();
@@ -167,12 +238,17 @@ impl Entry {
                 key: key.clone(),
                 owner: *owner,
             }),
-            Act::Proposed { claim, attach } => serde_json::to_string(&ProposedPart {
+            Act::Proposed {
+                claim,
+                imported,
+                attach,
+            } => serde_json::to_string(&ProposedPart {
                 format,
                 act,
                 at,
                 actor,
                 claim: claim.clone(),
+                imported: imported.clone(),
                 attach: attach.clone(),
             }),
             Act::Accepted { name, version } => serde_json::to_string(&AcceptedPart {
@@ -232,6 +308,7 @@ impl Entry {
                     actor: part.actor,
                     act: Act::Proposed {
                         claim: part.claim,
+                        imported: part.imported,
                         attach: part.attach,
                     },
                 })
@@ -314,10 +391,30 @@ mod tests {
                     vec!["Given an order paid 40.00, a refund of 45.00 is refused.".to_owned()],
                     None,
                     None,
+                    None,
                 ),
+                imported: None,
                 attach,
             },
         }
+    }
+
+    fn imported_proposal() -> Entry {
+        let mut entry = proposal();
+        if let Act::Proposed { imported, .. } = &mut entry.act {
+            *imported = Some(Box::new(Imported {
+                repository: "shop".to_owned(),
+                from: "0003-amounts-in-cents.md".to_owned(),
+                form: Form::Madr,
+                legacy: Some("0003".to_owned()),
+                status: Some("accepted".to_owned()),
+                date: Some("2026-01-04".to_owned()),
+                deciders: vec!["ada".to_owned(), "bo".to_owned()],
+                section: None,
+                drafted: true,
+            }));
+        }
+        entry
     }
 
     fn keys(signed: &str) -> Vec<String> {
@@ -424,5 +521,45 @@ mod tests {
         assert_eq!(entry.signed_part().as_bytes(), before.as_bytes());
         assert!(!entry.signed_part().contains("attach"));
         assert_eq!(Entry::parse(&before), Ok(entry));
+    }
+
+    #[test]
+    fn an_imported_proposal_keeps_where_it_came_from() {
+        let entry = imported_proposal();
+        let signed = entry.signed_part();
+        assert_eq!(
+            keys(&signed),
+            ["format", "act", "at", "actor", "claim", "imported"]
+        );
+        assert!(
+            signed.contains(r#""imported":{"repository":"shop","from":"0003-amounts-in-cents.md","form":"madr","legacy":"0003","status":"accepted","date":"2026-01-04","deciders":["ada","bo"],"section":null,"drafted":true}"#),
+            "{signed}"
+        );
+        assert_eq!(Entry::parse(&signed), Ok(entry.clone()));
+        assert_eq!(Entry::parse(&signed).unwrap().signed_part(), signed);
+        let Act::Proposed {
+            claim,
+            imported: Some(imported),
+            ..
+        } = &entry.act
+        else {
+            panic!("an imported proposal");
+        };
+        assert_eq!(
+            imported.source(),
+            ("shop", "0003-amounts-in-cents.md", Some("0003"))
+        );
+        let Act::Proposed { claim: plain, .. } = &proposal().act else {
+            panic!("a proposal");
+        };
+        assert_eq!(claim.version, plain.version);
+    }
+
+    #[test]
+    fn a_proposal_with_nothing_imported_writes_no_imported_field() {
+        let signed = proposal().signed_part();
+        assert_eq!(keys(&signed), ["format", "act", "at", "actor", "claim"]);
+        assert!(!signed.contains("imported"), "{signed}");
+        assert_eq!(Entry::parse(&signed), Ok(proposal()));
     }
 }
