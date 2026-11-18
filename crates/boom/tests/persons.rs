@@ -351,3 +351,89 @@ fn a_signature_verifies_with_no_boom() {
         .verify("boom", b"other words", &signature)
         .is_err());
 }
+
+/// Three agents' proposals, giving each as `<name>@<version>`.
+fn three_proposed(place: &Place) -> Vec<String> {
+    [
+        ("money-has-currency", MONEY),
+        (
+            "refund-within-payment",
+            "A refund never exceeds the payment.",
+        ),
+        ("orders-are-paid-once", "An order is paid once."),
+    ]
+    .iter()
+    .map(|(name, statement)| format!("{name}@{}", place.proposed(name, statement)))
+    .collect()
+}
+
+#[test]
+fn three_accepted_together() {
+    let place = Place::new();
+    let ada = place.made();
+    let targets = three_proposed(&place);
+    let before = place.log().len();
+    let mut args = vec!["accept"];
+    args.extend(targets.iter().map(String::as_str));
+    args.extend(["--key", &ada]);
+    let answer = place.json(&args);
+    assert_eq!(answer["format"], "boom-accept/1");
+    let accepted = answer["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 3);
+    let ada_public = place.keys.public_key(std::path::Path::new(&ada));
+    let log = place.log();
+    assert_eq!(log.len(), before + 3);
+    for (target, (listed, entry)) in targets.iter().zip(accepted.iter().zip(&log[before..])) {
+        let (name, version) = target.split_once('@').unwrap();
+        assert_eq!(listed["claim"], name);
+        assert_eq!(listed["version"], version);
+        assert_eq!(listed["status"], "standing");
+        assert_eq!(listed["by"], "ada");
+        assert_eq!(listed["entry"], entry["number"]);
+        assert_eq!(place.status(name, version), "standing");
+        assert_eq!(entry["act"], "accepted");
+        assert_eq!(entry["actor"], serde_json::json!({"person": "ada"}));
+        assert_eq!(entry["counted"], true);
+        assert_eq!(
+            boom::sign::verify(
+                &ada_public,
+                entry["signed"].as_str().unwrap().as_bytes(),
+                entry["signature"].as_str().unwrap()
+            ),
+            Ok(())
+        );
+    }
+}
+
+#[test]
+fn one_of_them_refused_signs_and_appends_nothing() {
+    let place = Place::new();
+    let ada = place.made();
+    let mut targets = three_proposed(&place);
+    let own = place.json(&[
+        "propose",
+        "assumption",
+        "invoices-are-monthly",
+        "Invoices are sent monthly.",
+        "--scenario",
+        support::SCENARIO,
+        "--key",
+        &ada,
+    ]);
+    let own = format!("invoices-are-monthly@{}", own["version"].as_str().unwrap());
+    targets[1] = own.clone();
+    let signatures = place.keys.signatures();
+    let mut args = vec!["accept"];
+    args.extend(targets.iter().map(String::as_str));
+    args.extend(["--key", &ada]);
+    let refused = place.refused(&args, &own);
+    assert!(
+        refused.stderr.contains("waits on another person"),
+        "{refused:?}"
+    );
+    assert_eq!(place.keys.signatures(), signatures, "ada's key signed");
+    for target in [&targets[0], &targets[2]] {
+        let (name, version) = target.split_once('@').unwrap();
+        assert_eq!(place.status(name, version), "proposed");
+    }
+}

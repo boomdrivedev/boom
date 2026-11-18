@@ -17,7 +17,7 @@ use crate::claim::{Kind, Proposal};
 use crate::entry::{Act, Actor, Entry};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
-use crate::store::{self, Store, Written};
+use crate::store::{self, Append, Store, Written};
 use crate::Failure;
 
 /// What a command reads from its process: the folders a store's path
@@ -147,10 +147,12 @@ enum Command {
         #[arg(long)]
         key: Option<PathBuf>,
     },
-    /// Accept a version, as a person signing with their security key.
+    /// Accept one or more versions, as a person signing each with their
+    /// security key, all appended together or none.
     Accept {
-        /// The version, `<name>@<version>`.
-        target: String,
+        /// The versions, each `<name>@<version>`.
+        #[arg(required = true, value_name = "TARGET")]
+        targets: Vec<String>,
         /// The accepting person's security key.
         #[arg(long)]
         key: Option<PathBuf>,
@@ -293,7 +295,7 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
             keys,
             env,
         ),
-        Command::Accept { target, key } => accept(path, &target, key.as_deref(), keys, env),
+        Command::Accept { targets, key } => accept(path, &targets, key.as_deref(), keys, env),
         Command::Reject {
             target,
             reason,
@@ -588,12 +590,15 @@ fn version_target<'a>(command: &str, target: &'a str) -> Result<(&'a str, &'a st
 
 fn accept(
     path: &Path,
-    target: &str,
+    targets: &[String],
     key: Option<&Path>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
-    let (name, version) = version_target("accept", target)?;
+    let versions = targets
+        .iter()
+        .map(|target| version_target("accept", target))
+        .collect::<Result<Vec<_>, _>>()?;
     let Some(key) = key else {
         return Err(Failure::refused(
             "only a person accepts: boom accept takes the person's --key",
@@ -601,36 +606,97 @@ fn accept(
     };
     let mut store = Store::open(path)?;
     let signer = keys.signer(key)?;
-    let (written, state) = write(&mut store, Some(signer.as_ref()), None, |state| {
-        Ok(Entry {
+    let state = store.state()?;
+    let person = person_of(&state, signer.as_ref(), key)?;
+    // Every target is judged, each against the state the ones before it
+    // build, before the key signs any (design 9).
+    let mut judged = state;
+    let mut to_sign = Vec::new();
+    for &(name, version) in &versions {
+        let entry = Entry {
             at: env.clock.now(),
-            actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
+            actor: Actor::Person(person.clone()),
             act: Act::Accepted {
                 name: name.to_owned(),
                 version: version.to_owned(),
             },
+        };
+        let signed = entry.signed_part();
+        match judge::judge(
+            &judged,
+            &entry,
+            &signed,
+            Proof::ToBeSigned(signer.public_key()),
+        ) {
+            Verdict::Counts => {
+                judge::apply(&mut judged, 0, &entry);
+                to_sign.push(signed);
+            }
+            Verdict::Refused(why) => return Err(Failure::Refused(naming(name, version, why))),
+            Verdict::Repeats(_) => {}
+        }
+    }
+    let mut signatures = Vec::with_capacity(to_sign.len());
+    for signed in &to_sign {
+        signatures.push(signer.sign(signed.as_bytes())?);
+    }
+    let appends: Vec<Append<'_>> = to_sign
+        .iter()
+        .zip(&signatures)
+        .map(|(signed, signature)| Append {
+            signed,
+            signature: Some(signature),
+            blob: None,
         })
-    })?;
-    let accepted = state.claims[name]
-        .version(version)
-        .expect("an accept written is in the state");
-    let by = accepted.decided_by.clone().unwrap_or_default();
-    Ok(Answer {
-        json: json!({
-            "format": "boom-accept/1",
+        .collect();
+    let state = if appends.is_empty() {
+        store.state()?
+    } else {
+        store.append_all(&appends)?.1
+    };
+    let mut accepted = Vec::with_capacity(versions.len());
+    let mut words = String::new();
+    for &(name, version) in &versions {
+        let found = state.claims[name]
+            .version(version)
+            .expect("an accept written is in the state");
+        let by = found.decided_by.clone().unwrap_or_default();
+        let seq = found.decided_in.unwrap_or_default();
+        accepted.push(json!({
             "claim": name,
             "version": version,
-            "status": accepted.status.as_str(),
-            "replaced": accepted.proposal.base,
+            "status": found.status.as_str(),
+            "replaced": found.proposal.base,
             "by": by,
-            "entry": written.seq(),
-        }),
-        words: format!(
-            "{name}@{version} is {}, accepted by {by}, by entry {}\n",
-            accepted.status.as_str(),
-            written.seq()
-        ),
+            "entry": seq,
+        }));
+        words.push_str(&format!(
+            "{name}@{version} is {}, accepted by {by}, by entry {seq}\n",
+            found.status.as_str(),
+        ));
+    }
+    let mut object = serde_json::Map::new();
+    object.insert("format".into(), json!("boom-accept/1"));
+    if let [one] = accepted.as_slice() {
+        if let Some(fields) = one.as_object() {
+            object.extend(fields.clone());
+        }
+    }
+    object.insert("accepted".into(), Value::Array(accepted));
+    Ok(Answer {
+        json: Value::Object(object),
+        words,
     })
+}
+
+/// A refusal of `name@version` that names it.
+fn naming(name: &str, version: &str, why: String) -> String {
+    let target = format!("{name}@{version}");
+    if why.contains(&target) {
+        why
+    } else {
+        format!("{target}: {why}")
+    }
 }
 
 fn reject(

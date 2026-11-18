@@ -5,7 +5,7 @@
 //! No one test file uses all of it.
 #![allow(dead_code)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -78,10 +78,12 @@ impl SoftKey {
 }
 
 /// Keys made in software, each at a path in a test's folder with its
-/// public half beside it, `<path>.pub`.
+/// public half beside it, `<path>.pub`, counting the signatures they
+/// make.
 pub struct SoftKeys {
     dir: PathBuf,
     keys: RefCell<HashMap<PathBuf, SoftKey>>,
+    signatures: Cell<usize>,
 }
 
 impl SoftKeys {
@@ -90,7 +92,17 @@ impl SoftKeys {
         SoftKeys {
             dir: dir.to_owned(),
             keys: RefCell::new(HashMap::new()),
+            signatures: Cell::new(0),
         }
+    }
+
+    /// How many signatures the keys have made.
+    pub fn signatures(&self) -> usize {
+        self.signatures.get()
+    }
+
+    fn counted(&self) {
+        self.signatures.set(self.signatures.get() + 1);
     }
 
     fn make(&self, name: &str, seed: u8, security: bool) -> PathBuf {
@@ -135,21 +147,24 @@ impl SoftKeys {
 
     /// Signs `message` with the key at `key` in `namespace`.
     pub fn sign_with(&self, key: &Path, namespace: &str, message: &[u8]) -> String {
+        self.counted();
         self.keys.borrow()[key].sign(namespace, message)
     }
 }
 
-struct SoftSigner {
+struct SoftSigner<'a> {
     key: SoftKey,
     public_key: PublicKey,
+    keys: &'a SoftKeys,
 }
 
-impl Signer for SoftSigner {
+impl Signer for SoftSigner<'_> {
     fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
 
     fn sign(&self, message: &[u8]) -> Result<String, Failure> {
+        self.keys.counted();
         Ok(self.key.sign(boom::sign::NAMESPACE, message))
     }
 }
@@ -165,6 +180,7 @@ impl Keys for SoftKeys {
         Ok(Box::new(SoftSigner {
             public_key: soft.public_key(),
             key: soft,
+            keys: self,
         }))
     }
 }

@@ -310,16 +310,34 @@ impl Store {
     }
 
     /// Appends the entry whose signed part is `signed`, with its
-    /// signature, and `blob`, a body it names, in one `IMMEDIATE`
-    /// transaction that judges it again and updates the views with it.
-    /// Answers what it wrote and the state after it.
+    /// signature, and `blob`, a body it names: [`Store::append_all`] of
+    /// one. Answers what it wrote and the state after it.
     pub fn append(
         &mut self,
         signed: &str,
         signature: Option<&str>,
         blob: Option<&[u8]>,
     ) -> Result<(Written, State), Failure> {
-        let entry = Entry::parse(signed).map_err(Failure::Refused)?;
+        let (written, state) = self.append_all(&[Append {
+            signed,
+            signature,
+            blob,
+        }])?;
+        let written = *written.first().expect("one entry is one written");
+        Ok((written, state))
+    }
+
+    /// Appends `entries`, each with its signature and blob, in one
+    /// `IMMEDIATE` transaction that judges each again against the state
+    /// the ones before it built and updates the views with it (design
+    /// 8). A refusal of any rolls the transaction back, so nothing is
+    /// written; a repeat adds nothing. Answers what each wrote, in
+    /// order, and the state after them.
+    pub fn append_all(&mut self, entries: &[Append<'_>]) -> Result<(Vec<Written>, State), Failure> {
+        let parsed = entries
+            .iter()
+            .map(|append| Entry::parse(append.signed).map_err(Failure::Refused))
+            .collect::<Result<Vec<_>, _>>()?;
         let path = self.path.clone();
         let tx = self
             .conn
@@ -330,40 +348,60 @@ impl Store {
         if !views_fresh(&tx, &rows)? {
             write_views(&tx, &state, &judgments, &rows)?;
         }
-        match judge::judge(&state, &entry, signed, Proof::of(signature)) {
-            Verdict::Counts => {}
-            Verdict::Refused(why) => return Err(Failure::Refused(why)),
-            Verdict::Repeats(seq) => {
-                tx.commit()?;
-                return Ok((Written::Repeats(seq), state));
+        let mut seq = rows.last().map_or(0, |row| row.seq);
+        let mut prev = rows
+            .last()
+            .map_or(GENESIS.to_owned(), |row| row.hash.clone());
+        let mut written = Vec::with_capacity(entries.len());
+        for (append, entry) in entries.iter().zip(&parsed) {
+            match judge::judge(&state, entry, append.signed, Proof::of(append.signature)) {
+                Verdict::Counts => {}
+                Verdict::Refused(why) => return Err(Failure::Refused(why)),
+                Verdict::Repeats(repeated) => {
+                    written.push(Written::Repeats(repeated));
+                    continue;
+                }
             }
-        }
-        let seq = rows.last().map_or(1, |row| row.seq + 1);
-        let prev = rows.last().map_or(GENESIS, |row| row.hash.as_str());
-        let hash = entry::hash(prev, signed, signature);
-        tx.execute(
-            "INSERT INTO log (seq, prev, hash, signed, signature) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![sql_int(seq), prev, hash, signed, signature],
-        )?;
-        if let Some(bytes) = blob {
+            seq += 1;
+            let hash = entry::hash(&prev, append.signed, append.signature);
             tx.execute(
-                "INSERT OR IGNORE INTO blobs (fingerprint, bytes) VALUES (?1, ?2)",
-                params![crate::sha256_hex(bytes), bytes],
+                "INSERT INTO log (seq, prev, hash, signed, signature) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![sql_int(seq), prev, hash, append.signed, append.signature],
             )?;
-        }
-        judge::apply(&mut state, seq, &entry);
-        write_judgment(&tx, seq, &Judgment::counted())?;
-        match &entry.act {
-            Act::Registered { person, .. } => write_person(&tx, &state.persons[person])?,
-            Act::Proposed { claim, .. } => write_claim(&tx, &state.claims[&claim.name])?,
-            Act::Accepted { name, .. } | Act::Rejected { name, .. } => {
-                write_claim(&tx, &state.claims[name])?
+            if let Some(bytes) = append.blob {
+                tx.execute(
+                    "INSERT OR IGNORE INTO blobs (fingerprint, bytes) VALUES (?1, ?2)",
+                    params![crate::sha256_hex(bytes), bytes],
+                )?;
             }
+            judge::apply(&mut state, seq, entry);
+            write_judgment(&tx, seq, &Judgment::counted())?;
+            match &entry.act {
+                Act::Registered { person, .. } => write_person(&tx, &state.persons[person])?,
+                Act::Proposed { claim, .. } => write_claim(&tx, &state.claims[&claim.name])?,
+                Act::Accepted { name, .. } | Act::Rejected { name, .. } => {
+                    write_claim(&tx, &state.claims[name])?
+                }
+            }
+            write_head(&tx, seq, &hash)?;
+            prev = hash;
+            written.push(Written::Entry(seq));
         }
-        write_head(&tx, seq, &hash)?;
         tx.commit()?;
-        Ok((Written::Entry(seq), state))
+        Ok((written, state))
     }
+}
+
+/// An entry to append: its signed part, its signature where it has
+/// one, and the blob it names where it carries one.
+#[derive(Debug, Clone, Copy)]
+pub struct Append<'a> {
+    /// Its signed part, as signed.
+    pub signed: &'a str,
+    /// Its armored signature.
+    pub signature: Option<&'a str>,
+    /// A body it names.
+    pub blob: Option<&'a [u8]>,
 }
 
 fn sql_int(value: u64) -> i64 {
