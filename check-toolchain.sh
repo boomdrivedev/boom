@@ -1,9 +1,10 @@
 #!/bin/sh
 # Every tool the gate runs is the version the tree pins, on every host
 # (rule core.6): rustc, cargo, clippy and rustfmt the build .prototools
-# pins, which rust-toolchain.toml names too, and OpenSpec and Vale, which
+# pins, which rust-toolchain.toml names too; OpenSpec and Vale, which
 # the pages' writers run and no task does (record 0002), the releases
-# devenv.nix pins. A tool found outside its pin, a runner's rustup
+# devenv.nix pins; and the plugin's tools, Claude Code and jq, the
+# versions devenv.nix pins and asserts. A tool found outside its pin, a runner's rustup
 # default say, fails here rather than holding the tree to another
 # version's rules.
 set -eu
@@ -54,3 +55,15 @@ release() {
 }
 release openspec "$(pinned openspecVersion)" openspec --version
 release vale "$(pinned valeVersion)" vale --version
+
+# The plugin's checks' tools (design 9): Claude Code, the release
+# devenv.nix derives, asked through plugins/claude.sh so it reads and
+# writes nothing of the user's, and jq, the version devenv.nix asserts of
+# nixpkgs' build.
+asserted() {
+  version=$(sed -n "s/^ *assert pkgs\.$1\.version == \"\(.*\)\";$/\1/p" devenv.nix)
+  [ -n "$version" ] || fail "devenv.nix asserts no version of $1"
+  printf '%s\n' "$version"
+}
+release claude "$(pinned claudeVersion)" bash plugins/claude.sh --version
+release jq "$(asserted jq)" jq --version
