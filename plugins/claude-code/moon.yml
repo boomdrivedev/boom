@@ -7,6 +7,16 @@ language: 'bash'
 layer: 'application'
 
 tasks:
+  # The plugin's JSON, by Biome with the settings /biome.json holds, which
+  # treefmt formats it by too (core.5).
+  format:
+    command: 'biome format .'
+    inputs: ['.claude-plugin/**/*', 'hooks/**/*', '/biome.json', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
+  lint:
+    command: 'biome lint .'
+    inputs: ['.claude-plugin/**/*', 'hooks/**/*', '/biome.json', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
   # The manifest and its hooks, read by the pinned Claude Code (design 9).
   typecheck:
     command: '../claude.sh plugin validate --strict .'
