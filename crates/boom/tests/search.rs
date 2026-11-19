@@ -608,3 +608,90 @@ fn nothing_is_kept() {
         "{before:?}"
     );
 }
+
+#[test]
+fn a_name_above_a_body() {
+    let place = Place::new();
+    let ada = place.made();
+    Claim::invariant(
+        "refund-never-exceeds-payment",
+        "A refund never exceeds the payment.",
+    )
+    .standing(&place, &ada);
+    Claim::decision("orders-are-paid-once", "An order is paid once.")
+        .body("An order is paid once, and a refund is paid against it.\n")
+        .standing(&place, &ada);
+    assert_eq!(
+        names(&search(&place, &["refund"])),
+        ["refund-never-exceeds-payment", "orders-are-paid-once"]
+    );
+    // Above the order of kinds: a decision's name above an invariant's
+    // body.
+    Claim::invariant("payments-are-recorded", "A payment is recorded.")
+        .body("A payment is recorded, and a rebate is recorded against it.\n")
+        .standing(&place, &ada);
+    Claim::decision("rebate-is-capped", "A rebate is capped.").standing(&place, &ada);
+    assert_eq!(
+        names(&search(&place, &["rebate"])),
+        ["rebate-is-capped", "payments-are-recorded"]
+    );
+}
+
+/// The decisions `beta-kept` and `alpha-kept` and the invariant
+/// `gamma-kept` standing for `shop`, each with the same scenario and no
+/// body.
+fn kept(place: &Place) {
+    let ada = place.made();
+    Claim::decision("beta-kept", "Beta is kept.").standing(place, &ada);
+    Claim::decision("alpha-kept", "Alpha is kept.").standing(place, &ada);
+    Claim::invariant("gamma-kept", "Gamma is kept.").standing(place, &ada);
+}
+
+#[test]
+fn equal_matches_by_kind_and_name() {
+    let place = Place::new();
+    kept(&place);
+    assert_eq!(
+        names(&search(&place, &["kept"])),
+        ["gamma-kept", "alpha-kept", "beta-kept"]
+    );
+}
+
+#[test]
+fn limited() {
+    let place = Place::new();
+    kept(&place);
+    let answer = search(&place, &["kept", "--limit", "2"]);
+    assert_eq!(answer["total"], 3);
+    assert_eq!(names(&answer), ["gamma-kept", "alpha-kept"]);
+    let words = place.run(&["search", "kept", "--repository", "shop", "--limit", "2"]);
+    assert_eq!(words.code, 0, "{words:?}");
+    let first = words.stdout.lines().next().unwrap();
+    assert!(
+        first.starts_with("3 claims match \"kept\" for shop, at entry "),
+        "{words:?}"
+    );
+    assert!(
+        first.ends_with(" of the store's log; the first 2 follow."),
+        "{words:?}"
+    );
+    assert_eq!(words.stdout.lines().count(), 3, "{words:?}");
+    assert_eq!(
+        search(&place, &["kept"])["claims"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+}
+
+#[test]
+fn a_limit_of_none_is_refused() {
+    let place = Place::new();
+    kept(&place);
+    let outcome = place.refused(
+        &["search", "kept", "--repository", "shop", "--limit", "0"],
+        "--limit",
+    );
+    assert_eq!(outcome.stdout, "", "{outcome:?}");
+}
