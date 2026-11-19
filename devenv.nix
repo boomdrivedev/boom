@@ -223,8 +223,14 @@ in
     statix
   ];
 
-  # The flake's checks (nix/check.sh): the pinned nix by its path.
+  # The flake's checks (nix/check.sh): the pinned nix by its path, and the
+  # flake's inputs as flake.lock locks them (nix/inputs.nix), fetched by
+  # this shell outside the gate's sandbox and given to nix:typecheck and
+  # nix:test by their store paths, which they read with no network and no
+  # nix daemon, so every host evaluates the flake against the inputs the
+  # lock pins (core.6; record 0010, design 7).
   env.BOOM_FLAKE_NIX = "${flakeNix}/bin/nix";
+  env.BOOM_FLAKE_INPUTS = builtins.toJSON (import ./nix/inputs.nix { }).paths;
 
   # The site's packages, given to site:install by their store path
   # (site/scripts/install.sh; record 0003).
