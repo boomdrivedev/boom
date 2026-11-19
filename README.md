@@ -82,7 +82,7 @@ claims that hold.
   naming an argument its command does not take. No tool accepts,
   rejects, registers a person or makes a store, no tool takes a `key`,
   and the server holds no key, so no call sets off a person's security
-  key (record 0010). Its instructions, and `boom propose`'s answer,
+  key (record 0011). Its instructions, and `boom propose`'s answer,
   give the `boom accept` a person runs in their own terminal.
 
 ```sh
@@ -132,7 +132,7 @@ boom is released by version. Each landing on main in which the
 Conventional Commits since the last release make a new version is
 released as `v<x.y.z>`: its tag names a commit that writes that version
 into the tree, so boom and its plugin built from the tag say it, given
-nothing (record 0010).
+nothing (record 0011).
 
 With Nix, install a release from its tag. boom's flake gives the plugin
 from the same tag as `boom-claude-plugin`, the plugin's folder at boom's

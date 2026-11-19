@@ -1,5 +1,5 @@
 ---
-number: 10
+number: 11
 title: boom mcp serves an agent the commands it may run, and none a person must sign
 status: accepted
 date: 2026-11-18

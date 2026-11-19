@@ -3,7 +3,7 @@
 The work is on `change/boom-serves-its-commands-to-agents-over-mcp`,
 cut from `bolt/boom-holds-the-rules-agents-read`. The rules are
 `docs/architecture/core.md` at this place's base (core.1 to core.7);
-the decisions records 0006, 0009 and 0010, and flume's `flume mcp`
+the decisions records 0006, 0009 and 0011, and flume's `flume mcp`
 (`crates/flume/src/commands/mcp.rs` on flume's main), whose design
 `boom mcp` copies (design 1). Every test named here is a case of
 `boom:test`. A test drives the server through `boom::mcp::serve` in a
@@ -37,4 +37,4 @@ only adds to them. No task adds a dependency (core.6).
 
 - [x] 4.1 In `README.md`, say what `boom mcp` serves: an MCP server on standard input and output whose tools are `propose`, `show`, `log`, `query` and the imports, each answering its command's JSON; that none accepts, rejects, registers or makes a store and the server holds no key; that a call's arguments are its command's; show a repository's `.mcp.json` naming `boom mcp` (design 8) and say to name `--store` where the harness's environment differs from the person's terminal; and add `mcp` to the table's row for `crates/boom`. In `CLAUDE.md`, say `boom mcp` serves an agent the commands it may run beside what the crate does, and keep what is not built. True when `devenv shell -- vale README.md` reports no error.
 - [x] 4.2 Number this change's record 0010, as record 0009 is claim-search's: rename it `docs/adr/0010-boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign.md` with `number: 10`, its tools `search` among them, and cite it as record 0010 in `src/mcp.rs`, `tests/mcp.rs`, `README.md` and `CLAUDE.md`, leaving every citation of claim-search's record 0009 as it is. In `README.md` and `CLAUDE.md`, name `search` among `boom mcp`'s tools. True when `devenv shell -- vale README.md` reports no error.
-- [ ] 4.3 Number this change's record 0011, as record 0010 is boom-is-released-by-version's (#18), taken in at c32ecaf: rename it `docs/adr/0011-boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign.md` with `number: 11`, and cite it as record 0011 in `src/mcp.rs`, `tests/mcp.rs`, `README.md`, `CLAUDE.md` and this change's proposal, design, agent-tools delta and tasks, leaving every citation of the release's record 0010 as it is. True when `devenv shell -- vale README.md CLAUDE.md` reports no error.
+- [x] 4.3 Number this change's record 0011, as record 0010 is boom-is-released-by-version's (#18), taken in at c32ecaf: rename it `docs/adr/0011-boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign.md` with `number: 11`, and cite it as record 0011 in `src/mcp.rs`, `tests/mcp.rs`, `README.md`, `CLAUDE.md` and this change's proposal, design, agent-tools delta and tasks, leaving every citation of the release's record 0010 as it is. True when `devenv shell -- vale README.md CLAUDE.md` reports no error.

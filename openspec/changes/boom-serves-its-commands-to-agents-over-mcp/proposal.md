@@ -68,7 +68,7 @@ keeps them: with `--json` it refuses, answering one JSON object.
 - `README.md` and `CLAUDE.md` say what `boom mcp` serves and what it
   leaves to a person, and the README shows the `.mcp.json` a repository
   names it in.
-- `docs/adr/0010-boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign.md`
+- `docs/adr/0011-boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign.md`
   records this change's choices.
 - Out of this change: the Claude Code plugin, its hook and skills, and
   the herdr plugin, each a moon project of its own under `plugins/`

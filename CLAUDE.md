@@ -19,7 +19,7 @@ that stand by their words, in a repository or every repository.
 `boom mcp` serves an agent's program the commands it may run,
 `propose`, `show`, `log`, `query`, `search` and the imports, as MCP
 tools, and none a person must sign: no tool accepts, rejects or
-registers, and the server holds no key (record 0010). boom is released
+registers, and the server holds no key (record 0011). boom is released
 by version: each landing on main with a new version is tagged
 `v<x.y.z>` on a release commit off main that writes the version, and
 boom's flake gives boom and its plugin from that tag at one version

@@ -7,7 +7,7 @@ served as tools over the Model Context Protocol, each run by its
 command's own code and answering its command's JSON, and none doing
 what only a person may do (interview: `mcp-is-the-commands`,
 `mcp-serves-no-persons-act`, `mcp-offers-no-accept`; record 0006;
-record 0010).
+record 0011).
 
 ## ADDED Requirements
 

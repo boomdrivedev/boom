@@ -32,7 +32,7 @@ from the log through its command, and the server keeps nothing), core.3
 (the server holds no key, and the tests' keys are made when they run),
 core.5 (no new file type, and no test reads a Markdown file of the
 tree) and core.6 (no new dependency or tool, so nothing new to pin). It
-reaches no control plane. Record 0010 records the choices below that
+reaches no control plane. Record 0011 records the choices below that
 are this change's own.
 
 ## Goals / Non-Goals
