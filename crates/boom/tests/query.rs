@@ -548,3 +548,117 @@ fn a_version_that_came_in_as_history_is_not_given() {
     let answer = query(&place, "shop");
     assert_eq!(names(&answer), ["amounts-in-cents"]);
 }
+
+/// Runs `args` in `cwd` on the store at `store`, which may not exist.
+fn run_on(
+    place: &Place,
+    cwd: &std::path::Path,
+    store: &std::path::Path,
+    args: &[&str],
+) -> boom::cli::Outcome {
+    let mut env = place.env.clone();
+    env.cwd = Some(cwd.to_owned());
+    let store = support::path_arg(store);
+    let mut all: Vec<&str> = args.to_vec();
+    all.extend(["--store", &store]);
+    boom::cli::run(all, &place.keys, &env)
+}
+
+/// Asserts `outcome` answered nothing: exit 0 and both streams empty.
+fn answered_nothing(outcome: &boom::cli::Outcome) {
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(outcome.stdout, "", "{outcome:?}");
+    assert_eq!(outcome.stderr, "", "{outcome:?}");
+}
+
+#[test]
+fn if_declared_answers_as_without_it() {
+    let place = Place::new();
+    money_in_shop(&place);
+    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let inside = place.empty_folder("shop-repo/src/money");
+    for cwd in [&repo, &inside] {
+        for json in [&[][..], &["--json"][..]] {
+            let mut plain = vec!["query"];
+            plain.extend_from_slice(json);
+            let mut flagged = vec!["query", "--if-declared"];
+            flagged.extend_from_slice(json);
+            let without = place.run_in(cwd, &plain);
+            let with = place.run_in(cwd, &flagged);
+            assert_eq!(without.code, 0, "{without:?}");
+            assert!(without.stdout.contains("money-has-currency"), "{without:?}");
+            assert_eq!(with, without);
+        }
+    }
+}
+
+#[test]
+fn if_declared_with_nothing_declared_answers_nothing() {
+    let place = Place::new();
+    let repo = place.repository("undeclared", None);
+    let store = place.dir.path().join("none/boom.sqlite");
+    answered_nothing(&run_on(&place, &repo, &store, &["query", "--if-declared"]));
+    assert!(!store.exists());
+    assert!(!place.dir.path().join("none").exists());
+}
+
+#[test]
+fn if_declared_outside_a_repository_answers_nothing() {
+    let place = Place::new();
+    let outside = place.empty_folder("outside");
+    place.declare(&outside, "repository = \"shop\"\n");
+    let store = place.dir.path().join("none/boom.sqlite");
+    answered_nothing(&run_on(
+        &place,
+        &outside,
+        &store,
+        &["query", "--if-declared"],
+    ));
+    assert!(!store.exists());
+}
+
+#[test]
+fn if_declared_with_nothing_declared_answers_null_json() {
+    let place = Place::new();
+    let repo = place.repository("undeclared", None);
+    let store = place.dir.path().join("none/boom.sqlite");
+    let outcome = run_on(&place, &repo, &store, &["query", "--if-declared", "--json"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(outcome.stderr, "", "{outcome:?}");
+    assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
+    let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
+    assert_eq!(
+        answer,
+        json!({"format": "boom-query/1", "repository": null, "head": null, "claims": []})
+    );
+    assert!(!store.exists());
+}
+
+#[test]
+fn if_declared_refuses_a_declaration_it_cannot_read() {
+    let place = Place::new();
+    money_in_shop(&place);
+    let named = place.repository("named", Some("repository = \"Shop\"\n"));
+    let file = named.join(".config/boom.toml");
+    let before = log_rows(&place);
+    let outcome = place.run_in(&named, &["query", "--if-declared"]);
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    assert_eq!(outcome.stdout, "", "{outcome:?}");
+    assert!(
+        outcome.stderr.contains(file.to_str().unwrap()),
+        "{outcome:?}"
+    );
+    assert_eq!(log_rows(&place), before);
+}
+
+#[test]
+fn if_declared_with_a_repository_is_refused() {
+    let place = Place::new();
+    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let outcome = place.run_in(&repo, &["query", "--if-declared", "--repository", "shop"]);
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    assert_eq!(outcome.stdout, "", "{outcome:?}");
+    assert!(outcome.stderr.contains("--if-declared"), "{outcome:?}");
+    assert!(outcome.stderr.contains("--repository"), "{outcome:?}");
+    assert!(!place.store.exists());
+}

@@ -88,24 +88,48 @@ boom log
 ```
 
 `boom query` writes its words to standard output alone, so a harness
-can put them in an agent's context as they are. In Claude Code, a
-repository's `.claude/settings.json` names it as a `SessionStart` hook,
-and the agent starts each session with the claims that stand for the
-repository its `.config/boom.toml` declares:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "boom query" }] }
-    ]
-  }
-}
-```
+can put them in an agent's context as they are. boom's Claude Code
+plugin does it: its `SessionStart` hook runs `boom query --if-declared`,
+so every session in a repository whose `.config/boom.toml` declares it
+starts with the claims that stand for that repository, and a session
+anywhere else hears nothing. A repository writes no hook into its own
+`.claude/settings.json`. With `--if-declared`, where no repository is
+declared, boom answers nothing and exits 0; a declaration it cannot read
+it still refuses, naming the file.
 
 Each command answers in words, or with `--json` as one JSON object
 that names its format. It exits 0 when it answers, 2 when it refuses
 and 3 when it cannot run, and on 2 and 3 it writes nothing.
+
+## Install
+
+boom is released by version. Each landing on main in which the
+Conventional Commits since the last release make a new version is
+released as `v<x.y.z>`: its tag names a commit that writes that version
+into the tree, so boom and its plugin built from the tag say it, given
+nothing (record 0010).
+
+With Nix, install a release from its tag. boom's flake gives the plugin
+from the same tag as `boom-claude-plugin`, the plugin's folder at boom's
+version, for a host's configuration to hand to Claude Code:
+
+```sh
+nix profile install github:boomdrivedev/boom/v<x.y.z>
+nix build github:boomdrivedev/boom/v<x.y.z>#boom-claude-plugin
+```
+
+Without Nix, take `boom-<system>.tar.gz` from the release's GitHub page
+for `aarch64-darwin`, `aarch64-linux` or `x86_64-linux`, put `boom` on
+your `PATH`, and add the marketplace at the same tag with Claude Code's
+own command:
+
+```sh
+claude plugin marketplace add https://github.com/boomdrivedev/boom.git#v<x.y.z>
+claude plugin install boom@boom
+```
+
+The plugin's hook runs the `boom` on `PATH`, so install both from one
+tag.
 
 ## What it will do
 
@@ -123,6 +147,9 @@ and 3 when it cannot run, and on 2 and 3 it writes nothing.
 | path | what |
 |---|---|
 | `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `import`, `query` and `search` |
+| `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom query --if-declared`, listed by the marketplace in `.claude-plugin/` |
+| `flake.nix`, `nix/` | boom's flake, giving `boom` and `boom-claude-plugin` at one version, and its offline checks |
+| `.github/workflows/release.yml` | the release: a landing with a new version, tagged on a release commit off main, its binaries built by cargo |
 | `site/` | the site, Astro with Starlight; its diagrams are drawn at build time (`site/README.md`) |
 | `docs/architecture/core.md` | the rules every change keeps |
 | `docs/adr/` | the decisions behind them, one MADR record each |

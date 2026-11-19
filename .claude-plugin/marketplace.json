@@ -1,0 +1,16 @@
+{
+  "name": "boom",
+  "owner": {
+    "name": "agentplot"
+  },
+  "metadata": {
+    "description": "Claude Code plugin for boom, the ledger of what a project has claimed about itself."
+  },
+  "plugins": [
+    {
+      "name": "boom",
+      "source": "./plugins/claude-code",
+      "description": "Start every agent session in a repository that declares itself to boom with the claims that stand for it, and say nothing in a session anywhere else."
+    }
+  ]
+}

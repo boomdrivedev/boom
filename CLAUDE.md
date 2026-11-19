@@ -12,15 +12,21 @@ file's own words for a person to accept together, attached to that
 repository. A version binds the repositories its proposal names, or the
 whole system, once a person accepts it, and `boom query` gives an agent
 every claim that stands for its repository, named or declared in
-`.config/boom.toml`, replayed from the log, and `boom search` finds the
-claims that stand by their words, in a repository or every repository.
-The views it renders, a rules page, decision records, a design book and
-a context map, and `boom check` are not built yet.
+`.config/boom.toml`, replayed from the log; its Claude Code plugin's
+session hook runs `boom query --if-declared`, so a session in a declared
+repository starts with those claims, and `boom search` finds the claims
+that stand by their words, in a repository or every repository. boom is
+released by version: each landing on main with a new version is tagged
+`v<x.y.z>` on a release commit off main that writes the version, and
+boom's flake gives boom and its plugin from that tag at one version
+(record 0010, core.8). The views it renders, a rules page, decision
+records, a design book and a context map, and `boom check` are not built
+yet.
 
 ## The family
 
 **The family.** This tool works with the others of the Boomdrive
-family: sluice (the merge queue), Flume (places and their agents),
+family: sluice (the merge queue), flume (places and their agents),
 Boomdrive (the runner), timber, weir and boom. Each tool's statement is
 in agentplot/blueprints, `design/<tool>/requirements.md`. Before
 designing or fixing a behavior here, look at how the related tools do
@@ -56,15 +62,16 @@ branch requires:
 
 | layer | what | who requires it |
 |---|---|---|
-| `check-fast` | the crate's format (rustfmt), lint (clippy -D warnings), type check and tests; the site's format and lint (Biome), type check (astro check), diagrams and build; the root's format (treefmt), toolchain, specs, open changes, each validated as it would archive, and that check's cases | main |
+| `check-fast` | the crate's format (rustfmt), lint (clippy -D warnings), type check and tests; the plugin's format and lint (Biome), validation (Claude Code) and session test; the flake's lint (statix), evaluation and cases; the site's format and lint (Biome), type check (astro check), diagrams and build; the root's format (treefmt), toolchain, specs, open changes, each validated as it would archive, and that check's cases, versions, release workflow and marketplace | main |
 
 Run suites through sluice, so the agents on this host take turns under
 its bound: once your work is committed, `sluice exec main` for the
 gate's checks, and while iterating `sluice exec main -- moon run
 <project>:<task>`. The projects are those `.moon/workspace.yml` lists:
-`boom` (`crates/boom`), `site` (`site/`, its own `README.md`) and
-`root`. A quick, narrow call, `cargo check` or one unit test, is fine to
-run directly. `devenv shell -- moon run :#check-fast` runs the fast
+`boom` (`crates/boom`), `claude-code` (`plugins/claude-code`), `nix`
+(`nix/`, with `flake.nix` at the root), `site` (`site/`, its own
+`README.md`) and `root`. A quick, narrow call, `cargo check` or one
+unit test, is fine to run directly. `devenv shell -- moon run :#check-fast` runs the fast
 layer. `devenv shell -- prose` runs Vale over the pages and the README
 for their writers; no task or workflow runs it, and none reads a
 Markdown file for its words (core.5; record 0002).
