@@ -22,3 +22,9 @@ tasks:
     command: '../claude.sh plugin validate --strict .'
     inputs: ['.claude-plugin/**/*', 'hooks/**/*', '/plugins/claude.sh', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]
+  # The session hook, run as Claude Code runs it, with a boom of its own
+  # and with the boom the tree builds (design 9).
+  test:
+    command: 'bash tests/session.sh'
+    inputs: ['.claude-plugin/**/*', 'hooks/**/*', 'tests/**/*', '/crates/boom/**/*', '/Cargo.toml', '/Cargo.lock', '/.prototools', '/rust-toolchain.toml', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
