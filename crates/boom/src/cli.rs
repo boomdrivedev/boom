@@ -205,6 +205,10 @@ enum Command {
         #[command(subcommand)]
         what: ImportCommand,
     },
+    /// Serve boom's commands to an agent's program as tools, over the
+    /// Model Context Protocol on standard input and output; none of them
+    /// is a person's act.
+    Mcp,
 }
 
 #[derive(Subcommand, Debug)]
@@ -273,6 +277,9 @@ where
             };
         }
     };
+    if let Command::Mcp = cli.command {
+        return mcp(cli.json, cli.store.as_deref(), env);
+    }
     let path = store::resolve(
         cli.store.as_deref(),
         env.xdg_data_home.as_deref(),
@@ -291,6 +298,30 @@ where
             stderr: String::new(),
         },
         Err(failure) => failed(cli.json, failure),
+    }
+}
+
+/// `boom mcp` (agent-tools; design 2): refused with `--json`, else
+/// serving the process's standard input and output until its input ends.
+fn mcp(json: bool, store: Option<&Path>, env: &Env) -> Outcome {
+    if json {
+        return failed(
+            true,
+            Failure::refused(
+                "boom mcp answers in the protocol's messages, one a line, never one JSON object",
+            ),
+        );
+    }
+    crate::mcp::serve(
+        std::io::stdin().lock(),
+        std::io::stdout().lock(),
+        store,
+        env,
+    );
+    Outcome {
+        code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
     }
 }
 
@@ -372,6 +403,7 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
         Command::Show { target } => show(path, &target),
         Command::Log => log(path),
         Command::Query { repository } => query(path, repository.as_deref(), env),
+        Command::Mcp => unreachable!("boom mcp is served before a store's path is resolved"),
         Command::Import { what } => match what {
             ImportCommand::Adr { dir, options } => import(path, Form::Madr, &dir, options, env),
             ImportCommand::Rules { page, options } => {
