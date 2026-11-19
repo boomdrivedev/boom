@@ -1,0 +1,30 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+# The flake: flake.nix and flake.lock at the root, everything else of it
+# under nix/ (record 0010, design 6, 7). Each check is one task, in the
+# fast layer, run from the workspace root by the tools devenv.nix pins
+# (core.5, core.6). Its format is root:format's, whose nixfmt and deadnix
+# read its .nix files and whose shellcheck and shfmt read nix/check.sh.
+language: 'nix'
+
+tasks:
+  # statix over the flake's own files.
+  lint:
+    script: 'statix check flake.nix && statix check nix'
+    inputs: ['/flake.nix', '/flake.lock', '/nix/**/*', '/devenv.nix', '/devenv.lock', '/Cargo.toml', '/Cargo.lock', '/.prototools', '/plugins/claude-code/**/*']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}
+  # Every system's boom and boom-claude-plugin evaluates to a derivation,
+  # against no store (nix/check.sh).
+  typecheck:
+    command: 'sh nix/check.sh typecheck'
+    inputs: ['/flake.nix', '/flake.lock', '/nix/**/*', '/devenv.nix', '/devenv.lock', '/Cargo.toml', '/Cargo.lock', '/.prototools', '/plugins/claude-code/**/*', '/crates/**/*']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}
+  # The evaluated cases under nix/tests, against no store (nix/check.sh): a
+  # system's cases read Cargo.toml's version and the plugin's folder.
+  test:
+    command: 'sh nix/check.sh test'
+    inputs: ['/flake.nix', '/flake.lock', '/nix/**/*', '/devenv.nix', '/devenv.lock', '/Cargo.toml', '/Cargo.lock', '/.prototools', '/plugins/claude-code/**/*']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}

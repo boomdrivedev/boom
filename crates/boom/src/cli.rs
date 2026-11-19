@@ -198,6 +198,10 @@ enum Command {
         /// `.config/boom.toml` declares.
         #[arg(long, value_name = "NAME")]
         repository: Option<String>,
+        /// Answer nothing, and exit 0, where the working folder declares
+        /// no repository, as a harness's hook in every session asks.
+        #[arg(long, conflicts_with = "repository")]
+        if_declared: bool,
     },
     /// Find the claims that stand whose words hold every word searched,
     /// in a repository or every repository, the best matches first,
@@ -316,7 +320,7 @@ where
         env.xdg_data_home.as_deref(),
         env.home.as_deref(),
     );
-    let answer = path.and_then(|path| execute(cli.command, &path, keys, env));
+    let answer = execute(cli.command, path, keys, env);
     match answer {
         Ok(answer) if cli.json => Outcome {
             code: 0,
@@ -382,16 +386,23 @@ pub(crate) fn failed(json: bool, failure: Failure) -> Outcome {
     }
 }
 
-fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<Answer, Failure> {
+/// Runs `command` on the store at `path`, which a command resolves only
+/// where it opens the store.
+fn execute(
+    command: Command,
+    path: Result<PathBuf, Failure>,
+    keys: &dyn Keys,
+    env: &Env,
+) -> Result<Answer, Failure> {
     match command {
-        Command::Init { person, key } => init(path, &person, &key, keys, env),
+        Command::Init { person, key } => init(&path?, &person, &key, keys, env),
         Command::Register {
             person,
             public_key_file,
             owner,
             key,
         } => register(
-            path,
+            &path?,
             &person,
             &public_key_file,
             owner,
@@ -411,7 +422,7 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
             repositories,
             system,
         } => propose(
-            path,
+            &path?,
             Proposed {
                 kind,
                 name,
@@ -427,26 +438,29 @@ fn execute(command: Command, path: &Path, keys: &dyn Keys, env: &Env) -> Result<
             keys,
             env,
         ),
-        Command::Accept { targets, key } => accept(path, &targets, key.as_deref(), keys, env),
+        Command::Accept { targets, key } => accept(&path?, &targets, key.as_deref(), keys, env),
         Command::Reject {
             target,
             reason,
             key,
-        } => reject(path, &target, reason, key.as_deref(), keys, env),
-        Command::Show { target } => show(path, &target),
-        Command::Log => log(path),
-        Command::Query { repository } => query(path, repository.as_deref(), env),
+        } => reject(&path?, &target, reason, key.as_deref(), keys, env),
+        Command::Show { target } => show(&path?, &target),
+        Command::Log => log(&path?),
+        Command::Query {
+            repository,
+            if_declared,
+        } => query(path, repository.as_deref(), if_declared, env),
         Command::Search {
             words,
             repository,
             all,
             limit,
-        } => search(path, &words, repository.as_deref(), all, limit, env),
+        } => search(&path?, &words, repository.as_deref(), all, limit, env),
         Command::Mcp => unreachable!("boom mcp is served before a store's path is resolved"),
         Command::Import { what } => match what {
-            ImportCommand::Adr { dir, options } => import(path, Form::Madr, &dir, options, env),
+            ImportCommand::Adr { dir, options } => import(&path?, Form::Madr, &dir, options, env),
             ImportCommand::Rules { page, options } => {
-                import(path, Form::Rules, &page, options, env)
+                import(&path?, Form::Rules, &page, options, env)
             }
         },
     }
@@ -1225,15 +1239,33 @@ fn standing_json(
 /// The claims that stand for the repository `named`, or else the one the
 /// working folder declares (repository-rules; design 5): taken from the
 /// judge's replay of the whole log for this answer, never from the views
-/// (record 0008, point 2), and appending nothing.
-fn query(path: &Path, named: Option<&str>, env: &Env) -> Result<Answer, Failure> {
+/// (record 0008, point 2), and appending nothing. With `if_declared`,
+/// where none is named or declared, nothing: no store opened, no words,
+/// and `boom-query/1` with no repository (design 10).
+fn query(
+    path: Result<PathBuf, Failure>,
+    named: Option<&str>,
+    if_declared: bool,
+    env: &Env,
+) -> Result<Answer, Failure> {
     let Some(repository) = repository::find(named, env.cwd.as_deref())? else {
+        if if_declared {
+            return Ok(Answer {
+                json: json!({
+                    "format": "boom-query/1",
+                    "repository": null,
+                    "head": null,
+                    "claims": [],
+                }),
+                words: String::new(),
+            });
+        }
         return Err(Failure::refused(format!(
             "boom query answers for a repository: name it with --repository, or in {}",
             repository::DECLARATION
         )));
     };
-    let mut store = Store::open(path)?;
+    let mut store = Store::open(&path?)?;
     store.read(|conn| {
         let rows = store::log_rows(conn)?;
         let (state, _) = judge::replay(

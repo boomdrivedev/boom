@@ -70,10 +70,11 @@ in
   settings.formatter.shfmt.priority = 2;
 
   # .prototools is TOML under a name with no extension.
-  # Biome lays out the site's TypeScript, JavaScript, CSS and JSON by the
-  # settings biome.json holds, the ones site:format checks and site:lint
-  # lints by, so the two never differ. Biome is the package devenv.nix puts
-  # in the shell.
+  # Biome lays out the site's TypeScript, JavaScript, CSS and JSON, and the
+  # plugin's and the marketplace's JSON, by the settings biome.json holds,
+  # the ones site:format, claude-code:format and their lint tasks check by,
+  # so the two never differ. Biome is the package devenv.nix puts in the
+  # shell.
   settings.formatter.biome = {
     command = "${pkgs.biome}/bin/biome";
     options = [
@@ -82,9 +83,12 @@ in
       "--no-errors-on-unmatched"
     ];
     # treefmt's * crosses directories: each names every such file under
-    # site/, its dependencies and outputs excluded above.
+    # site/, its dependencies and outputs excluded above, under plugins/
+    # and in the marketplace's folder.
     includes = [
       "biome.json"
+      "plugins/*.json"
+      ".claude-plugin/*.json"
       "site/*.ts"
       "site/*.mjs"
       "site/*.css"

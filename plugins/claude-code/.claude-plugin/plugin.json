@@ -1,0 +1,9 @@
+{
+  "name": "boom",
+  "version": "0.0.0",
+  "description": "Start every agent session in a repository that declares itself to boom with the claims that stand for it, and say nothing in a session anywhere else.",
+  "author": { "name": "agentplot" },
+  "homepage": "https://agentplot.github.io/boom",
+  "repository": "https://github.com/boomdrivedev/boom",
+  "license": "MIT"
+}

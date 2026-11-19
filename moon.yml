@@ -12,9 +12,10 @@ tasks:
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
   # rustc, cargo, clippy and rustfmt are the build .prototools pins, and
-  # OpenSpec and Vale, which the pages' writers run, the releases
-  # devenv.nix pins, on whichever host runs the gate (core.6). It reads the tools it checks from outside the tree,
-  # so it never replays.
+  # OpenSpec and Vale, which the pages' writers run, and the plugin's
+  # Claude Code and jq, the releases devenv.nix pins, on whichever host
+  # runs the gate (core.6). It reads the tools it checks from outside the
+  # tree, so it never replays.
   toolchain:
     command: 'sh check-toolchain.sh'
     tags: [check-fast]
@@ -48,5 +49,35 @@ tasks:
   changes-cases:
     command: 'sh check-changes-cases.sh'
     inputs: ['/check-changes.sh', '/check-changes-cases.sh', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}
+  # The marketplace at the tree's root, listing the plugin by its folder and
+  # with no version, read by the pinned Claude Code through
+  # plugins/claude.sh (design 8, 9).
+  marketplace:
+    command: 'bash plugins/claude.sh plugin validate --strict .'
+    inputs: ['/.claude-plugin/marketplace.json', '/plugins/claude-code/**/*', '/plugins/claude.sh', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}
+  # Every file that carries boom's version gives 0.0.0, the workspace's; the
+  # marketplace names none; every plugin manifest is among the files
+  # set-version.sh writes; and the writer, run on a scratch copy, writes a
+  # release's version into each and changes nothing else, and refuses a
+  # version that is not one and a file with none, writing nothing
+  # (check-versions.sh; record 0010, design 2; core.8). jq is devenv's.
+  versions:
+    command: 'sh check-versions.sh'
+    inputs: ['/Cargo.toml', '/Cargo.lock', '/plugins/claude-code/.claude-plugin/plugin.json', '/.claude-plugin/marketplace.json', '/plugins/*/.claude-plugin/plugin.json', '/set-version.sh', '/check-versions.sh', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}
+  # The workflow releases as record 0010 has it: only a landing, reckoned
+  # from the newest tag; the binaries built from the release's tree with
+  # nothing given, by cargo, and run on a runner with no Nix, Linux's
+  # against musl; the release commit and its tag pushed alone
+  # (check-release.sh; design 5; core.8). yamlfmt, under format, lays the
+  # workflow out; this reads what a release's steps must be.
+  release:
+    command: 'sh check-release.sh'
+    inputs: ['/.github/workflows/release.yml', '/check-release.sh', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
