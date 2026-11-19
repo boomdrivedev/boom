@@ -1116,6 +1116,28 @@ fn log(path: &Path) -> Result<Answer, Failure> {
     })
 }
 
+/// A standing claim's fields as `boom query` gives them, in its order;
+/// `boom search` gives the same and more.
+fn standing_json(
+    claim: &judge::Claim,
+    standing: &judge::Version,
+) -> serde_json::Map<String, Value> {
+    let proposal = &standing.proposal;
+    let mut object = serde_json::Map::new();
+    object.insert("name".into(), json!(claim.name));
+    object.insert("kind".into(), json!(claim.kind.as_str()));
+    object.insert("version".into(), json!(proposal.version));
+    object.insert("statement".into(), json!(proposal.statement));
+    object.insert("scenarios".into(), json!(proposal.scenarios));
+    object.insert("body".into(), json!(proposal.body));
+    object.insert("repositories".into(), json!(standing.repositories));
+    object.insert(
+        "accepted".into(),
+        json!({"by": standing.decided_by, "entry": standing.decided_in}),
+    );
+    object
+}
+
 /// The claims that stand for the repository `named`, or else the one the
 /// working folder declares (repository-rules; design 5): taken from the
 /// judge's replay of the whole log for this answer, never from the views
@@ -1139,49 +1161,24 @@ fn query(path: &Path, named: Option<&str>, env: &Env) -> Result<Answer, Failure>
             .map_or((0, GENESIS), |row| (row.seq, row.hash.as_str()));
         let mut claims = Vec::new();
         let mut lines = String::new();
-        for kind in [Kind::Invariant, Kind::Decision, Kind::Assumption] {
-            for claim in state.claims.values().filter(|claim| claim.kind == kind) {
-                let Some(standing) = claim
-                    .standing
-                    .as_deref()
-                    .and_then(|version| claim.version(version))
-                else {
-                    continue;
-                };
-                let binds = &standing.repositories;
-                if !binds.is_empty() && !binds.contains(&repository) {
-                    continue;
-                }
-                let proposal = &standing.proposal;
-                claims.push(json!({
-                    "name": claim.name,
-                    "kind": kind.as_str(),
-                    "version": proposal.version,
-                    "statement": proposal.statement,
-                    "scenarios": proposal.scenarios,
-                    "body": proposal.body,
-                    "repositories": binds,
-                    "accepted": {
-                        "by": standing.decided_by,
-                        "entry": standing.decided_in,
-                    },
-                }));
+        for (claim, standing) in state.standing_for(Some(&repository)) {
+            let proposal = &standing.proposal;
+            claims.push(Value::Object(standing_json(claim, standing)));
+            lines.push_str(&format!(
+                "{} {}@{}: {}\n",
+                claim.kind.as_str(),
+                claim.name,
+                proposal.version,
+                proposal.statement
+            ));
+            for scenario in &proposal.scenarios {
+                lines.push_str(&format!("  - {scenario}\n"));
+            }
+            if proposal.body.is_some() {
                 lines.push_str(&format!(
-                    "{} {}@{}: {}\n",
-                    kind.as_str(),
-                    claim.name,
-                    proposal.version,
-                    proposal.statement
+                    "  body: boom show {}@{}\n",
+                    claim.name, proposal.version
                 ));
-                for scenario in &proposal.scenarios {
-                    lines.push_str(&format!("  - {scenario}\n"));
-                }
-                if proposal.body.is_some() {
-                    lines.push_str(&format!(
-                        "  body: boom show {}@{}\n",
-                        claim.name, proposal.version
-                    ));
-                }
             }
         }
         let stand = match claims.len() {

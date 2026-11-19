@@ -132,6 +132,37 @@ impl State {
             .values()
             .find(|person| person.key.key_data() == key.key_data())
     }
+
+    /// Each claim that stands with its standing version: for
+    /// `Some(repository)`, those whose standing version binds that
+    /// repository or the whole system; for `None`, every one. In the
+    /// order invariants, decisions, assumptions, each kind by name
+    /// (claim-search; design 4).
+    pub fn standing_for(&self, repository: Option<&str>) -> Vec<(&Claim, &Version)> {
+        let mut standing = Vec::new();
+        for kind in [Kind::Invariant, Kind::Decision, Kind::Assumption] {
+            for claim in self.claims.values().filter(|claim| claim.kind == kind) {
+                let Some(version) = claim
+                    .standing
+                    .as_deref()
+                    .and_then(|version| claim.version(version))
+                else {
+                    continue;
+                };
+                let binds = &version.repositories;
+                let bound = match repository {
+                    None => true,
+                    Some(repository) => {
+                        binds.is_empty() || binds.iter().any(|name| name == repository)
+                    }
+                };
+                if bound {
+                    standing.push((claim, version));
+                }
+            }
+        }
+        standing
+    }
 }
 
 /// What an entry carries, or will carry, as its signature.
@@ -723,4 +754,109 @@ pub fn replay<'a>(
         .map(|(seq, signed, signature)| (seq, step(&mut state, seq, signed, signature)))
         .collect();
     (state, judgments)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A state whose claims each stand, `(kind, name, repositories)`,
+    /// and one whose only version is proposed.
+    fn state(standing: &[(Kind, &str, &[&str])]) -> State {
+        let mut state = State::default();
+        let version = |kind, name: &str, repositories: &[&str], status| {
+            let proposal = Proposal::new(
+                kind,
+                name,
+                "It holds.",
+                vec!["Given it, then it holds.".to_owned()],
+                None,
+                None,
+                None,
+            );
+            Version {
+                proposal,
+                repositories: repositories.iter().map(|&name| name.to_owned()).collect(),
+                proposer: Actor::Agent {
+                    provenance: "run-1".to_owned(),
+                },
+                proposed_in: 2,
+                status,
+                decided_by: Some("ada".to_owned()).filter(|_| status == Status::Standing),
+                decided_in: Some(3).filter(|_| status == Status::Standing),
+                reason: None,
+                imported: None,
+            }
+        };
+        let mut insert = |kind, name: &str, repositories: &[&str], status| {
+            let version = version(kind, name, repositories, status);
+            state.claims.insert(
+                name.to_owned(),
+                Claim {
+                    name: name.to_owned(),
+                    kind,
+                    standing: Some(version.proposal.version.clone())
+                        .filter(|_| status == Status::Standing),
+                    versions: vec![version],
+                },
+            );
+        };
+        for &(kind, name, repositories) in standing {
+            insert(kind, name, repositories, Status::Standing);
+        }
+        insert(Kind::Invariant, "a-proposal", &[], Status::Proposed);
+        state
+    }
+
+    fn names(standing: &[(&Claim, &Version)]) -> Vec<String> {
+        standing
+            .iter()
+            .map(|(claim, _)| claim.name.clone())
+            .collect()
+    }
+
+    #[test]
+    fn standing_for_a_repository_gives_its_own_and_the_whole_systems() {
+        let state = state(&[
+            (Kind::Invariant, "in-shop", &["shop"]),
+            (Kind::Invariant, "in-the-system", &[]),
+            (Kind::Invariant, "in-ledger", &["ledger"]),
+            (Kind::Decision, "in-both", &["ledger", "shop"]),
+        ]);
+        let standing = state.standing_for(Some("shop"));
+        assert_eq!(names(&standing), ["in-shop", "in-the-system", "in-both"]);
+        for (claim, version) in &standing {
+            assert_eq!(
+                claim.standing.as_deref(),
+                Some(version.proposal.version.as_str())
+            );
+            assert_eq!(version.status, Status::Standing);
+        }
+        assert_eq!(
+            names(&state.standing_for(Some("ledger"))),
+            ["in-ledger", "in-the-system", "in-both"]
+        );
+        assert_eq!(names(&state.standing_for(Some("docs"))), ["in-the-system"]);
+    }
+
+    #[test]
+    fn standing_for_every_repository_gives_each_in_kind_and_name_order() {
+        let state = state(&[
+            (Kind::Assumption, "alpha-assumed", &["shop"]),
+            (Kind::Decision, "beta-kept", &["ledger"]),
+            (Kind::Decision, "alpha-kept", &[]),
+            (Kind::Invariant, "gamma-holds", &["shop"]),
+            (Kind::Invariant, "delta-holds", &["docs"]),
+        ]);
+        assert_eq!(
+            names(&state.standing_for(None)),
+            [
+                "delta-holds",
+                "gamma-holds",
+                "alpha-kept",
+                "beta-kept",
+                "alpha-assumed"
+            ]
+        );
+    }
 }
