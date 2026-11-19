@@ -7,7 +7,7 @@ served as tools over the Model Context Protocol, each run by its
 command's own code and answering its command's JSON, and none doing
 what only a person may do (interview: `mcp-is-the-commands`,
 `mcp-serves-no-persons-act`, `mcp-offers-no-accept`; record 0006;
-record 0009).
+record 0010).
 
 ## ADDED Requirements
 
@@ -42,17 +42,17 @@ record 0009).
 
 ### Requirement: Each tool is one of boom's commands
 
-`tools/list` SHALL give one tool for each command served, `propose`, `show`, `log`, `query`, `import_adr` and `import_rules`, each named for its command's words, described as its command is, and taking its command's arguments under their names, its positional ones required, all but `key`. No tool SHALL exist without its command, and each command boom has SHALL be served or named absent.
+`tools/list` SHALL give one tool for each command served, `propose`, `show`, `log`, `query`, `search`, `import_adr` and `import_rules`, each named for its command's words, described as its command is, and taking its command's arguments under their names, its positional ones required, all but `key`. No tool SHALL exist without its command, and each command boom has SHALL be served or named absent.
 
 #### Scenario: The tools listed
 
 - **WHEN** a client sends `tools/list`
-- **THEN** boom answers with exactly the tools `propose`, `show`, `log`, `query`, `import_adr` and `import_rules`, each with a description and an object input schema
+- **THEN** boom answers with exactly the tools `propose`, `show`, `log`, `query`, `search`, `import_adr` and `import_rules`, each with a description and an object input schema, and `show`, `log`, `query` and `search` alone marked read-only
 
 #### Scenario: A tool's arguments are its command's
 
 - **WHEN** a client sends `tools/list`
-- **THEN** `propose` takes `kind`, one of `invariant`, `decision` and `assumption`, `name`, `statement`, `scenarios`, `amends`, `body`, `provenance`, `repositories` and `system`, requiring `kind`, `name` and `statement`; `show` takes `target`, required; `log` takes nothing; `query` takes `repository`; and `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, requiring `dir`, as `import_rules` does with `page` for `dir`
+- **THEN** `propose` takes `kind`, one of `invariant`, `decision` and `assumption`, `name`, `statement`, `scenarios`, `amends`, `body`, `provenance`, `repositories` and `system`, requiring `kind`, `name` and `statement`; `show` takes `target`, required; `log` takes nothing; `query` takes `repository`; `search` takes `words`, an array of strings, required, `repository`, `all` and `limit`; and `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, requiring `dir`, as `import_rules` does with `page` for `dir`
 
 #### Scenario: Each command served or absent
 
@@ -72,6 +72,11 @@ A call SHALL run its tool's command with the arguments given, through the comman
 
 - **WHEN** a version attached to `shop` stands, and an agent calls `query` with `repository` `shop`
 - **THEN** the result's text is the JSON object `boom query --repository shop --json` gives on that store
+
+#### Scenario: A search through its tool
+
+- **WHEN** a version attached to `shop` whose statement is `Every amount names its currency.` stands, and an agent calls `search` with `words` `["currency"]` and `repository` `shop`
+- **THEN** the result is not an error, and its text is the JSON object `boom search currency --repository shop --json` gives on that store, naming that version
 
 #### Scenario: A refusal is an error
 

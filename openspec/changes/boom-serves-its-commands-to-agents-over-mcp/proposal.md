@@ -10,8 +10,8 @@ calls boom instead: `boom mcp`, an MCP server whose tools are boom's
 commands, each run by the command's own code and answering its JSON
 (`mcp-is-the-commands`), and none doing what only a person may do
 (`mcp-serves-no-persons-act`, `mcp-offers-no-accept`). boom now has the
-commands an agent needs, `propose`, `show`, `log`, `query` and
-`import`, and the person's acts they wait on, signed with a security
+commands an agent needs, `propose`, `show`, `log`, `query`, `search`
+and `import`, and the person's acts they wait on, signed with a security
 key (record 0006). This change serves the first set and none of the
 second.
 
@@ -20,8 +20,8 @@ second.
 - `boom mcp`, a new command: an MCP server on standard input and
   output, one JSON-RPC message a line, that an agent's harness starts.
   It follows `flume mcp`'s design, which flume owns and boom cites.
-- Its tools are `propose`, `show`, `log`, `query`, `import_adr` and
-  `import_rules`, each taking its command's arguments under their names
+- Its tools are `propose`, `show`, `log`, `query`, `search`,
+  `import_adr` and `import_rules`, each taking its command's arguments under their names
   and answering its command's `--json` object, a refusal or a command
   that could not run marked an error. Each tool's schema is read from
   the command line's own definition, so no tool exists without its
@@ -68,7 +68,7 @@ keeps them: with `--json` it refuses, answering one JSON object.
 - `README.md` and `CLAUDE.md` say what `boom mcp` serves and what it
   leaves to a person, and the README shows the `.mcp.json` a repository
   names it in.
-- `docs/adr/0009-boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign.md`
+- `docs/adr/0010-boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign.md`
   records this change's choices.
 - Out of this change: the Claude Code plugin, its hook and skills, and
   the herdr plugin, each a moon project of its own under `plugins/`

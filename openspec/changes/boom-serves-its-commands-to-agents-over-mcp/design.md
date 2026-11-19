@@ -9,7 +9,7 @@ and gives an `Outcome`, its exit code and what it printed, which
 naming its format, a refusal `boom-refused/1` (exit 2) and a command
 that could not run `boom-not-run/1` (exit 3) (command-line). The
 commands are `init`, `register`, `propose`, `accept`, `reject`, `show`,
-`log`, `query` and `import adr` / `import rules`. A person's acts,
+`log`, `query`, `search` and `import adr` / `import rules`. A person's acts,
 `init`, `register`, `accept`, `reject` and a `propose` with `--key`,
 are signed through `sign::Keys`, which turns a `--key` path into a
 signer; `main.rs` hands `cli::run` the person's own `ssh-keygen`
@@ -32,7 +32,7 @@ from the log through its command, and the server keeps nothing), core.3
 (the server holds no key, and the tests' keys are made when they run),
 core.5 (no new file type, and no test reads a Markdown file of the
 tree) and core.6 (no new dependency or tool, so nothing new to pin). It
-reaches no control plane. Record 0009 records the choices below that
+reaches no control plane. Record 0010 records the choices below that
 are this change's own.
 
 ## Goals / Non-Goals
@@ -111,7 +111,9 @@ any, and the `Env` `cli::run` was given. It takes no `Keys` (decision
 reading of `Cli`. `src/mcp.rs` holds three lists:
 
 - `SERVED`, each command served, by its words: `propose`, `show`,
-  `log`, `query`, `import adr`, `import rules`.
+  `log`, `query`, `search`, `import adr`, `import rules`. `search`
+  finds the claims that stand by their words (claim-search, record
+  0009), an agent's read that signs nothing, so it is served.
 - `ABSENT`, each command left out, with why: `init`, the first owner's
   act, signed with their key; `register`, an owner's act, signed;
   `accept` and `reject`, a person's acts, signed; `mcp`, the server
@@ -127,8 +129,10 @@ global `store` and `json`, each typed by its action: a switch
 of strings, any other a string, with an `enum` where clap gives the
 possible values (`kind`) and its help as its description. `required`
 holds the arguments clap requires, the positional ones, and
-`additionalProperties` is false. `show`, `log` and `query` carry the
-annotation `readOnlyHint: true`, as flume marks `status`.
+`additionalProperties` is false. `show`, `log`, `query` and `search`
+carry the annotation `readOnlyHint: true`, as flume marks `status`.
+`search`'s `limit` is a string, as any other option is, and clap
+refuses one that is not a whole number above zero, exit 2.
 
 The tools follow the commands, so `propose` takes what `boom propose`
 takes, and a flag added to a served command reaches its tool with no
@@ -138,7 +142,8 @@ to exactly one of `SERVED` and `ABSENT`, so a change that adds a command
 fails until it says which. Not taken: tools written by hand beside the
 commands, flume's way, which drift from their commands unseen; serving
 every command and refusing a person's act inside its tool, which is
-logic the command lacks.
+logic the command lacks; `search` named absent, which would leave an
+agent a shell for the command claim-search made for agents.
 
 ### 4. A call turned into its command's words
 
