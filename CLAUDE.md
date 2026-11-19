@@ -14,12 +14,14 @@ whole system, once a person accepts it, and `boom query` gives an agent
 every claim that stands for its repository, named or declared in
 `.config/boom.toml`, replayed from the log; its Claude Code plugin's
 session hook runs `boom query --if-declared`, so a session in a declared
-repository starts with those claims. boom is released by version: each
-landing on main with a new version is tagged `v<x.y.z>` on a release
-commit off main that writes the version, and boom's flake gives boom
-and its plugin from that tag at one version (record 0010, core.8). The
-views it renders, a rules page, decision records, a design book and a
-context map, and `boom check` are not built yet.
+repository starts with those claims, and `boom search` finds the claims
+that stand by their words, in a repository or every repository. boom is
+released by version: each landing on main with a new version is tagged
+`v<x.y.z>` on a release commit off main that writes the version, and
+boom's flake gives boom and its plugin from that tag at one version
+(record 0010, core.8). The views it renders, a rules page, decision
+records, a design book and a context map, and `boom check` are not built
+yet.
 
 ## The family
 

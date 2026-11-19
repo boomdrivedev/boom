@@ -203,6 +203,30 @@ enum Command {
         #[arg(long, conflicts_with = "repository")]
         if_declared: bool,
     },
+    /// Find the claims that stand whose words hold every word searched,
+    /// in a repository or every repository, the best matches first,
+    /// replayed from the log with no index kept.
+    Search {
+        /// The words, each searched as written; `--` before a word that
+        /// begins with `-`.
+        #[arg(required = true, value_name = "WORD")]
+        words: Vec<String>,
+        /// The repository; by default the one the working folder's
+        /// `.config/boom.toml` declares.
+        #[arg(long, value_name = "NAME", conflicts_with = "all")]
+        repository: Option<String>,
+        /// Search every repository's claims.
+        #[arg(long)]
+        all: bool,
+        /// How many of the best matches to give.
+        #[arg(
+            long,
+            value_name = "N",
+            default_value_t = 10,
+            value_parser = clap::value_parser!(u64).range(1..)
+        )]
+        limit: u64,
+    },
     /// Import a repository's decision records or rules once, proposing
     /// each in its file's own words with what its agent drafts.
     Import {
@@ -386,6 +410,12 @@ fn execute(
             repository,
             if_declared,
         } => query(path, repository.as_deref(), if_declared, env),
+        Command::Search {
+            words,
+            repository,
+            all,
+            limit,
+        } => search(&path?, &words, repository.as_deref(), all, limit, env),
         Command::Import { what } => match what {
             ImportCommand::Adr { dir, options } => import(&path?, Form::Madr, &dir, options, env),
             ImportCommand::Rules { page, options } => {
@@ -1130,6 +1160,28 @@ fn log(path: &Path) -> Result<Answer, Failure> {
     })
 }
 
+/// A standing claim's fields as `boom query` gives them, in its order;
+/// `boom search` gives the same and more.
+fn standing_json(
+    claim: &judge::Claim,
+    standing: &judge::Version,
+) -> serde_json::Map<String, Value> {
+    let proposal = &standing.proposal;
+    let mut object = serde_json::Map::new();
+    object.insert("name".into(), json!(claim.name));
+    object.insert("kind".into(), json!(claim.kind.as_str()));
+    object.insert("version".into(), json!(proposal.version));
+    object.insert("statement".into(), json!(proposal.statement));
+    object.insert("scenarios".into(), json!(proposal.scenarios));
+    object.insert("body".into(), json!(proposal.body));
+    object.insert("repositories".into(), json!(standing.repositories));
+    object.insert(
+        "accepted".into(),
+        json!({"by": standing.decided_by, "entry": standing.decided_in}),
+    );
+    object
+}
+
 /// The claims that stand for the repository `named`, or else the one the
 /// working folder declares (repository-rules; design 5): taken from the
 /// judge's replay of the whole log for this answer, never from the views
@@ -1171,49 +1223,24 @@ fn query(
             .map_or((0, GENESIS), |row| (row.seq, row.hash.as_str()));
         let mut claims = Vec::new();
         let mut lines = String::new();
-        for kind in [Kind::Invariant, Kind::Decision, Kind::Assumption] {
-            for claim in state.claims.values().filter(|claim| claim.kind == kind) {
-                let Some(standing) = claim
-                    .standing
-                    .as_deref()
-                    .and_then(|version| claim.version(version))
-                else {
-                    continue;
-                };
-                let binds = &standing.repositories;
-                if !binds.is_empty() && !binds.contains(&repository) {
-                    continue;
-                }
-                let proposal = &standing.proposal;
-                claims.push(json!({
-                    "name": claim.name,
-                    "kind": kind.as_str(),
-                    "version": proposal.version,
-                    "statement": proposal.statement,
-                    "scenarios": proposal.scenarios,
-                    "body": proposal.body,
-                    "repositories": binds,
-                    "accepted": {
-                        "by": standing.decided_by,
-                        "entry": standing.decided_in,
-                    },
-                }));
+        for (claim, standing) in state.standing_for(Some(&repository)) {
+            let proposal = &standing.proposal;
+            claims.push(Value::Object(standing_json(claim, standing)));
+            lines.push_str(&format!(
+                "{} {}@{}: {}\n",
+                claim.kind.as_str(),
+                claim.name,
+                proposal.version,
+                proposal.statement
+            ));
+            for scenario in &proposal.scenarios {
+                lines.push_str(&format!("  - {scenario}\n"));
+            }
+            if proposal.body.is_some() {
                 lines.push_str(&format!(
-                    "{} {}@{}: {}\n",
-                    kind.as_str(),
-                    claim.name,
-                    proposal.version,
-                    proposal.statement
+                    "  body: boom show {}@{}\n",
+                    claim.name, proposal.version
                 ));
-                for scenario in &proposal.scenarios {
-                    lines.push_str(&format!("  - {scenario}\n"));
-                }
-                if proposal.body.is_some() {
-                    lines.push_str(&format!(
-                        "  body: boom show {}@{}\n",
-                        claim.name, proposal.version
-                    ));
-                }
             }
         }
         let stand = match claims.len() {
@@ -1230,6 +1257,136 @@ fn query(
             }),
             words: format!(
                 "{stand} for {repository}, at entry {number} of the store's log.\n{lines}"
+            ),
+        })
+    })
+}
+
+/// The claims that stand whose words hold every word of `given`, for
+/// the repository `named`, or else the one the working folder declares,
+/// or with `all` every claim (claim-search; designs 1 to 6): replayed
+/// from the whole log for this answer, never from the views, searched
+/// in memory, keeping nothing and appending nothing.
+fn search(
+    path: &Path,
+    given: &[String],
+    named: Option<&str>,
+    all: bool,
+    limit: u64,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    let words = crate::search::words(given);
+    if words.is_empty() {
+        return Err(Failure::refused(
+            "boom search needs a word holding a letter or a digit",
+        ));
+    }
+    let repository = if all {
+        None
+    } else {
+        Some(repository::find(named, env.cwd.as_deref())?.ok_or_else(|| {
+            Failure::refused(format!(
+                "boom search searches a repository: name it with --repository, or in {}, or search every repository with --all",
+                repository::DECLARATION
+            ))
+        })?)
+    };
+    let mut store = Store::open(path)?;
+    store.read(|conn| {
+        let rows = store::log_rows(conn)?;
+        let (state, _) = judge::replay(
+            rows.iter()
+                .map(|row| (row.seq, row.signed.as_str(), row.signature.as_deref())),
+        );
+        let (number, hash) = rows
+            .last()
+            .map_or((0, GENESIS), |row| (row.seq, row.hash.as_str()));
+        let standing = state.standing_for(repository.as_deref());
+        // A body that is not text is searched as holding no word; one
+        // whose bytes no longer match its fingerprint stops the search.
+        let bodies = standing
+            .iter()
+            .map(|(_, version)| match &version.proposal.body {
+                Some(fingerprint) => Ok(String::from_utf8(store::blob(conn, fingerprint)?).ok()),
+                None => Ok(None),
+            })
+            .collect::<Result<Vec<_>, Failure>>()?;
+        let searched: Vec<crate::search::Claim<'_>> = standing
+            .iter()
+            .zip(&bodies)
+            .map(|((claim, version), body)| {
+                let imported = version.imported.as_ref();
+                crate::search::Claim {
+                    name: &claim.name,
+                    legacy: imported.and_then(|imported| imported.legacy.as_deref()),
+                    statement: &version.proposal.statement,
+                    section: imported.and_then(|imported| imported.section.as_deref()),
+                    scenarios: &version.proposal.scenarios,
+                    body: body.as_deref(),
+                }
+            })
+            .collect();
+        let found = crate::search::search(&searched, &words)?;
+        let total = found.len();
+        let shown = usize::try_from(limit).unwrap_or(usize::MAX);
+        let mut claims = Vec::new();
+        let mut lines = String::new();
+        for found in found.iter().take(shown) {
+            let (claim, version) = standing[found.place];
+            let proposal = &version.proposal;
+            let legacy = searched[found.place].legacy;
+            let mut object = standing_json(claim, version);
+            object.insert("excerpt".into(), json!(found.excerpt));
+            object.insert("legacy".into(), json!(legacy));
+            claims.push(Value::Object(object));
+            let binds = if version.repositories.is_empty() {
+                "the whole system".to_owned()
+            } else {
+                version.repositories.join(", ")
+            };
+            lines.push_str(&format!(
+                "{} {}@{}, for {binds}: {}\n",
+                claim.kind.as_str(),
+                claim.name,
+                proposal.version,
+                proposal.statement
+            ));
+            if let Some(excerpt) = &found.excerpt {
+                lines.push_str(&format!("  excerpt: {excerpt}\n"));
+            }
+            if proposal.body.is_some() {
+                lines.push_str(&format!(
+                    "  body: boom show {}@{}\n",
+                    claim.name, proposal.version
+                ));
+            }
+        }
+        let matches = match total {
+            0 => "No claim matches".to_owned(),
+            1 => "1 claim matches".to_owned(),
+            n => format!("{n} claims match"),
+        };
+        let scope = repository.as_deref().map_or_else(
+            || "across every repository".to_owned(),
+            |repository| format!("for {repository}"),
+        );
+        let follow = if total > shown {
+            format!("; the first {shown} follow")
+        } else {
+            String::new()
+        };
+        Ok(Answer {
+            json: json!({
+                "format": "boom-search/1",
+                "words": words,
+                "repository": repository,
+                "head": {"number": number, "hash": hash},
+                "total": total,
+                "claims": claims,
+            }),
+            words: format!(
+                "{matches} \"{}\" {scope}, at entry {number} of the store's log{follow}.\n{lines}",
+                words.join(" ")
             ),
         })
     })

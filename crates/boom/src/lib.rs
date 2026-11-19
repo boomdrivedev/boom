@@ -15,6 +15,7 @@ pub mod entry;
 pub mod import;
 pub mod judge;
 pub mod repository;
+pub mod search;
 pub mod sign;
 pub mod store;
 

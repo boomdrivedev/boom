@@ -54,6 +54,17 @@ claims that hold.
   replays the log for each answer and reads no view, so a view edited
   by hand changes nothing an agent gets, and it writes nothing into the
   repository for anyone to edit (record 0008).
+- **An agent finds claims by their words.** `boom search` gives the
+  claims that stand whose words hold every word searched. A word may
+  fall in a claim's name, statement, scenarios, body, legacy id or
+  section, and its other forms are found with it: `currencies` finds
+  `currency`. It searches the repository `--repository` names or
+  `.config/boom.toml` declares, or every repository with `--all`. It
+  ranks the claims, a word in a name above one in a body, and gives the
+  first ten, or the number `--limit` names. Each comes with the passage
+  of its body where the words fall and a pointer to the whole text.
+  boom replays the log for each search and keeps no index, so nothing
+  kept beside the log changes what an agent finds (record 0009).
 - **A repository's records, imported once.** `boom import adr` reads a
   folder of MADR records and `boom import rules` a rules page, and
   proposes each record in its file's own words, with the names and
@@ -72,6 +83,7 @@ boom accept money-has-currency@<version> --key ~/.ssh/id_ed25519_sk
 boom import adr docs/adr --repository shop --drafts drafts.json --provenance run-1
 boom show money-has-currency --json
 boom query --repository shop
+boom search amounts cents --repository shop
 boom log
 ```
 
@@ -134,7 +146,7 @@ tag.
 
 | path | what |
 |---|---|
-| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `import` and `query` |
+| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `import`, `query` and `search` |
 | `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom query --if-declared`, listed by the marketplace in `.claude-plugin/` |
 | `flake.nix`, `nix/` | boom's flake, giving `boom` and `boom-claude-plugin` at one version, and its offline checks |
 | `.github/workflows/release.yml` | the release: a landing with a new version, tagged on a release commit off main, its binaries built by cargo |
