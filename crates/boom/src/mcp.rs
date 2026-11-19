@@ -261,10 +261,80 @@ fn result(text: &str, error: bool) -> Value {
     json!({"content": [{"type": "text", "text": text}], "isError": error})
 }
 
-/// Runs `tool`'s command with `given`, through the command line's own
-/// parser and code, giving it [`NoKeys`].
-fn call(tool: &Tool, given: &Map<String, Value>, store: Option<&Path>, env: &Env) -> Value {
-    let outcome = crate::cli::run(words(tool, given, store), &NoKeys, env);
+/// A call's arguments, `raw`, held to `tool`'s schema before anything runs
+/// (design 4): absent read as `{}`, and refused where they are not an
+/// object, name an argument the tool does not take, or give one a value
+/// of another type than its property's. The command line's own refusal
+/// of a flag it does not take, said in the tool's terms.
+fn checked(tool: &Tool, raw: &Value) -> Result<Map<String, Value>, String> {
+    let given = match raw {
+        Value::Null => return Ok(Map::new()),
+        Value::Object(given) => given,
+        _ => {
+            return Err(format!(
+                "the tool {} takes its arguments as an object, not {}",
+                tool.name,
+                type_words(raw)
+            ))
+        }
+    };
+    for (name, value) in given {
+        let Some(arg) = arguments(&tool.command).find(|arg| arg.get_id() == name) else {
+            let why = LEFT_OUT
+                .iter()
+                .chain(GLOBAL)
+                .find(|(left_out, _)| left_out == name)
+                .map_or(String::new(), |(_, why)| format!(": {why}"));
+            return Err(format!(
+                "the tool {} takes no argument {name}{why}",
+                tool.name
+            ));
+        };
+        let (fits, asked) = match shape(arg) {
+            Shape::Switch => (value.is_boolean(), "a boolean"),
+            Shape::Many => (
+                value
+                    .as_array()
+                    .is_some_and(|items| items.iter().all(Value::is_string)),
+                "an array of strings",
+            ),
+            Shape::One => (value.is_string(), "a string"),
+        };
+        if !fits {
+            return Err(format!(
+                "the tool {} takes {name} as {asked}, not {}",
+                tool.name,
+                type_words(value)
+            ));
+        }
+    }
+    Ok(given.clone())
+}
+
+/// A JSON value's type, in words.
+fn type_words(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "a boolean",
+        Value::Number(_) => "a number",
+        Value::String(_) => "a string",
+        Value::Array(items) if items.iter().all(Value::is_string) => "an array of strings",
+        Value::Array(_) => "an array holding other than strings",
+        Value::Object(_) => "an object",
+    }
+}
+
+/// Runs `tool`'s command with the arguments `raw`, once they hold to its schema,
+/// through the command line's own parser and code, giving it [`NoKeys`].
+fn call(tool: &Tool, raw: &Value, store: Option<&Path>, env: &Env) -> Value {
+    let given = match checked(tool, raw) {
+        Ok(given) => given,
+        Err(why) => {
+            let refused = crate::cli::failed(true, Failure::Refused(why));
+            return result(refused.stdout.trim(), true);
+        }
+    };
+    let outcome = crate::cli::run(words(tool, &given, store), &NoKeys, env);
     result(outcome.stdout.trim(), outcome.code != 0)
 }
 
@@ -299,14 +369,10 @@ fn answer(request: &Value, store: Option<&Path>, env: &Env) -> Option<Value> {
         "tools/call" => {
             let name = &request["params"]["name"];
             if let Some(tool) = tools().iter().find(|tool| name == tool.name.as_str()) {
-                let given = request["params"]["arguments"]
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default();
                 return Some(json!({
                     "jsonrpc": "2.0",
                     "id": id,
-                    "result": call(tool, &given, store, env),
+                    "result": call(tool, &request["params"]["arguments"], store, env),
                 }));
             }
             let name = name

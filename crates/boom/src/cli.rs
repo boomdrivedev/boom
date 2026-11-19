@@ -332,7 +332,9 @@ fn mcp(json: bool, store: Option<&Path>, env: &Env) -> Outcome {
     }
 }
 
-fn failed(json: bool, failure: Failure) -> Outcome {
+/// A failure's outcome: its words on standard error and, with `json`,
+/// its `boom-refused/1` or `boom-not-run/1` object on standard output.
+pub(crate) fn failed(json: bool, failure: Failure) -> Outcome {
     let (code, words, object) = match &failure {
         Failure::Refused(why) => (
             2,

@@ -402,3 +402,112 @@ fn the_working_folders_repository() {
     assert_eq!(answer["format"], "boom-query/1", "{answer}");
     assert_eq!(answer["repository"], "shop");
 }
+
+/// The result's refusal's reason, asserting it is an error holding a
+/// `boom-refused/1` object.
+fn refusal(result: &Value) -> String {
+    assert_eq!(result["isError"], true, "{result}");
+    let answer = text(result);
+    assert_eq!(answer["format"], "boom-refused/1", "{answer}");
+    answer["refused"]["reason"].as_str().unwrap().to_owned()
+}
+
+#[test]
+fn a_store_given() {
+    let place = Place::new();
+    place.made();
+    let other = place.dir.path().join("other.sqlite");
+    let result = place.call(
+        "show",
+        json!({"target": "money-has-currency", "store": support::path_arg(&other)}),
+    );
+    let reason = refusal(&result);
+    assert!(reason.contains("argument store"), "{reason}");
+    assert!(!other.exists(), "the other file is not opened");
+}
+
+#[test]
+fn a_value_of_another_type() {
+    let place = Place::new();
+    place.made();
+    let before = place.log();
+    let mut arguments = a_proposal();
+    arguments["scenarios"] = json!(SCENARIO);
+    let reason = refusal(&place.call("propose", arguments));
+    assert!(reason.contains("scenarios"), "{reason}");
+    assert_eq!(place.log(), before);
+}
+
+#[test]
+fn a_misspelled_switch() {
+    let place = Place::new();
+    place.made();
+    let dir = place.folder(
+        "adr",
+        &[(
+            "0001-amounts-in-cents.md",
+            "---\nstatus: accepted\ndate: 2026-01-04\n---\n\n# Amounts are kept in cents\n\nEvery amount is an integer of cents.\n",
+        )],
+    );
+    let drafts = place.file(
+        "drafts.json",
+        &json!({
+            "format": "boom-import-drafts/1",
+            "records": {"0001-amounts-in-cents.md": {"scenarios": [SCENARIO]}},
+        })
+        .to_string(),
+    );
+    let mut arguments = json!({
+        "dir": dir,
+        "repository": "shop",
+        "drafts": drafts,
+        "provenance": "run-1",
+        "dryrun": true,
+    });
+    let before = place.log();
+    let reason = refusal(&place.call("import_adr", arguments.clone()));
+    assert!(reason.contains("dryrun"), "{reason}");
+    assert_eq!(place.log(), before);
+    // The same call without the misspelled switch imports for real.
+    arguments.as_object_mut().unwrap().remove("dryrun");
+    let result = place.call("import_adr", arguments);
+    assert_eq!(result["isError"], false, "{result}");
+    assert_eq!(place.log().len(), before.len() + 1);
+}
+
+#[test]
+fn a_key_given_to_propose() {
+    let place = Place::new();
+    let ada = place.made();
+    let signatures = place.keys.signatures();
+    let before = place.log();
+    let mut arguments = a_proposal();
+    arguments.as_object_mut().unwrap().remove("provenance");
+    arguments["key"] = json!(ada);
+    let reason = refusal(&place.call("propose", arguments));
+    assert!(reason.contains("argument key"), "{reason}");
+    assert_eq!(place.keys.signatures(), signatures, "a key signed");
+    assert_eq!(place.log(), before);
+}
+
+#[test]
+fn an_accept_asked_of_the_server() {
+    let place = Place::new();
+    place.made();
+    let version = place.proposed("money-has-currency", "Every amount names its currency.");
+    let target = format!("money-has-currency@{version}");
+    let answers = place.mcp(&[
+        initialize(1),
+        request(
+            2,
+            "tools/call",
+            json!({"name": "accept", "arguments": {"targets": [target]}}),
+        ),
+    ]);
+    assert_eq!(answers.len(), 2, "{answers:?}");
+    assert_eq!(answers[1]["id"], 2);
+    assert_eq!(answers[1]["error"]["code"], -32602, "{answers:?}");
+    let message = answers[1]["error"]["message"].as_str().unwrap();
+    assert!(message.contains("accept"), "{message}");
+    assert_eq!(place.status("money-has-currency", &version), "proposed");
+}
