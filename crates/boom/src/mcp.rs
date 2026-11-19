@@ -70,6 +70,14 @@ const GLOBAL: &[(&str, &str)] = &[
     ("json", "each tool answers its command's JSON"),
 ];
 
+/// What `initialize` says waits on a person (design 7).
+pub const INSTRUCTIONS: &str =
+    "boom keeps this project's claims. Its tools propose claims and read \
+what stands; none accepts, rejects or registers. Only a person accepts \
+or rejects, in their own terminal, signing with their security key: \
+boom accept <name>@<version> --key <key>, or boom reject \
+<name>@<version> --reason <why> --key <key>.";
+
 /// The tools that only read, as flume marks `status`.
 const READ_ONLY: &[&str] = &["show", "log", "query"];
 
@@ -363,6 +371,7 @@ fn answer(request: &Value, store: Option<&Path>, env: &Env) -> Option<Value> {
                 .unwrap_or(PROTOCOL),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "boom", "version": env!("CARGO_PKG_VERSION")},
+            "instructions": INSTRUCTIONS,
         }),
         "ping" => json!({}),
         "tools/list" => json!({"tools": tools().iter().map(listed).collect::<Vec<_>>()}),

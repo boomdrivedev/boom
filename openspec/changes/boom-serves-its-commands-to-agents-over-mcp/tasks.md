@@ -29,7 +29,7 @@ only adds to them. No task adds a dependency (core.6).
 
 ## 3. What waits on a person
 
-- [ ] 3.1 Give `initialize`'s result the `instructions` design 7 gives. Give `boom-propose/1` `accept`, `boom accept <name>@<version> --key <key>` while the version is proposed and null otherwise, and its words the line `a person accepts it with: boom accept <name>@<version> --key <key>` while it is proposed, in `cli.rs`'s `propose`, so the tool's answer is the command's. Add to `crates/boom/tests/mcp.rs` `the_instructions`, `a_proposals_accept`, asserting it by `boom propose --json`, in the command's words, and by the tool `propose`, and `a_version_that_stands`. True when `devenv shell -- cargo test -p boom --test mcp -- the_instructions a_proposals_accept a_version_that_stands` passes.
+- [x] 3.1 Give `initialize`'s result the `instructions` design 7 gives. Give `boom-propose/1` `accept`, `boom accept <name>@<version> --key <key>` while the version is proposed and null otherwise, and its words the line `a person accepts it with: boom accept <name>@<version> --key <key>` while it is proposed, in `cli.rs`'s `propose`, so the tool's answer is the command's. Add to `crates/boom/tests/mcp.rs` `the_instructions`, `a_proposals_accept`, asserting it by `boom propose --json`, in the command's words, and by the tool `propose`, and `a_version_that_stands`. True when `devenv shell -- cargo test -p boom --test mcp -- the_instructions a_proposals_accept a_version_that_stands` passes.
 
 ## 4. What the repository says of boom
 

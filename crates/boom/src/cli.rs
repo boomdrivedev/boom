@@ -716,6 +716,25 @@ fn propose(
         .version(&proposal.version)
         .expect("a proposal written is in the state");
     let status = version.status.as_str();
+    // What waits on a person is said: the command a person runs to accept
+    // the version, while it is proposed (agent-tools; design 7).
+    let accept = (status == "proposed").then(|| {
+        format!(
+            "boom accept {}@{} --key <key>",
+            proposal.name, proposal.version
+        )
+    });
+    let mut words = format!(
+        "{} {}@{} is {status}, by entry {}\nit binds {}\n",
+        claim.kind.as_str(),
+        proposal.name,
+        proposal.version,
+        written.seq(),
+        repository::words(&version.repositories)
+    );
+    if let Some(accept) = &accept {
+        words.push_str(&format!("a person accepts it with: {accept}\n"));
+    }
     Ok(Answer {
         json: json!({
             "format": "boom-propose/1",
@@ -726,15 +745,9 @@ fn propose(
             "status": status,
             "entry": written.seq(),
             "repositories": version.repositories,
+            "accept": accept,
         }),
-        words: format!(
-            "{} {}@{} is {status}, by entry {}\nit binds {}\n",
-            claim.kind.as_str(),
-            proposal.name,
-            proposal.version,
-            written.seq(),
-            repository::words(&version.repositories)
-        ),
+        words,
     })
 }
 

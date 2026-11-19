@@ -511,3 +511,76 @@ fn an_accept_asked_of_the_server() {
     assert!(message.contains("accept"), "{message}");
     assert_eq!(place.status("money-has-currency", &version), "proposed");
 }
+
+#[test]
+fn the_instructions() {
+    let place = Place::new();
+    let answers = place.mcp(&[initialize(1)]);
+    let instructions = answers[0]["result"]["instructions"].as_str().unwrap();
+    assert!(instructions.contains("boom accept"), "{instructions}");
+    assert!(instructions.contains("boom reject"), "{instructions}");
+    assert!(
+        instructions.contains("in their own terminal"),
+        "{instructions}"
+    );
+}
+
+/// The arguments the command line takes for [`a_proposal`].
+const PROPOSE: [&str; 8] = [
+    "propose",
+    "invariant",
+    "money-has-currency",
+    "Every amount names its currency.",
+    "--scenario",
+    SCENARIO,
+    "--provenance",
+    "run-1",
+];
+
+#[test]
+fn a_proposals_accept() {
+    let by_json = Place::new();
+    by_json.made();
+    let answer = by_json.json(&PROPOSE);
+    let version = answer["version"].as_str().unwrap().to_owned();
+    let accept = format!("boom accept money-has-currency@{version} --key <key>");
+    assert_eq!(answer["status"], "proposed");
+    assert_eq!(answer["accept"], accept.as_str());
+
+    let by_words = Place::new();
+    by_words.made();
+    let outcome = by_words.run(&PROPOSE);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert!(
+        outcome
+            .stdout
+            .contains(&format!("\na person accepts it with: {accept}\n")),
+        "{outcome:?}"
+    );
+
+    let by_tool = Place::new();
+    by_tool.made();
+    let result = by_tool.call("propose", a_proposal());
+    assert_eq!(result["isError"], false, "{result}");
+    assert_eq!(text(&result)["accept"], accept.as_str());
+}
+
+#[test]
+fn a_version_that_stands() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.json(&PROPOSE)["version"].as_str().unwrap().to_owned();
+    place.accepted("money-has-currency", &version, &ada);
+    let result = place.call("propose", a_proposal());
+    assert_eq!(result["isError"], false, "{result}");
+    let answer = text(&result);
+    assert_eq!(answer["version"], version.as_str());
+    assert_eq!(answer["status"], "standing", "{answer}");
+    assert_eq!(answer["accept"], Value::Null, "{answer}");
+    let outcome = place.run(&PROPOSE);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert!(
+        !outcome.stdout.contains("a person accepts it with"),
+        "{outcome:?}"
+    );
+}
