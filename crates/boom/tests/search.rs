@@ -234,3 +234,124 @@ fn no_word_to_search_is_refused() {
     );
     assert_eq!(outcome.stdout, "", "{outcome:?}");
 }
+
+/// A rules page for `shop` whose two rules stand under `### The
+/// ledger`, neither rule's other words holding `core` or `ledger`.
+const RULES: &str = "# shop rules
+
+## Rules
+
+### The ledger
+
+- **[core.1]** A record's status is read from its events, never stored
+  on the record.
+- **[core.2]** A view is computed from the events and never stored as
+  the truth.
+";
+
+/// The rules page imported for `shop` with a drafts file naming each
+/// rule and giving its scenario, and both accepted by ada.
+fn rules_in_shop(place: &Place) {
+    let ada = place.made();
+    let page = place.folder("rules", &[("core.md", RULES)]);
+    let drafts = place.file(
+        "drafts.json",
+        &json!({
+            "format": "boom-import-drafts/1",
+            "records": {
+                "core.1": {"name": "status-from-events", "scenarios": ["Given a record accepted, then its status is read from its events."]},
+                "core.2": {"name": "views-computed", "scenarios": ["Given a view, then it is computed from the events."]},
+            },
+        })
+        .to_string(),
+    );
+    import_and_accept(place, &ada, &["rules", &format!("{page}/core.md")], &drafts);
+}
+
+/// `boom import <what> --repository shop` with `drafts`, and every
+/// version it proposes accepted together by `key`.
+fn import_and_accept(place: &Place, key: &str, what: &[&str], drafts: &str) {
+    let mut args = vec!["import"];
+    args.extend_from_slice(what);
+    args.extend(["--drafts", drafts, "--provenance", "run-1"]);
+    args.extend_from_slice(SHOP);
+    let answer = place.json(&args);
+    let versions = answer["accept"]["versions"].as_array().unwrap();
+    assert_eq!(versions.len(), 2, "{answer}");
+    let mut accept = vec!["accept"];
+    accept.extend(versions.iter().map(|version| version.as_str().unwrap()));
+    accept.extend(["--key", key]);
+    place.json(&accept);
+}
+
+#[test]
+fn found_by_its_legacy_id() {
+    let place = Place::new();
+    rules_in_shop(&place);
+    let answer = search(&place, &["core.2"]);
+    assert_eq!(names(&answer), ["views-computed"]);
+    assert_eq!(answer["claims"][0]["legacy"], "core.2");
+    assert_eq!(answer["claims"][0]["kind"], "invariant");
+    let mut both = names(&search(&place, &["core"]));
+    both.sort();
+    assert_eq!(both, ["status-from-events", "views-computed"]);
+}
+
+#[test]
+fn found_by_its_section() {
+    let place = Place::new();
+    rules_in_shop(&place);
+    let mut both = names(&search(&place, &["ledger"]));
+    both.sort();
+    assert_eq!(both, ["status-from-events", "views-computed"]);
+}
+
+const AMOUNTS_AS_FLOATS: &str = "---
+status: superseded by [ADR-0003](0003-amounts-in-cents.md)
+---
+
+# Amounts are floats
+
+Amounts are kept as floats.
+";
+
+const AMOUNTS_IN_CENTS: &str = "---
+status: accepted
+---
+
+# Amounts are kept in cents
+
+Every amount is an integer of cents.
+";
+
+#[test]
+fn a_version_that_came_in_as_history_is_not_given() {
+    let place = Place::new();
+    let ada = place.made();
+    let dir = place.folder(
+        "adr",
+        &[
+            ("0002-amounts-as-floats.md", AMOUNTS_AS_FLOATS),
+            ("0003-amounts-in-cents.md", AMOUNTS_IN_CENTS),
+        ],
+    );
+    let drafts = place.file(
+        "drafts.json",
+        &json!({
+            "format": "boom-import-drafts/1",
+            "records": {"0003-amounts-in-cents.md": {"scenarios": [HOLDS]}},
+        })
+        .to_string(),
+    );
+    import_and_accept(&place, &ada, &["adr", &dir], &drafts);
+    assert_eq!(
+        place.show("amounts-as-floats")["versions"][0]["status"],
+        "history"
+    );
+    let answer = search(&place, &["floats"]);
+    assert_eq!(answer["claims"], json!([]));
+    assert_eq!(answer["total"], 0);
+    let answer = search(&place, &["amounts"]);
+    assert_eq!(names(&answer), ["amounts-in-cents"]);
+    assert_eq!(answer["claims"][0]["legacy"], "0003");
+}
