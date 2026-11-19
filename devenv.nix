@@ -123,6 +123,81 @@ let
     installPhase = "install -Dm755 vale $out/bin/vale";
   };
 
+  # Claude Code, run by the plugin's check (claude-code:typecheck) and the
+  # marketplace's (root:marketplace), both through plugins/claude.sh: the
+  # release timber's and sluice's plugins are checked with, derived as
+  # timber's devenv.nix derives it (boomdrivedev/timber 1adfecc7), so every
+  # host checks the plugin against one engine and never the user's own
+  # `claude`, which may be a wrapper adding options of its own (core.6).
+  # Bump the version and the four checksums from the release's
+  # manifest.zst.json, as timber's and sluice's are bumped.
+  claudeVersion = "2.1.296";
+  claudeAssets = {
+    aarch64-darwin = {
+      platform = "darwin-arm64";
+      sha256 = "26426aa3dcf41b0f554951766c3c583cf243345ca3d32fa590caf84685be5f97";
+    };
+    x86_64-darwin = {
+      platform = "darwin-x64";
+      sha256 = "6f1d6f926a303c423eb4815a01764165ed4375054bfa8ef6203e55fc806f50ac";
+    };
+    aarch64-linux = {
+      platform = "linux-arm64";
+      sha256 = "23aa91437a06eff80a65bfc32b0e4b5a6dda3e821019c543696c154274e56913";
+    };
+    x86_64-linux = {
+      platform = "linux-x64";
+      sha256 = "fac1d78be9446052ac084878c04c2648abb6b22d53279a685fa19ee517d74410";
+    };
+  };
+  claudeAsset = claudeAssets.${pkgs.stdenv.hostPlatform.system};
+  claude = pkgs.stdenvNoCC.mkDerivation {
+    pname = "claude-code";
+    version = claudeVersion;
+    src = pkgs.fetchurl {
+      url = "https://downloads.claude.ai/claude-code-releases/${claudeVersion}/${claudeAsset.platform}/claude.zst";
+      inherit (claudeAsset) sha256;
+    };
+    dontUnpack = true;
+    # The binary carries its program after the runtime; stripping drops it.
+    dontStrip = true;
+    nativeBuildInputs = [
+      pkgs.zstd
+      pkgs.makeBinaryWrapper
+    ]
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isElf [ pkgs.autoPatchelfHook ];
+    installPhase = ''
+      mkdir -p $out/bin
+      unzstd -q $src -o $out/bin/.claude
+      chmod 755 $out/bin/.claude
+      makeWrapper $out/bin/.claude $out/bin/claude \
+        --set DISABLE_AUTOUPDATER 1 \
+        --set DISABLE_INSTALLATION_CHECKS 1
+    '';
+  };
+
+  # jq, which the plugin's test (claude-code:test) reads the hook's command
+  # with: nixpkgs' build, pinned by devenv.lock and asserted to be this
+  # version, so every host that runs the gate runs the same (core.6).
+  jq =
+    assert pkgs.jq.version == "1.8.2";
+    pkgs.jq;
+
+  # The flake's checks' tools (record 0010, design 7): the nix nix:typecheck
+  # and nix:test evaluate with, and the statix nix:lint runs, as timber's
+  # are pinned (boomdrivedev/timber 1adfecc7, its record 0035). nixpkgs'
+  # builds, pinned by devenv.lock and asserted to be these versions, so
+  # every host that runs the gate runs the same (core.6). treefmt.nix's
+  # nixfmt and deadnix are from the same nixpkgs. The nix is reached by its
+  # path, BOOM_FLAKE_NIX, and is not on PATH, where the host's own nix,
+  # which devenv runs on, stays.
+  flakeNix =
+    assert pkgs.nix.version == "2.34.8";
+    pkgs.nix;
+  statix =
+    assert pkgs.statix.version == "0.5.8-unstable-2026-07-17";
+    pkgs.statix;
+
 in
 {
   # The system tools are this file's, pinned by devenv.lock; moon and Rust
@@ -139,7 +214,23 @@ in
     pkgs.bun
     pkgs.biome
     pkgs.playwright-test
+    # The plugin's checks: Claude Code validates the plugin and the
+    # marketplace (claude-code:typecheck, root:marketplace), and jq reads
+    # the hook's command in the plugin's test (claude-code:test).
+    claude
+    jq
+    # The flake's lint (nix/moon.yml).
+    statix
   ];
+
+  # The flake's checks (nix/check.sh): the pinned nix by its path, and the
+  # flake's inputs as flake.lock locks them (nix/inputs.nix), fetched by
+  # this shell outside the gate's sandbox and given to nix:typecheck and
+  # nix:test by their store paths, which they read with no network and no
+  # nix daemon, so every host evaluates the flake against the inputs the
+  # lock pins (core.6; record 0010, design 7).
+  env.BOOM_FLAKE_NIX = "${flakeNix}/bin/nix";
+  env.BOOM_FLAKE_INPUTS = builtins.toJSON (import ./nix/inputs.nix { }).paths;
 
   # The site's packages, given to site:install by their store path
   # (site/scripts/install.sh; record 0003).

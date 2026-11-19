@@ -8,6 +8,8 @@
   "files": {
     "includes": [
       "biome.json",
+      "plugins/**",
+      ".claude-plugin/**",
       "site/**",
       "!site/node_modules",
       "!site/dist",

@@ -1,0 +1,148 @@
+# boom's releases. boom's gate is sluice (.config/sluice.toml), the one
+# place its checks run, and every push to main that is a sluice landing
+# carries a tree that gate passed, so this builds and tests nothing of the
+# tree's own. Each landing in which git-cliff finds a new version
+# (cliff.toml) is released, under a tag that names a release commit cut
+# from the landing, in which set-version.sh writes the release's version
+# into every file that carries boom's; main's tree names 0.0.0. A push no
+# landing made is released with the next landing, whose range holds it.
+# The binaries are cargo's, run on a runner with no Nix (record 0010,
+# design 1, 3, 4; core.8). root:release holds this file to these steps
+# (check-release.sh).
+#
+# sluice's .github/workflows/ci.yml at boomdrivedev/sluice b6c30e78, for
+# boom: its release jobs alone, run only on a landing, since boom's gate
+# runs no tier on GitHub, and its binary boom's.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # The candidate a push to main landed, from the head's Sluice-Tested
+  # trailer as git reads trailers; empty on a push no landing made.
+  landing:
+    runs-on: ubuntu-latest
+    outputs:
+      tested: ${{ steps.trailer.outputs.tested }}
+    steps:
+      - id: trailer
+        run: |
+          tested="$(printf '%s\n' "$MESSAGE" | git interpret-trailers --parse | sed -n 's/^Sluice-Tested: //p')"
+          echo "tested=$tested" >> "$GITHUB_OUTPUT"
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+
+  # The next version from the commits since the newest v* tag, only on a
+  # landing; empty when it is already tagged. `--unreleased` starts the
+  # range at the newest tag, which is off main's history. git-cliff is the
+  # flake's nixpkgs'.
+  version:
+    needs: landing
+    if: needs.landing.outputs.tested != ''
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+      - id: next
+        run: |
+          tag="$(nix shell --inputs-from . nixpkgs#git-cliff -c git-cliff --unreleased --bumped-version)"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag is already released"
+          else
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Each platform's binary, built from the tree the release's tag will
+  # name: the landing with the release's version written (set-version.sh),
+  # given nothing. They run on a host with no Nix and no Rust: cargo builds
+  # them by the Rust rust-toolchain.toml names, Linux's static against musl,
+  # musl-tools' compiler building the SQLite rusqlite bundles, and macOS's
+  # linking only the system's libraries. The job installs no Nix, so its
+  # run of the binary, which fails unless it says the release's version, is
+  # on a runner with nothing in /nix/store (design 4).
+  binaries:
+    needs: version
+    if: needs.version.outputs.tag != ''
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            system: x86_64-linux
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            system: aarch64-linux
+            target: aarch64-unknown-linux-musl
+          - os: macos-latest
+            system: aarch64-darwin
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      TARGET: ${{ matrix.target }}
+      TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: |
+          if ! command -v rustup >/dev/null; then
+            curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install
+          rustup target add "$TARGET"
+      - run: |
+          sh set-version.sh "${TAG#v}"
+          cargo build --release --locked -p boom --target "$TARGET"
+          test "$("target/$TARGET/release/boom" --version)" = "boom ${TAG#v}"
+      - run: tar -czf "boom-${{ matrix.system }}.tar.gz" -C "target/$TARGET/release" boom
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boom-${{ matrix.system }}
+          path: boom-${{ matrix.system }}.tar.gz
+
+  # git-cliff's notes for the range, then the release commit: the landing,
+  # its one parent, with the release's version written into the files
+  # set-version.sh lists, committed by path. The tag names it and is pushed
+  # alone, and the binaries are published under it. Nothing is committed to
+  # main, which only sluice lands, no branch is pushed and no tag moves
+  # (design 1, 3). The run's own token is the only credential (core.3).
+  release:
+    if: ${{ !cancelled() && needs.binaries.result == 'success' }}
+    needs: [version, binaries]
+    runs-on: ubuntu-latest
+    concurrency: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - run: |
+          nix shell --inputs-from . nixpkgs#git-cliff -c \
+            git-cliff --unreleased --tag "$TAG" --strip all > notes.md
+          sh set-version.sh "${TAG#v}"
+          mapfile -t files < <(sh set-version.sh --files)
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "chore(release): $TAG" -- "${files[@]}"
+          git tag "$TAG"
+          git push origin "refs/tags/$TAG"
+          gh release create "$TAG" --verify-tag --title "$TAG" \
+            --notes-file notes.md boom-*.tar.gz
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
