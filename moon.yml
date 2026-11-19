@@ -51,3 +51,11 @@ tasks:
     inputs: ['/check-changes.sh', '/check-changes-cases.sh', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
+  # The marketplace at the tree's root, listing the plugin by its folder and
+  # with no version, read by the pinned Claude Code through
+  # plugins/claude.sh (design 8, 9).
+  marketplace:
+    command: 'bash plugins/claude.sh plugin validate --strict .'
+    inputs: ['/.claude-plugin/marketplace.json', '/plugins/claude-code/**/*', '/plugins/claude.sh', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}
