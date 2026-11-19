@@ -695,3 +695,113 @@ fn a_limit_of_none_is_refused() {
     );
     assert_eq!(outcome.stdout, "", "{outcome:?}");
 }
+
+#[test]
+fn answered_as_json() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = Claim::invariant("money-has-currency", MONEY).proposed(&place);
+    let accepted = place.accepted("money-has-currency", &version, &ada);
+    let outcome = place.run(&["search", "amount", "--repository", "shop", "--json"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
+    let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
+    let last = place.log().pop().unwrap();
+    assert_eq!(
+        answer,
+        json!({
+            "format": "boom-search/1",
+            "words": ["amount"],
+            "repository": "shop",
+            "head": {"number": last["number"], "hash": last["hash"]},
+            "total": 1,
+            "claims": [{
+                "name": "money-has-currency",
+                "kind": "invariant",
+                "version": version,
+                "statement": MONEY,
+                "scenarios": [HOLDS],
+                "body": null,
+                "excerpt": null,
+                "legacy": null,
+                "repositories": ["shop"],
+                "accepted": {"by": "ada", "entry": accepted["entry"]},
+            }],
+        })
+    );
+    let dropped = place.json(&["search", "***", "amount", "--repository", "shop"]);
+    assert_eq!(dropped["words"], json!(["amount"]));
+}
+
+#[test]
+fn answered_in_words() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = Claim::decision("amounts-in-cents", CENTS)
+        .body(ROUNDING)
+        .standing(&place, &ada);
+    let excerpt = search(&place, &["rounding"])["claims"][0]["excerpt"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(excerpt.contains("rounding"), "{excerpt}");
+    let before = log_rows(&place);
+    let last = before.last().unwrap().0;
+    let outcome = place.run(&["search", "rounding", "--repository", "shop"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(outcome.stderr, "", "{outcome:?}");
+    assert_eq!(
+        outcome.stdout,
+        format!(
+            "1 claim matches \"rounding\" for shop, at entry {last} of the store's log.\n\
+             decision amounts-in-cents@{version}, for shop: {CENTS}\n\
+             \x20 excerpt: {excerpt}\n\
+             \x20 body: boom show amounts-in-cents@{version}\n"
+        )
+    );
+    assert!(!outcome.stdout.contains(HOLDS), "{outcome:?}");
+    assert_eq!(log_rows(&place), before);
+}
+
+#[test]
+fn nothing_matches() {
+    let place = Place::new();
+    money_in_shop(&place);
+    let outcome = place.run(&["search", "parsnip", "--repository", "shop", "--json"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
+    assert_eq!(answer["total"], 0);
+    assert_eq!(answer["claims"], json!([]));
+    let last = log_rows(&place).last().unwrap().0;
+    let words = place.run(&["search", "parsnip", "--repository", "shop"]);
+    assert_eq!(words.code, 0, "{words:?}");
+    assert_eq!(
+        words.stdout,
+        format!("No claim matches \"parsnip\" for shop, at entry {last} of the store's log.\n")
+    );
+}
+
+#[test]
+fn the_same_log_the_same_answer() {
+    let place = Place::new();
+    let (ada, _) = money_in_shop(&place);
+    Claim::decision("amounts-in-cents", CENTS)
+        .body(ROUNDING)
+        .binds(&["--system"])
+        .standing(&place, &ada);
+    let before = log_rows(&place);
+    let args = ["search", "amount", "--repository", "shop", "--json"];
+    let first = place.run(&args);
+    assert_eq!(first.code, 0, "{first:?}");
+    place
+        .sqlite()
+        .execute_batch(
+            "DROP TABLE views_head; DROP TABLE persons; DROP TABLE claims; \
+             DROP TABLE versions; DROP TABLE judgments;",
+        )
+        .unwrap();
+    let second = place.run(&args);
+    assert_eq!(second.code, 0, "{second:?}");
+    assert_eq!(second.stdout.as_bytes(), first.stdout.as_bytes());
+    assert_eq!(log_rows(&place), before);
+}
