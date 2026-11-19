@@ -1,10 +1,11 @@
 ---
-number: 9
+number: 10
 title: boom mcp serves an agent the commands it may run, and none a person must sign
 status: accepted
 date: 2026-11-18
 decision-makers:
 - the change boom-serves-its-commands-to-agents-over-mcp's construct stage
+- its code stage, for `search`
 ---
 
 # boom mcp serves an agent the commands it may run, and none a person must sign
@@ -17,7 +18,8 @@ calls `boom mcp` yet, and a tool is its command, so a tool added or
 left out changes no entry and no answer.
 
 Deciders: the construct stage of the change
-`boom-serves-its-commands-to-agents-over-mcp`.
+`boom-serves-its-commands-to-agents-over-mcp`, and its code stage for
+serving `search`.
 
 Sources: `interview.md`, the user's answers of 2026-11-01:
 `mcp-is-the-commands`, `mcp-serves-no-persons-act`,
@@ -25,8 +27,8 @@ Sources: `interview.md`, the user's answers of 2026-11-01:
 `persons-acts-signed-with-presence`, `claude-code-plugin-three-moments`,
 `plugins-in-this-repository` and `tools-call-commands`; record 0006;
 flume's `flume mcp`, `crates/flume/src/commands/mcp.rs` on flume's main,
-its clause 60 and record 0069, and its plugin's `.mcp.json`; core.3 and
-core.6.
+its clause 60 and record 0069, and its plugin's `.mcp.json`; record
+0009, for `boom search`; core.3 and core.6.
 
 ## Context and problem statement
 
@@ -75,17 +77,22 @@ For keeping a person's act out:
    synchronous command at a time, crates the gate must pin and fetch
    (core.6), and a second design beside flume's.
 2. **The tools are the commands an agent may run.** `propose`, `show`,
-   `log`, `query`, `import_adr` and `import_rules`, each named for its
-   command's words, described as its command is, taking its command's
-   arguments by their names and answering its command's `--json`
-   object, a refusal or a command that could not run marked an error.
+   `log`, `query`, `search`, `import_adr` and `import_rules`, each
+   named for its command's words, described as its command is, taking
+   its command's arguments by their names and answering its command's
+   `--json` object, a refusal or a command that could not run marked an
+   error.
    Each tool's schema is read from the command line's own definition,
    and a unit test holds every command to being served or named absent,
    so no tool exists without its command and a command added later is
-   left out or served on purpose, never by default. Not taken: tools
-   written by hand (option 4), which drift from their commands unseen;
-   a tool for every command refusing a person's act inside it (option
-   5), which is logic its command lacks.
+   left out or served on purpose, never by default. `search` finds the
+   claims that stand by their words (record 0009), an agent's read that
+   signs nothing, so it is served, read-only as `show`, `log` and
+   `query` are. Not taken: tools written by hand (option 4), which drift
+   from their commands unseen; a tool for every command refusing a
+   person's act inside it (option 5), which is logic its command lacks;
+   `search` named absent, which would leave an agent a shell for the
+   command record 0009 made for agents.
 3. **No person's act, three ways.** `init`, `register`, `accept` and
    `reject` are absent, each named with why; `propose` takes no `key`;
    and the server gives every command it runs a key source that signs

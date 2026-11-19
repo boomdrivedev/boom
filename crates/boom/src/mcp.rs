@@ -1,4 +1,4 @@
-//! `boom mcp` (agent-tools; record 0009): boom served over the Model
+//! `boom mcp` (agent-tools; record 0010): boom served over the Model
 //! Context Protocol on standard input and output, one JSON-RPC message a
 //! line, to an agent's program.
 //!

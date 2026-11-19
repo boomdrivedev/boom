@@ -1,6 +1,6 @@
 //! `boom mcp`: boom's commands served to an agent's program as tools
 //! over the Model Context Protocol, none of them a person's act
-//! (agent-tools; record 0009).
+//! (agent-tools; record 0010).
 
 mod support;
 

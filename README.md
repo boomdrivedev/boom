@@ -75,14 +75,14 @@ claims that hold.
   (records 0007 and 0008).
 - **An agent's program calls boom's commands as tools.** `boom mcp` is
   an MCP server on standard input and output, one JSON-RPC message a
-  line. Its tools are `propose`, `show`, `log`, `query`, `import_adr`
-  and `import_rules`: each takes its command's arguments under their
+  line. Its tools are `propose`, `show`, `log`, `query`, `search`,
+  `import_adr` and `import_rules`: each takes its command's arguments under their
   names and answers its command's `--json` object, a refusal or a
   command that cannot run marked an error. The server refuses a call
   naming an argument its command does not take. No tool accepts,
   rejects, registers a person or makes a store, no tool takes a `key`,
   and the server holds no key, so no call sets off a person's security
-  key (record 0009). Its instructions, and `boom propose`'s answer,
+  key (record 0010). Its instructions, and `boom propose`'s answer,
   give the `boom accept` a person runs in their own terminal.
 
 ```sh
