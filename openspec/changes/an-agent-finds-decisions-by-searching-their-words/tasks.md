@@ -20,6 +20,7 @@ word and JSON field it gives now.
 ## 1. The claims that stand for a scope
 
 - [x] 1.1 In `crates/boom/src/judge.rs`, give `State` `standing_for(repository: Option<&str>)`, each claim with its standing version, those whose `repositories` is empty or holds the repository, or every one for `None`, in the order invariants, decisions, assumptions, each kind by name (design 4); have `cli::query` take its claims from it, its answer unchanged. Add the unit tests `standing_for_a_repository_gives_its_own_and_the_whole_systems` and `standing_for_every_repository_gives_each_in_kind_and_name_order`. True when `devenv shell -- cargo test -p boom --lib judge::` and `devenv shell -- cargo test -p boom --test query` pass.
+- [ ] 1.2 In `crates/boom/src/judge.rs`'s test helper that builds a `State` for task 1.1's unit tests, write each `Some(x).filter(|_| status == Status::Standing)`, which clippy refuses as `clippy::some_filter`, as `(status == Status::Standing).then_some(x)`, the state it builds unchanged. True when `sluice exec main -- moon run boom:lint` passes.
 
 ## 2. Words searched in memory
 

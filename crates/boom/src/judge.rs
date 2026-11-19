@@ -782,8 +782,8 @@ mod tests {
                 },
                 proposed_in: 2,
                 status,
-                decided_by: Some("ada".to_owned()).filter(|_| status == Status::Standing),
-                decided_in: Some(3).filter(|_| status == Status::Standing),
+                decided_by: (status == Status::Standing).then_some("ada".to_owned()),
+                decided_in: (status == Status::Standing).then_some(3),
                 reason: None,
                 imported: None,
             }
@@ -795,8 +795,8 @@ mod tests {
                 Claim {
                     name: name.to_owned(),
                     kind,
-                    standing: Some(version.proposal.version.clone())
-                        .filter(|_| status == Status::Standing),
+                    standing: (status == Status::Standing)
+                        .then_some(version.proposal.version.clone()),
                     versions: vec![version],
                 },
             );
