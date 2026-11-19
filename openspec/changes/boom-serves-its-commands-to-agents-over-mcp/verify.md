@@ -1,31 +1,15 @@
 # Verify: boom-serves-its-commands-to-agents-over-mcp
 
-Verified on 2026-11-18 at `decc2eb`, on
+Verified on 2026-11-18 at `5e25ad1`, on
 `change/boom-serves-its-commands-to-agents-over-mcp`. The branch was cut
 from `bolt/boom-holds-the-rules-agents-read`, whose head, `c32ecaf`, is
-an ancestor of `decc2eb`.
+an ancestor of `5e25ad1`.
 
-**Verdict: the work falls short, so the change is not archived.** The
-whole checks pass. OpenSpec reads all 11 tasks as done, and the change
-passes `openspec validate --strict`. Named tests prove all 25 scenarios
-across the spec's 6 requirements. But task 4.3 doesn't hold as written:
-`README.md` line 135 cites the release's record as record 0011.
-
-## What falls short
-
-Task 4.3 numbers this change's record 0011 and leaves "every citation of
-the release's record 0010 as it is". `README.md`'s Install section, on
-how boom is released, ends its first paragraph with `given nothing
-(record 0011).` at line 135. At `c32ecaf`, #18's text there was `nothing
-(record 0010).` at line 110. `decc2eb` changed it from 0010 to 0011. So
-the README cites `boom mcp`'s record for the release. It should cite
-`docs/adr/0010-a-boom-release-is-a-tag-on-a-release-commit-and-its-flake-gives-boom-and-its-plugin-at-one-version.md`.
-
-Every other citation in the tree is correct. Record 0011 is cited only
-by `README.md` line 85, `CLAUDE.md` line 22, `src/mcp.rs`,
-`tests/mcp.rs` and the change's proposal, design and agent-tools delta,
-each for `boom mcp`. Every other citation of record 0010 is the
-release's.
+**Verdict: the whole checks pass and the work holds, so the change is
+archived.** OpenSpec reads all 12 tasks as done, and the change passes
+`openspec validate --strict`. Named tests prove all 25 scenarios across
+the spec's 6 requirements, and every citation of records 0010 and 0011
+names the record it means.
 
 ## The whole checks
 
@@ -42,14 +26,14 @@ what the head affects compared with main (`429dcbc`).
 | `claude-code:format` | passed: Biome, 2 files, no fixes |
 | `claude-code:lint` | passed: Biome, 2 files, no fixes |
 | `claude-code:typecheck` | passed |
-| `claude-code:test` | passed |
+| `claude-code:test` | passed: the session hook passes every case |
 | `nix:lint` | passed |
-| `nix:typecheck` | passed |
-| `nix:test` | passed |
-| `site:format` | passed |
-| `site:lint` | passed |
+| `nix:typecheck` | passed: every case holds |
+| `nix:test` | passed: every case holds |
+| `site:format` | passed: Biome, 14 files, no fixes |
+| `site:lint` | passed: Biome, 17 files, no fixes |
 | `site:typecheck` | passed: 0 errors, 0 warnings, 0 hints |
-| `site:test` | passed |
+| `site:test` | passed: 4 diagrams, both layouts |
 | `site:build` | passed: 12 pages, all internal links valid |
 | `root:format` | passed: treefmt, 105 files, 0 changed |
 | `root:toolchain` | passed: each tool at its pin |
@@ -61,7 +45,7 @@ what the head affects compared with main (`429dcbc`).
 | `root:marketplace` | passed |
 
 `passed: 24 tasks`, exit 0. sluice recorded the 24 results under their
-keys for `decc2eb`. `site:install` ran as a dependency of the site's
+keys for `5e25ad1`. `site:install` ran as a dependency of the site's
 tasks.
 
 moon logged warnings without failing. It couldn't write its output
@@ -75,7 +59,7 @@ these comes from this change.
 
 - `openspec instructions apply --change
   boom-serves-its-commands-to-agents-over-mcp --json` gives `state`
-  `all_done`: all 11 tasks are done, none open.
+  `all_done`: all 12 tasks are done, none open.
 - `openspec validate boom-serves-its-commands-to-agents-over-mcp
   --strict` says `Change 'boom-serves-its-commands-to-agents-over-mcp'
   is valid`.
@@ -85,7 +69,7 @@ these comes from this change.
 Each task's named tests are in the files the task names, and all of
 them pass in `boom:test`: 4 unit tests in `src/mcp.rs` and 23 in
 `tests/mcp.rs`, beside `query`'s `if_declared` cases for 2.5. The other
-conditions hold for every task but 4.3:
+conditions hold for every task:
 
 - **1.1:** `src/mcp.rs` is `pub mod mcp` in `src/lib.rs` and gives
   `serve(input, output, store, env)`. `Command::Mcp` is taken in
@@ -111,7 +95,8 @@ conditions hold for every task but 4.3:
   `if_declared`. `a_tools_arguments_are_its_commands` asserts both,
   neither required, and `if_declared` a boolean. `if_declared` is a
   `SetTrue` switch in `cli.rs`, so the schema reads it from the command
-  line's definition, as design 3 serves every argument.
+  line's definition, as design 3 serves every argument, and a call's
+  words give it as `--if-declared`.
 - **3.1:** `initialize` gives `INSTRUCTIONS`, design 7's words.
   `boom-propose/1` gains `accept`, and the words gain the `a person
   accepts it with:` line while the version is proposed.
@@ -124,12 +109,15 @@ conditions hold for every task but 4.3:
   claim-search's.
 - **4.3:** the record is
   `docs/adr/0011-boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign.md`,
-  `number: 11`, cited as record 0011 where the task names. But the
-  task's "leaving every citation of the release's record 0010 as it is"
-  doesn't hold: `README.md` line 135, on the release, cites record 0011
-  (see What falls short).
+  `number: 11`. Record 0011 is cited only by `README.md` line 85,
+  `CLAUDE.md` line 22, `src/mcp.rs`, `tests/mcp.rs` and the change's
+  proposal, design and agent-tools delta, each for `boom mcp`. Every
+  other citation of record 0010 in the tree is the release's.
+- **4.4:** `README.md`'s Install section ends its first paragraph with
+  `given nothing (record 0010).` at line 135, as #18 wrote it, naming
+  `docs/adr/0010-a-boom-release-is-a-tag-on-a-release-commit-and-its-flake-gives-boom-and-its-plugin-at-one-version.md`.
 
-`devenv shell -- vale README.md CLAUDE.md`, the check 4.3 names,
+`devenv shell -- vale README.md CLAUDE.md`, the check 4.3 and 4.4 name,
 reports 0 errors and 0 warnings, with 9 suggestions. No task adds a
 dependency: `Cargo.toml`, `crates/boom/Cargo.toml` and `Cargo.lock` are
 as `c32ecaf` has them. The tests make their keys when they run, and
