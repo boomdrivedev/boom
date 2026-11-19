@@ -4,6 +4,11 @@
 
 mod support;
 
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
+
 use serde_json::{json, Value};
 use support::{initialize, request, Place};
 
@@ -71,4 +76,57 @@ fn asked_for_one_json_object() {
         reason.contains("boom mcp answers in the protocol's messages"),
         "{reason}"
     );
+}
+
+#[test]
+fn one_answer_before_the_next_request() {
+    let place = Place::new();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_boom"))
+        .args(["mcp", "--store", &place.store_arg()])
+        .env("XDG_DATA_HOME", place.dir.path().join("data"))
+        .env("HOME", place.dir.path().join("home"))
+        .current_dir(place.dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the binary runs");
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = BufReader::new(child.stdout.take().unwrap());
+    // Each line the server writes is read on a thread of its own, so a
+    // server holding its answers fails the wait below rather than hangs.
+    let (lines, read) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        for line in stdout.lines() {
+            if lines.send(line.unwrap()).is_err() {
+                return;
+            }
+        }
+    });
+    let within = Duration::from_secs(10);
+    writeln!(stdin, "{}", initialize(1)).unwrap();
+    stdin.flush().unwrap();
+    let first: Value = serde_json::from_str(
+        &read
+            .recv_timeout(within)
+            .expect("boom mcp answers initialize within ten seconds, before its input closes"),
+    )
+    .unwrap();
+    assert_eq!(first["id"], 1, "{first}");
+    assert_eq!(first["result"]["serverInfo"]["name"], "boom", "{first}");
+    writeln!(stdin, "{}", request(2, "tools/list", json!({}))).unwrap();
+    stdin.flush().unwrap();
+    let second: Value = serde_json::from_str(
+        &read
+            .recv_timeout(within)
+            .expect("boom mcp answers tools/list within ten seconds, before its input closes"),
+    )
+    .unwrap();
+    assert_eq!(second["id"], 2, "{second}");
+    assert!(second["result"]["tools"].is_array(), "{second}");
+    drop(stdin);
+    let status = child.wait().unwrap();
+    reader.join().unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert!(read.try_recv().is_err(), "boom mcp writes nothing else");
 }
