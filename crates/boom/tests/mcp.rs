@@ -187,6 +187,7 @@ fn the_tools_listed() {
             "log",
             "propose",
             "query",
+            "search",
             "show"
         ]
     );
@@ -237,6 +238,19 @@ fn a_tools_arguments_are_its_commands() {
         arguments(tool(&tools, "query")),
         (names(&["repository"]), vec![])
     );
+    let search = tool(&tools, "search");
+    assert_eq!(
+        arguments(search),
+        (
+            names(&["words", "repository", "all", "limit"]),
+            names(&["words"])
+        )
+    );
+    let properties = &search["inputSchema"]["properties"];
+    assert_eq!(properties["words"]["type"], "array");
+    assert_eq!(properties["words"]["items"]["type"], "string");
+    assert_eq!(properties["all"]["type"], "boolean");
+    assert_eq!(properties["limit"]["type"], "string");
     let import = ["repository", "drafts", "provenance", "dry_run"];
     for (name, path) in [("import_adr", "dir"), ("import_rules", "page")] {
         let mut taken = import.to_vec();
@@ -247,8 +261,13 @@ fn a_tools_arguments_are_its_commands() {
             "{name}"
         );
     }
-    for name in ["show", "log", "query"] {
-        assert_eq!(tool(&tools, name)["annotations"]["readOnlyHint"], true);
+    for tool in &tools {
+        let name = tool["name"].as_str().unwrap();
+        assert_eq!(
+            tool["annotations"]["readOnlyHint"],
+            ["show", "log", "query", "search"].contains(&name),
+            "{name}"
+        );
     }
 }
 
@@ -334,6 +353,38 @@ fn the_commands_own_answer() {
     assert_eq!(command.code, 0, "{command:?}");
     assert_eq!(result["content"][0]["text"], command.stdout.trim());
     assert_eq!(text(&result)["claims"][0]["name"], "money-has-currency");
+}
+
+#[test]
+fn a_search_through_its_tool() {
+    let place = Place::new();
+    let ada = place.made();
+    let proposed = place.json(&[
+        "propose",
+        "invariant",
+        "money-has-currency",
+        "Every amount names its currency.",
+        "--scenario",
+        SCENARIO,
+        "--repository",
+        "shop",
+        "--provenance",
+        "run-1",
+    ]);
+    let version = proposed["version"].as_str().unwrap();
+    place.accepted("money-has-currency", version, &ada);
+    let result = place.call(
+        "search",
+        json!({"words": ["currency"], "repository": "shop"}),
+    );
+    assert_eq!(result["isError"], false, "{result}");
+    let command = place.run(&["search", "currency", "--repository", "shop", "--json"]);
+    assert_eq!(command.code, 0, "{command:?}");
+    assert_eq!(result["content"][0]["text"], command.stdout.trim());
+    let answer = text(&result);
+    assert_eq!(answer["format"], "boom-search/1", "{answer}");
+    assert_eq!(answer["claims"][0]["name"], "money-has-currency");
+    assert_eq!(answer["claims"][0]["version"], version);
 }
 
 #[test]

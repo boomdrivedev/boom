@@ -28,6 +28,7 @@ pub(crate) const SERVED: &[&str] = &[
     "show",
     "log",
     "query",
+    "search",
     "import adr",
     "import rules",
 ];
@@ -79,7 +80,7 @@ boom accept <name>@<version> --key <key>, or boom reject \
 <name>@<version> --reason <why> --key <key>.";
 
 /// The tools that only read, as flume marks `status`.
-const READ_ONLY: &[&str] = &["show", "log", "query"];
+const READ_ONLY: &[&str] = &["show", "log", "query", "search"];
 
 /// What a tool's property is, read from its argument's action: a switch
 /// a boolean, a flag taken again and again an array of strings, any
