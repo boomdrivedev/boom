@@ -5,10 +5,33 @@ $schema: 'https://moonrepo.dev/schemas/project.json'
 tasks:
   # Every formatter treefmt.nix configures, writing nothing it would change
   # and keeping no cache outside the tree. It reads every tracked file: one
-  # that no formatter claims and no exclude names fails it (core.5).
+  # that no formatter claims and no exclude names fails it (core.5). Its
+  # inputs are the tree's files that git does not ignore: moon walks the
+  # root project's globs on disk, not through git, so each entry of
+  # .gitignore is negated here, and an entry added there is added here. A
+  # key naming a file the tree does not hold, such as devenv's
+  # .devenv/bootstrap/, is one sluice refuses (boomdrivedev/sluice's C.6),
+  # as sluice's, boomdrive's and weir's format tasks leave the same files
+  # out.
   format:
     command: 'treefmt --ci'
-    inputs: ['/**/*', '/devenv.nix', '/devenv.lock']
+    inputs:
+      - '/**/*'
+      - '!/**/.devenv/**'
+      - '!/**/.devenv.flake.nix'
+      - '!/**/devenv.local.nix'
+      - '!/**/.pre-commit-config.yaml'
+      - '!/**/.moon/cache/**'
+      - '!/result'
+      - '!/result/**'
+      - '!/**/.DS_Store'
+      - '!/target/**'
+      - '!/site/node_modules/**'
+      - '!/site/dist/**'
+      - '!/site/.astro/**'
+      - '!/site/shots/**'
+      - '/devenv.nix'
+      - '/devenv.lock'
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
   # rustc, cargo, clippy and rustfmt are the build .prototools pins, and
