@@ -608,3 +608,45 @@ pub fn initialize(id: u64) -> serde_json::Value {
 pub fn request(id: u64, method: &str, params: serde_json::Value) -> serde_json::Value {
     serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 }
+
+impl Place {
+    /// Sends `initialize` and one `tools/call` of `tool` with
+    /// `arguments`, with `cwd` the working folder, and gives the call's
+    /// result.
+    pub fn call_in(
+        &self,
+        cwd: &Path,
+        tool: &str,
+        arguments: serde_json::Value,
+    ) -> serde_json::Value {
+        let answers = self.mcp_in(
+            cwd,
+            &[
+                initialize(1),
+                request(
+                    2,
+                    "tools/call",
+                    serde_json::json!({"name": tool, "arguments": arguments}),
+                ),
+            ],
+        );
+        assert_eq!(answers.len(), 2, "{answers:?}");
+        assert!(answers[1].get("result").is_some(), "{answers:?}");
+        answers[1]["result"].clone()
+    }
+
+    /// Sends `initialize` and one `tools/call` of `tool` with
+    /// `arguments`, in the place's own folder, and gives the call's
+    /// result.
+    pub fn call(&self, tool: &str, arguments: serde_json::Value) -> serde_json::Value {
+        self.call_in(self.dir.path(), tool, arguments)
+    }
+}
+
+/// A call's result's one text item, read as JSON.
+pub fn text(result: &serde_json::Value) -> serde_json::Value {
+    let content = result["content"].as_array().unwrap();
+    assert_eq!(content.len(), 1, "{result}");
+    assert_eq!(content[0]["type"], "text", "{result}");
+    serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap()
+}

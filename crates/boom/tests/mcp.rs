@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use support::{initialize, request, Place};
+use support::{initialize, request, text, Place, SCENARIO};
 
 #[test]
 fn initialized() {
@@ -266,4 +266,139 @@ fn no_persons_act_listed() {
             "{name} takes key"
         );
     }
+}
+
+/// The arguments of `propose` for a first version of
+/// `money-has-currency`.
+fn a_proposal() -> Value {
+    json!({
+        "kind": "invariant",
+        "name": "money-has-currency",
+        "statement": "Every amount names its currency.",
+        "scenarios": [SCENARIO],
+        "provenance": "run-1",
+    })
+}
+
+#[test]
+fn a_proposal_through_its_tool() {
+    let place = Place::new();
+    place.made();
+    let before = place.log().len();
+    let result = place.call(
+        "propose",
+        json!({
+            "kind": "invariant",
+            "name": "money-has-currency",
+            "statement": "Every amount names its currency.",
+            "scenarios": ["Given an amount, then it names its currency."],
+            "repositories": ["shop"],
+            "provenance": "run-1",
+        }),
+    );
+    assert_eq!(result["isError"], false, "{result}");
+    let answer = text(&result);
+    assert_eq!(answer["format"], "boom-propose/1", "{answer}");
+    assert_eq!(answer["claim"], "money-has-currency");
+    assert_eq!(answer["version"].as_str().unwrap().len(), 12, "{answer}");
+    assert_eq!(answer["repositories"], json!(["shop"]));
+    let log = place.log();
+    assert_eq!(log.len(), before + 1);
+    let entry = log.last().unwrap();
+    assert_eq!(entry["act"], "proposed");
+    assert_eq!(entry["actor"], json!({"agent": {"provenance": "run-1"}}));
+    assert_eq!(entry["signature"], Value::Null);
+}
+
+#[test]
+fn the_commands_own_answer() {
+    let place = Place::new();
+    let ada = place.made();
+    let proposed = place.json(&[
+        "propose",
+        "invariant",
+        "money-has-currency",
+        "Every amount names its currency.",
+        "--scenario",
+        SCENARIO,
+        "--repository",
+        "shop",
+        "--provenance",
+        "run-1",
+    ]);
+    let version = proposed["version"].as_str().unwrap();
+    place.accepted("money-has-currency", version, &ada);
+    let result = place.call("query", json!({"repository": "shop"}));
+    assert_eq!(result["isError"], false, "{result}");
+    let command = place.run(&["query", "--repository", "shop", "--json"]);
+    assert_eq!(command.code, 0, "{command:?}");
+    assert_eq!(result["content"][0]["text"], command.stdout.trim());
+    assert_eq!(text(&result)["claims"][0]["name"], "money-has-currency");
+}
+
+#[test]
+fn a_refusal_is_an_error() {
+    let place = Place::new();
+    place.made();
+    let before = place.log();
+    let mut arguments = a_proposal();
+    arguments.as_object_mut().unwrap().remove("provenance");
+    let result = place.call("propose", arguments);
+    assert_eq!(result["isError"], true, "{result}");
+    let answer = text(&result);
+    assert_eq!(answer["format"], "boom-refused/1", "{answer}");
+    let reason = answer["refused"]["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("an agent's proposal names its provenance"),
+        "{reason}"
+    );
+    assert_eq!(place.log(), before);
+}
+
+#[test]
+fn not_run_is_an_error() {
+    let place = Place::new();
+    let result = place.call("show", json!({"target": "money-has-currency"}));
+    assert_eq!(result["isError"], true, "{result}");
+    let answer = text(&result);
+    assert_eq!(answer["format"], "boom-not-run/1", "{answer}");
+    let reason = answer["not_run"]["reason"].as_str().unwrap();
+    assert!(reason.contains("no store at"), "{reason}");
+    assert!(!place.store.exists(), "no store is made");
+}
+
+#[test]
+fn words_beginning_with_a_hyphen() {
+    let place = Place::new();
+    place.made();
+    let result = place.call(
+        "propose",
+        json!({
+            "kind": "invariant",
+            "name": "no-negative-zero",
+            "statement": "-0 is never an amount.",
+            "scenarios": ["--given an amount of -0, then it is refused."],
+            "provenance": "run-1",
+        }),
+    );
+    assert_eq!(result["isError"], false, "{result}");
+    let version = text(&result)["version"].as_str().unwrap().to_owned();
+    let shown = place.show(&format!("no-negative-zero@{version}"));
+    assert_eq!(shown["statement"], "-0 is never an amount.");
+    assert_eq!(
+        shown["scenarios"],
+        json!(["--given an amount of -0, then it is refused."])
+    );
+}
+
+#[test]
+fn the_working_folders_repository() {
+    let place = Place::new();
+    place.made();
+    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let result = place.call_in(&repo, "query", json!({}));
+    assert_eq!(result["isError"], false, "{result}");
+    let answer = text(&result);
+    assert_eq!(answer["format"], "boom-query/1", "{answer}");
+    assert_eq!(answer["repository"], "shop");
 }

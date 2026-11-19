@@ -11,13 +11,16 @@
 //! command line's own definition (design 3): no tool exists without its
 //! command, and every command boom has is served or named absent.
 
+use std::ffi::OsString;
 use std::io::{BufRead, Write};
 use std::path::Path;
 
 use clap::{Arg, ArgAction};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::cli::Env;
+use crate::sign::{Keys, Signer};
+use crate::Failure;
 
 /// Each command served as a tool, by its words (design 3).
 pub(crate) const SERVED: &[&str] = &[
@@ -191,6 +194,80 @@ fn error(id: Value, code: i64, message: String) -> Value {
     })
 }
 
+/// The key source every command the server runs is given: it signs
+/// nothing, so no call reaches a person's `ssh-keygen` or sets off their
+/// key's prompt, even by an argument a later change lets through
+/// (design 5).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoKeys;
+
+impl Keys for NoKeys {
+    fn signer(&self, key: &Path) -> Result<Box<dyn Signer + '_>, Failure> {
+        Err(Failure::refused(format!(
+            "boom mcp signs nothing, with {} or any key: a person accepts, rejects or registers in their own terminal",
+            key.display()
+        )))
+    }
+}
+
+/// The command line's words for a call to `tool` with `given` (design
+/// 4): its command's words; each option as `--<long>=<value>`, a flag
+/// taken again and again once for each item, a true switch as `--<long>`
+/// and a false one left out; `--json`; `--store=<path>` where `boom mcp`
+/// was given one; `--`; and the positional values in their order. The
+/// `=` and the `--` keep a value beginning with a hyphen from being read
+/// as a switch.
+fn words(tool: &Tool, given: &Map<String, Value>, store: Option<&Path>) -> Vec<OsString> {
+    let mut words: Vec<OsString> = tool.words.split(' ').map(OsString::from).collect();
+    let mut positional = Vec::new();
+    for arg in arguments(&tool.command) {
+        let Some(value) = given.get(arg.get_id().as_str()) else {
+            continue;
+        };
+        let values: Vec<&str> = match value {
+            Value::String(value) => vec![value.as_str()],
+            Value::Array(items) => items.iter().filter_map(Value::as_str).collect(),
+            _ => Vec::new(),
+        };
+        if arg.is_positional() {
+            positional.extend(values);
+            continue;
+        }
+        let long = arg.get_long().unwrap_or_else(|| arg.get_id().as_str());
+        if shape(arg) == Shape::Switch {
+            if value == &Value::Bool(true) {
+                words.push(format!("--{long}").into());
+            }
+            continue;
+        }
+        for value in values {
+            words.push(format!("--{long}={value}").into());
+        }
+    }
+    words.push("--json".into());
+    if let Some(store) = store {
+        let mut word = OsString::from("--store=");
+        word.push(store);
+        words.push(word);
+    }
+    words.push("--".into());
+    words.extend(positional.into_iter().map(OsString::from));
+    words
+}
+
+/// A call's result: the command's JSON object as one text item, an
+/// error where it refused or could not run.
+fn result(text: &str, error: bool) -> Value {
+    json!({"content": [{"type": "text", "text": text}], "isError": error})
+}
+
+/// Runs `tool`'s command with `given`, through the command line's own
+/// parser and code, giving it [`NoKeys`].
+fn call(tool: &Tool, given: &Map<String, Value>, store: Option<&Path>, env: &Env) -> Value {
+    let outcome = crate::cli::run(words(tool, given, store), &NoKeys, env);
+    result(outcome.stdout.trim(), outcome.code != 0)
+}
+
 /// Why no tool is named `name`, with why where boom leaves its command
 /// out.
 fn no_tool(name: &str) -> String {
@@ -206,7 +283,7 @@ fn no_tool(name: &str) -> String {
 }
 
 /// The answer to one request, none for a notification.
-fn answer(request: &Value, _store: Option<&Path>, _env: &Env) -> Option<Value> {
+fn answer(request: &Value, store: Option<&Path>, env: &Env) -> Option<Value> {
     let id = request.get("id")?.clone();
     let method = request["method"].as_str().unwrap_or_default();
     let result = match method {
@@ -221,6 +298,17 @@ fn answer(request: &Value, _store: Option<&Path>, _env: &Env) -> Option<Value> {
         "tools/list" => json!({"tools": tools().iter().map(listed).collect::<Vec<_>>()}),
         "tools/call" => {
             let name = &request["params"]["name"];
+            if let Some(tool) = tools().iter().find(|tool| name == tool.name.as_str()) {
+                let given = request["params"]["arguments"]
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default();
+                return Some(json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": call(tool, &given, store, env),
+                }));
+            }
             let name = name
                 .as_str()
                 .map_or_else(|| name.to_string(), str::to_owned);
@@ -277,6 +365,85 @@ mod tests {
                 found.push(words);
             }
         }
+    }
+
+    #[test]
+    fn the_words_for_a_call() {
+        let tools = tools();
+        let propose = tools.iter().find(|tool| tool.name == "propose").unwrap();
+        let given = json!({
+            "kind": "invariant",
+            "name": "money-has-currency",
+            "statement": "-0 is never an amount.",
+            "scenarios": [
+                "Given an amount, then it names its currency.",
+                "--given an amount of -0, then it is refused.",
+            ],
+            "provenance": "run-1",
+            "system": true,
+        });
+        let words = words(
+            propose,
+            given.as_object().unwrap(),
+            Some(Path::new("/stores/boom.sqlite")),
+        );
+        let words: Vec<&str> = words.iter().map(|word| word.to_str().unwrap()).collect();
+        assert_eq!(
+            words,
+            [
+                "propose",
+                "--scenario=Given an amount, then it names its currency.",
+                "--scenario=--given an amount of -0, then it is refused.",
+                "--provenance=run-1",
+                "--system",
+                "--json",
+                "--store=/stores/boom.sqlite",
+                "--",
+                "invariant",
+                "money-has-currency",
+                "-0 is never an amount.",
+            ]
+        );
+        let unset = json!({"kind": "invariant", "system": false});
+        let words = super::words(propose, unset.as_object().unwrap(), None);
+        assert_eq!(words, ["propose", "--json", "--", "invariant"]);
+    }
+
+    #[test]
+    fn the_server_holds_no_key() {
+        for key in ["/home/ada/.ssh/id_ed25519_sk", "keys/ada", ""] {
+            match NoKeys.signer(Path::new(key)) {
+                Err(Failure::Refused(why)) => {
+                    assert!(why.contains("boom mcp signs nothing"), "{why}");
+                    assert!(why.contains("their own terminal"), "{why}");
+                }
+                Err(other) => panic!("{other:?}"),
+                Ok(_) => panic!("NoKeys gave a signer for {key}"),
+            }
+        }
+        // A command that reaches for a key is refused before it writes.
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("boom.sqlite");
+        let outcome = crate::cli::run(
+            [
+                "init",
+                "--person",
+                "ada",
+                "--key",
+                "keys/ada",
+                "--json",
+                "--store",
+                store.to_str().unwrap(),
+            ],
+            &NoKeys,
+            &Env::default(),
+        );
+        assert_eq!(outcome.code, 2, "{outcome:?}");
+        assert!(
+            outcome.stdout.contains("boom mcp signs nothing"),
+            "{outcome:?}"
+        );
+        assert!(!store.exists(), "no store is made");
     }
 
     #[test]
