@@ -355,3 +355,120 @@ fn a_version_that_came_in_as_history_is_not_given() {
     assert_eq!(names(&answer), ["amounts-in-cents"]);
     assert_eq!(answer["claims"][0]["legacy"], "0003");
 }
+
+/// Invariants holding `refund` standing, one attached to `shop`, one to
+/// the whole system and one to `ledger`.
+fn refunds(place: &Place) {
+    let ada = place.made();
+    Claim::invariant("refund-in-shop", "A refund in a shop is paid back.").standing(place, &ada);
+    Claim::invariant("refund-everywhere", "A refund is never negative.")
+        .binds(&["--system"])
+        .standing(place, &ada);
+    Claim::invariant("refund-in-ledger", "A refund in a ledger is a line.")
+        .binds(&["--repository", "ledger"])
+        .standing(place, &ada);
+}
+
+/// The names an answer gives, sorted.
+fn sorted(answer: &Value) -> Vec<String> {
+    let mut names = names(answer);
+    names.sort();
+    names
+}
+
+/// Runs `args` in `cwd`, asserting it refuses, writing nothing to
+/// standard output and appending nothing, and gives its words.
+fn refused_in(place: &Place, cwd: &std::path::Path, args: &[&str]) -> String {
+    let before = place.rows();
+    let outcome = place.run_in(cwd, args);
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    assert_eq!(outcome.stdout, "", "{outcome:?}");
+    assert_eq!(place.rows(), before);
+    outcome.stderr
+}
+
+#[test]
+fn in_the_repository_it_works_in() {
+    let place = Place::new();
+    refunds(&place);
+    let answer = search(&place, &["refund"]);
+    assert_eq!(answer["repository"], "shop");
+    assert_eq!(sorted(&answer), ["refund-everywhere", "refund-in-shop"]);
+}
+
+#[test]
+fn declared_by_the_repository() {
+    let place = Place::new();
+    refunds(&place);
+    place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let inside = place.empty_folder("shop-repo/src/refunds");
+    let answer = place.json_in(&inside, &["search", "refund"]);
+    assert_eq!(answer["repository"], "shop");
+    assert_eq!(sorted(&answer), ["refund-everywhere", "refund-in-shop"]);
+    let words = place.run_in(&inside, &["search", "refund"]);
+    assert!(
+        words
+            .stdout
+            .starts_with("2 claims match \"refund\" for shop, at entry "),
+        "{words:?}"
+    );
+}
+
+#[test]
+fn across_every_repository() {
+    let place = Place::new();
+    refunds(&place);
+    let answer = place.json(&["search", "refund", "--all"]);
+    assert_eq!(answer["repository"], Value::Null);
+    assert_eq!(
+        sorted(&answer),
+        ["refund-everywhere", "refund-in-ledger", "refund-in-shop"]
+    );
+    let binds = |name: &str| {
+        answer["claims"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|claim| claim["name"] == name)
+            .unwrap()["repositories"]
+            .clone()
+    };
+    assert_eq!(binds("refund-in-shop"), json!(["shop"]));
+    assert_eq!(binds("refund-everywhere"), json!([]));
+    assert_eq!(binds("refund-in-ledger"), json!(["ledger"]));
+    let words = place.run(&["search", "refund", "--all"]);
+    assert!(
+        words
+            .stdout
+            .starts_with("3 claims match \"refund\" across every repository, at entry "),
+        "{words:?}"
+    );
+    assert!(
+        words.stdout.contains(", for the whole system: "),
+        "{words:?}"
+    );
+}
+
+#[test]
+fn neither_named_declared_nor_all_is_refused() {
+    let place = Place::new();
+    refunds(&place);
+    let repo = place.repository("undeclared", None);
+    let words = refused_in(&place, &repo, &["search", "refund"]);
+    assert!(words.contains("--repository"), "{words}");
+    assert!(words.contains(".config/boom.toml"), "{words}");
+    assert!(words.contains("--all"), "{words}");
+}
+
+#[test]
+fn a_repository_and_every_repository_are_refused() {
+    let place = Place::new();
+    refunds(&place);
+    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let words = refused_in(
+        &place,
+        &repo,
+        &["search", "refund", "--repository", "shop", "--all"],
+    );
+    assert!(words.contains("--all"), "{words}");
+}
