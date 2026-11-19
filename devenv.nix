@@ -183,6 +183,21 @@ let
     assert pkgs.jq.version == "1.8.2";
     pkgs.jq;
 
+  # The flake's checks' tools (record 0010, design 7): the nix nix:typecheck
+  # and nix:test evaluate with, and the statix nix:lint runs, as timber's
+  # are pinned (boomdrivedev/timber 1adfecc7, its record 0035). nixpkgs'
+  # builds, pinned by devenv.lock and asserted to be these versions, so
+  # every host that runs the gate runs the same (core.6). treefmt.nix's
+  # nixfmt and deadnix are from the same nixpkgs. The nix is reached by its
+  # path, BOOM_FLAKE_NIX, and is not on PATH, where the host's own nix,
+  # which devenv runs on, stays.
+  flakeNix =
+    assert pkgs.nix.version == "2.34.8";
+    pkgs.nix;
+  statix =
+    assert pkgs.statix.version == "0.5.8-unstable-2026-07-17";
+    pkgs.statix;
+
 in
 {
   # The system tools are this file's, pinned by devenv.lock; moon and Rust
@@ -204,7 +219,12 @@ in
     # the hook's command in the plugin's test (claude-code:test).
     claude
     jq
+    # The flake's lint (nix/moon.yml).
+    statix
   ];
+
+  # The flake's checks (nix/check.sh): the pinned nix by its path.
+  env.BOOM_FLAKE_NIX = "${flakeNix}/bin/nix";
 
   # The site's packages, given to site:install by their store path
   # (site/scripts/install.sh; record 0003).

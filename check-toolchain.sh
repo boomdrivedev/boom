@@ -3,8 +3,8 @@
 # (rule core.6): rustc, cargo, clippy and rustfmt the build .prototools
 # pins, which rust-toolchain.toml names too; OpenSpec and Vale, which
 # the pages' writers run and no task does (record 0002), the releases
-# devenv.nix pins; and the plugin's tools, Claude Code and jq, the
-# versions devenv.nix pins and asserts. A tool found outside its pin, a runner's rustup
+# devenv.nix pins; and the plugin's tools, Claude Code and jq, and the
+# flake's, nix and statix, the versions devenv.nix pins and asserts. A tool found outside its pin, a runner's rustup
 # default say, fails here rather than holding the tree to another
 # version's rules.
 set -eu
@@ -67,3 +67,17 @@ asserted() {
 }
 release claude "$(pinned claudeVersion)" bash plugins/claude.sh --version
 release jq "$(asserted jq)" jq --version
+
+# The flake's checks' tools (design 7): the nix nix:typecheck and nix:test
+# evaluate with, by its path, and statix, which nix:lint runs. statix
+# answers no --version, so the one on PATH is held to its pin by the name
+# of the store path it runs from, which nixpkgs names by its version.
+[ -n "${BOOM_FLAKE_NIX:-}" ] || fail "BOOM_FLAKE_NIX is not set: run in devenv shell"
+release nix "$(asserted nix)" "$BOOM_FLAKE_NIX" --version
+statix=$(asserted statix)
+found=$(command -v statix) || fail "no statix on PATH; devenv.nix pins $statix"
+found=$(readlink -f "$found")
+case $found in
+*-statix-"$statix"/bin/statix) echo "statix is $statix" ;;
+*) fail "statix is not $statix: $found" ;;
+esac
