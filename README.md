@@ -132,7 +132,7 @@ boom is released by version. Each landing on main in which the
 Conventional Commits since the last release make a new version is
 released as `v<x.y.z>`: its tag names a commit that writes that version
 into the tree, so boom and its plugin built from the tag say it, given
-nothing (record 0011).
+nothing (record 0010).
 
 With Nix, install a release from its tag. boom's flake gives the plugin
 from the same tag as `boom-claude-plugin`, the plugin's folder at boom's
