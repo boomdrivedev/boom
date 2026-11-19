@@ -1,0 +1,14 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+# boom's Claude Code plugin: its manifest, and its session hook, which runs
+# boom query --if-declared (design 8). Each check is one task, in the fast
+# layer (core.5).
+language: 'bash'
+layer: 'application'
+
+tasks:
+  # The manifest and its hooks, read by the pinned Claude Code (design 9).
+  typecheck:
+    command: '../claude.sh plugin validate --strict .'
+    inputs: ['.claude-plugin/**/*', 'hooks/**/*', '/plugins/claude.sh', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
