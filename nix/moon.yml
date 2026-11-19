@@ -21,3 +21,10 @@ tasks:
     inputs: ['/flake.nix', '/flake.lock', '/nix/**/*', '/devenv.nix', '/devenv.lock', '/Cargo.toml', '/Cargo.lock', '/.prototools', '/plugins/claude-code/**/*', '/crates/**/*']
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
+  # The evaluated cases under nix/tests, against no store (nix/check.sh): a
+  # system's cases read Cargo.toml's version and the plugin's folder.
+  test:
+    command: 'sh nix/check.sh test'
+    inputs: ['/flake.nix', '/flake.lock', '/nix/**/*', '/devenv.nix', '/devenv.lock', '/Cargo.toml', '/Cargo.lock', '/.prototools', '/plugins/claude-code/**/*']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}

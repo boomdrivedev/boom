@@ -27,5 +27,5 @@ let
 in
 {
   typecheck = lines [ ./typecheck.nix ];
-  test = lines [ ];
+  test = lines [ ./packages.nix ];
 }
