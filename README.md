@@ -54,6 +54,17 @@ claims that hold.
   replays the log for each answer and reads no view, so a view edited
   by hand changes nothing an agent gets, and it writes nothing into the
   repository for anyone to edit (record 0008).
+- **An agent finds claims by their words.** `boom search` gives the
+  claims that stand whose words hold every word searched. A word may
+  fall in a claim's name, statement, scenarios, body, legacy id or
+  section, and its other forms are found with it: `currencies` finds
+  `currency`. It searches the repository `--repository` names or
+  `.config/boom.toml` declares, or every repository with `--all`. It
+  ranks the claims, a word in a name above one in a body, and gives the
+  first ten, or the number `--limit` names. Each comes with the passage
+  of its body where the words fall and a pointer to the whole text.
+  boom replays the log for each search and keeps no index, so nothing
+  kept beside the log changes what an agent finds (record 0009).
 - **A repository's records, imported once.** `boom import adr` reads a
   folder of MADR records and `boom import rules` a rules page, and
   proposes each record in its file's own words, with the names and
@@ -83,6 +94,7 @@ boom accept money-has-currency@<version> --key ~/.ssh/id_ed25519_sk
 boom import adr docs/adr --repository shop --drafts drafts.json --provenance run-1
 boom show money-has-currency --json
 boom query --repository shop
+boom search amounts cents --repository shop
 boom log
 ```
 
@@ -135,7 +147,7 @@ and 3 when it cannot run, and on 2 and 3 it writes nothing.
 
 | path | what |
 |---|---|
-| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `import`, `query` and `mcp` |
+| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `import`, `query`, `search` and `mcp` |
 | `site/` | the site, Astro with Starlight; its diagrams are drawn at build time (`site/README.md`) |
 | `docs/architecture/core.md` | the rules every change keeps |
 | `docs/adr/` | the decisions behind them, one MADR record each |

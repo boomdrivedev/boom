@@ -12,13 +12,14 @@ file's own words for a person to accept together, attached to that
 repository. A version binds the repositories its proposal names, or the
 whole system, once a person accepts it, and `boom query` gives an agent
 every claim that stands for its repository, named or declared in
-`.config/boom.toml`, replayed from the log. `boom mcp` serves an
-agent's program the commands it may run, `propose`, `show`, `log`,
-`query` and the imports, as MCP tools, and none a person must sign:
-no tool accepts, rejects or registers, and the server holds no key
-(record 0009). The views it renders, a
-rules page, decision records, a design book and a context map, and
-`boom check` are not built yet.
+`.config/boom.toml`, replayed from the log, and `boom search` finds the
+claims that stand by their words, in a repository or every repository.
+`boom mcp` serves an agent's program the commands it may run,
+`propose`, `show`, `log`, `query` and the imports, as MCP tools, and
+none a person must sign: no tool accepts, rejects or registers, and the
+server holds no key (record 0009). The views it renders, a rules page,
+decision records, a design book and a context map, and `boom check` are
+not built yet.
 
 ## The family
 
