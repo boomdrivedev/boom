@@ -234,9 +234,14 @@ fn a_tools_arguments_are_its_commands() {
         (names(&["target"]), names(&["target"]))
     );
     assert_eq!(arguments(tool(&tools, "log")), (vec![], vec![]));
+    let query = tool(&tools, "query");
     assert_eq!(
-        arguments(tool(&tools, "query")),
-        (names(&["repository"]), vec![])
+        arguments(query),
+        (names(&["repository", "if_declared"]), vec![])
+    );
+    assert_eq!(
+        query["inputSchema"]["properties"]["if_declared"]["type"],
+        "boolean"
     );
     let search = tool(&tools, "search");
     assert_eq!(

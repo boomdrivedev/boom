@@ -52,7 +52,7 @@ record 0010).
 #### Scenario: A tool's arguments are its command's
 
 - **WHEN** a client sends `tools/list`
-- **THEN** `propose` takes `kind`, one of `invariant`, `decision` and `assumption`, `name`, `statement`, `scenarios`, `amends`, `body`, `provenance`, `repositories` and `system`, requiring `kind`, `name` and `statement`; `show` takes `target`, required; `log` takes nothing; `query` takes `repository`; `search` takes `words`, an array of strings, required, `repository`, `all` and `limit`; and `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, requiring `dir`, as `import_rules` does with `page` for `dir`
+- **THEN** `propose` takes `kind`, one of `invariant`, `decision` and `assumption`, `name`, `statement`, `scenarios`, `amends`, `body`, `provenance`, `repositories` and `system`, requiring `kind`, `name` and `statement`; `show` takes `target`, required; `log` takes nothing; `query` takes `repository` and `if_declared`; `search` takes `words`, an array of strings, required, `repository`, `all` and `limit`; and `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, requiring `dir`, as `import_rules` does with `page` for `dir`
 
 #### Scenario: Each command served or absent
 
