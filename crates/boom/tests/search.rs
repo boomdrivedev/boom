@@ -472,3 +472,139 @@ fn a_repository_and_every_repository_are_refused() {
     );
     assert!(words.contains("--all"), "{words}");
 }
+
+/// The log as the file holds it, every column.
+fn log_rows(place: &Place) -> Vec<(i64, String, String, String, Option<String>)> {
+    let conn = place.sqlite();
+    let mut statement = conn
+        .prepare("SELECT seq, prev, hash, signed, signature FROM log ORDER BY seq")
+        .unwrap();
+    statement
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+#[test]
+fn a_proposal_is_not_given() {
+    let place = Place::new();
+    money_in_shop(&place);
+    Claim::invariant(
+        "refund-within-payment",
+        "A refund never exceeds the payment.",
+    )
+    .proposed(&place);
+    let answer = search(&place, &["refund"]);
+    assert_eq!(answer["claims"], json!([]));
+    assert_eq!(answer["total"], 0);
+}
+
+#[test]
+fn an_amendment_waiting_gives_the_standing_words() {
+    let place = Place::new();
+    let ada = place.made();
+    let base = Claim::decision("amounts-in-cents", CENTS).standing(&place, &ada);
+    let amendment = place.json(&[
+        "propose",
+        "decision",
+        "amounts-in-cents",
+        "Amounts are kept in integer mills.",
+        "--scenario",
+        HOLDS,
+        "--amends",
+        &base,
+        "--provenance",
+        "run-2",
+    ]);
+    assert_eq!(amendment["status"], "proposed");
+    assert_eq!(amendment["repositories"], json!(["shop"]));
+    assert_eq!(search(&place, &["mills"])["claims"], json!([]));
+    let answer = search(&place, &["cents"]);
+    assert_eq!(names(&answer), ["amounts-in-cents"]);
+    assert_eq!(answer["claims"][0]["version"], base.as_str());
+    assert_eq!(answer["claims"][0]["statement"], CENTS);
+}
+
+#[test]
+fn a_statement_edited_in_the_views_changes_nothing() {
+    let place = Place::new();
+    let (_, version) = money_in_shop(&place);
+    let edited = place
+        .sqlite()
+        .execute(
+            "UPDATE versions SET statement = 'Every amount is forged.' \
+             WHERE name = 'money-has-currency' AND version = ?1",
+            [&version],
+        )
+        .unwrap();
+    assert_eq!(edited, 1);
+    assert_eq!(
+        place.show(&format!("money-has-currency@{version}"))["statement"],
+        "Every amount is forged.",
+        "the views were edited and left as fresh"
+    );
+    assert_eq!(search(&place, &["forged"])["claims"], json!([]));
+    let answer = search(&place, &["currency"]);
+    assert_eq!(names(&answer), ["money-has-currency"]);
+    assert_eq!(answer["claims"][0]["version"], version.as_str());
+    assert_eq!(answer["claims"][0]["statement"], MONEY);
+}
+
+#[test]
+fn an_altered_body_stops_the_search() {
+    let place = Place::new();
+    let ada = place.made();
+    Claim::decision("amounts-in-cents", CENTS)
+        .body(ROUNDING)
+        .standing(&place, &ada);
+    let fingerprint = boom::sha256_hex(ROUNDING.as_bytes());
+    let altered = place
+        .sqlite()
+        .execute(
+            "UPDATE blobs SET bytes = ?1 WHERE fingerprint = ?2",
+            rusqlite::params![b"Amounts are floats.".to_vec(), fingerprint],
+        )
+        .unwrap();
+    assert_eq!(altered, 1);
+    let before = log_rows(&place);
+    let outcome = place.run(&["search", "integer", "--repository", "shop"]);
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    assert_eq!(outcome.stdout, "", "{outcome:?}");
+    assert!(outcome.stderr.contains(&fingerprint), "{outcome:?}");
+    assert_eq!(log_rows(&place), before);
+}
+
+#[test]
+fn nothing_is_kept() {
+    let place = Place::new();
+    refunds(&place);
+    let tables = || -> Vec<(String, String)> {
+        let conn = place.sqlite();
+        let mut statement = conn
+            .prepare("SELECT type, name FROM sqlite_master ORDER BY type, name")
+            .unwrap();
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let (before, rows) = (tables(), log_rows(&place));
+    let outcome = place.run(&["search", "refund", "--repository", "shop"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(tables(), before);
+    assert_eq!(log_rows(&place), rows);
+    assert!(
+        !before.iter().any(|(_, name)| name.contains("found")),
+        "{before:?}"
+    );
+}
