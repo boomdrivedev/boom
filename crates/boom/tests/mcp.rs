@@ -130,3 +130,140 @@ fn one_answer_before_the_next_request() {
     assert_eq!(status.code(), Some(0));
     assert!(read.try_recv().is_err(), "boom mcp writes nothing else");
 }
+
+/// The tools `tools/list` gives.
+fn tools(place: &Place) -> Vec<Value> {
+    let answers = place.mcp(&[initialize(1), request(2, "tools/list", json!({}))]);
+    answers[1]["result"]["tools"].as_array().unwrap().clone()
+}
+
+/// The tool `name` among `tools`.
+fn tool<'a>(tools: &'a [Value], name: &str) -> &'a Value {
+    tools
+        .iter()
+        .find(|tool| tool["name"] == name)
+        .unwrap_or_else(|| panic!("no tool {name}"))
+}
+
+/// A tool's arguments, sorted, and the ones it requires, sorted.
+fn arguments(tool: &Value) -> (Vec<String>, Vec<String>) {
+    let mut taken: Vec<String> = tool["inputSchema"]["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    taken.sort();
+    let mut required: Vec<String> = tool["inputSchema"]["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|name| name.as_str().unwrap().to_owned())
+        .collect();
+    required.sort();
+    (taken, required)
+}
+
+fn names(names: &[&str]) -> Vec<String> {
+    let mut names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn the_tools_listed() {
+    let place = Place::new();
+    let tools = tools(&place);
+    let mut listed: Vec<&str> = tools
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    listed.sort_unstable();
+    assert_eq!(
+        listed,
+        [
+            "import_adr",
+            "import_rules",
+            "log",
+            "propose",
+            "query",
+            "show"
+        ]
+    );
+    for tool in &tools {
+        assert!(!tool["description"].as_str().unwrap().is_empty(), "{tool}");
+        assert_eq!(tool["inputSchema"]["type"], "object", "{tool}");
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false, "{tool}");
+    }
+}
+
+#[test]
+fn a_tools_arguments_are_its_commands() {
+    let place = Place::new();
+    let tools = tools(&place);
+    let propose = tool(&tools, "propose");
+    assert_eq!(
+        arguments(propose),
+        (
+            names(&[
+                "kind",
+                "name",
+                "statement",
+                "scenarios",
+                "amends",
+                "body",
+                "provenance",
+                "repositories",
+                "system"
+            ]),
+            names(&["kind", "name", "statement"])
+        )
+    );
+    let properties = &propose["inputSchema"]["properties"];
+    assert_eq!(
+        properties["kind"]["enum"],
+        json!(["invariant", "decision", "assumption"])
+    );
+    assert_eq!(properties["scenarios"]["type"], "array");
+    assert_eq!(properties["scenarios"]["items"]["type"], "string");
+    assert_eq!(properties["system"]["type"], "boolean");
+    assert_eq!(properties["statement"]["type"], "string");
+    assert_eq!(
+        arguments(tool(&tools, "show")),
+        (names(&["target"]), names(&["target"]))
+    );
+    assert_eq!(arguments(tool(&tools, "log")), (vec![], vec![]));
+    assert_eq!(
+        arguments(tool(&tools, "query")),
+        (names(&["repository"]), vec![])
+    );
+    let import = ["repository", "drafts", "provenance", "dry_run"];
+    for (name, path) in [("import_adr", "dir"), ("import_rules", "page")] {
+        let mut taken = import.to_vec();
+        taken.push(path);
+        assert_eq!(
+            arguments(tool(&tools, name)),
+            (names(&taken), names(&[path])),
+            "{name}"
+        );
+    }
+    for name in ["show", "log", "query"] {
+        assert_eq!(tool(&tools, name)["annotations"]["readOnlyHint"], true);
+    }
+}
+
+#[test]
+fn no_persons_act_listed() {
+    let place = Place::new();
+    for tool in tools(&place) {
+        let name = tool["name"].as_str().unwrap();
+        assert!(
+            !["init", "register", "accept", "reject", "mcp"].contains(&name),
+            "{name} is listed"
+        );
+        assert!(
+            tool["inputSchema"]["properties"].get("key").is_none(),
+            "{name} takes key"
+        );
+    }
+}

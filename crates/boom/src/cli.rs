@@ -10,7 +10,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use serde_json::{json, Value};
 
 use crate::claim::{History, Kind, Proposal};
@@ -244,6 +244,13 @@ struct ImportOptions {
     /// Read and answer, writing nothing.
     #[arg(long)]
     dry_run: bool,
+}
+
+/// The command line's own definition, clap's reading of its commands
+/// and arguments, which `boom mcp`'s tools are read from (agent-tools;
+/// design 3).
+pub(crate) fn definition() -> clap::Command {
+    Cli::command()
 }
 
 /// An answer: one JSON object naming its format, and its words.
