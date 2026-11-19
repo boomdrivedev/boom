@@ -73,6 +73,17 @@ claims that hold.
   alone. A person accepts them together, one signed entry each. From
   then on boom keeps them, and never takes a file again as the record
   (records 0007 and 0008).
+- **An agent's program calls boom's commands as tools.** `boom mcp` is
+  an MCP server on standard input and output, one JSON-RPC message a
+  line. Its tools are `propose`, `show`, `log`, `query`, `search`,
+  `import_adr` and `import_rules`: each takes its command's arguments under their
+  names and answers its command's `--json` object, a refusal or a
+  command that cannot run marked an error. The server refuses a call
+  naming an argument its command does not take. No tool accepts,
+  rejects, registers a person or makes a store, no tool takes a `key`,
+  and the server holds no key, so no call sets off a person's security
+  key (record 0011). Its instructions, and `boom propose`'s answer,
+  give the `boom accept` a person runs in their own terminal.
 
 ```sh
 boom init --person ada --key ~/.ssh/id_ed25519_sk
@@ -96,6 +107,20 @@ anywhere else hears nothing. A repository writes no hook into its own
 `.claude/settings.json`. With `--if-declared`, where no repository is
 declared, boom answers nothing and exits 0; a declaration it cannot read
 it still refuses, naming the file.
+
+A repository's `.mcp.json` names `boom mcp`, and the harness starts it
+in the repository, so `query` answers for the repository its
+`.config/boom.toml` declares and `propose` attaches a first version to
+it:
+
+```json
+{ "mcpServers": { "boom": { "command": "boom", "args": ["mcp"] } } }
+```
+
+Each tool runs on the store `boom mcp` starts with, and no call names
+another. Where the harness's environment differs from the person's
+terminal, its `$XDG_DATA_HOME` or `HOME` naming another store, the
+`.mcp.json` names the store: `"args": ["mcp", "--store", "<path>"]`.
 
 Each command answers in words, or with `--json` as one JSON object
 that names its format. It exits 0 when it answers, 2 when it refuses
@@ -146,7 +171,7 @@ tag.
 
 | path | what |
 |---|---|
-| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `import`, `query` and `search` |
+| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `import`, `query`, `search` and `mcp` |
 | `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom query --if-declared`, listed by the marketplace in `.claude-plugin/` |
 | `flake.nix`, `nix/` | boom's flake, giving `boom` and `boom-claude-plugin` at one version, and its offline checks |
 | `.github/workflows/release.yml` | the release: a landing with a new version, tagged on a release commit off main, its binaries built by cargo |

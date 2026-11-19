@@ -553,3 +553,100 @@ impl Place {
         answer["version"].as_str().unwrap().to_owned()
     }
 }
+
+impl Place {
+    /// Serves `lines`, each one line of a client's, through
+    /// `boom::mcp::serve` in the test's own process, on the place's store
+    /// with `cwd` its working folder, and gives each answer read back as
+    /// JSON (design 9).
+    pub fn mcp_lines(&self, cwd: &Path, lines: &[String]) -> Vec<serde_json::Value> {
+        let mut env = self.env.clone();
+        env.cwd = Some(cwd.to_owned());
+        let mut input = String::new();
+        for line in lines {
+            input.push_str(line);
+            input.push('\n');
+        }
+        let mut output = Vec::new();
+        boom::mcp::serve(input.as_bytes(), &mut output, Some(&self.store), &env);
+        String::from_utf8(output)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    /// Serves `requests`, one a line, with `cwd` the working folder,
+    /// giving each answer.
+    pub fn mcp_in(&self, cwd: &Path, requests: &[serde_json::Value]) -> Vec<serde_json::Value> {
+        let lines: Vec<String> = requests.iter().map(ToString::to_string).collect();
+        self.mcp_lines(cwd, &lines)
+    }
+
+    /// Serves `requests`, one a line, in the place's own folder, giving
+    /// each answer.
+    pub fn mcp(&self, requests: &[serde_json::Value]) -> Vec<serde_json::Value> {
+        self.mcp_in(self.dir.path(), requests)
+    }
+}
+
+/// A client's `initialize`, naming the protocol version `2025-06-18`.
+pub fn initialize(id: u64) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "a test", "version": "1"},
+        },
+    })
+}
+
+/// A client's request of `method` with `params`.
+pub fn request(id: u64, method: &str, params: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+}
+
+impl Place {
+    /// Sends `initialize` and one `tools/call` of `tool` with
+    /// `arguments`, with `cwd` the working folder, and gives the call's
+    /// result.
+    pub fn call_in(
+        &self,
+        cwd: &Path,
+        tool: &str,
+        arguments: serde_json::Value,
+    ) -> serde_json::Value {
+        let answers = self.mcp_in(
+            cwd,
+            &[
+                initialize(1),
+                request(
+                    2,
+                    "tools/call",
+                    serde_json::json!({"name": tool, "arguments": arguments}),
+                ),
+            ],
+        );
+        assert_eq!(answers.len(), 2, "{answers:?}");
+        assert!(answers[1].get("result").is_some(), "{answers:?}");
+        answers[1]["result"].clone()
+    }
+
+    /// Sends `initialize` and one `tools/call` of `tool` with
+    /// `arguments`, in the place's own folder, and gives the call's
+    /// result.
+    pub fn call(&self, tool: &str, arguments: serde_json::Value) -> serde_json::Value {
+        self.call_in(self.dir.path(), tool, arguments)
+    }
+}
+
+/// A call's result's one text item, read as JSON.
+pub fn text(result: &serde_json::Value) -> serde_json::Value {
+    let content = result["content"].as_array().unwrap();
+    assert_eq!(content.len(), 1, "{result}");
+    assert_eq!(content[0]["type"], "text", "{result}");
+    serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap()
+}

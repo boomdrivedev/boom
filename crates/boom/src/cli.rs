@@ -10,7 +10,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use serde_json::{json, Value};
 
 use crate::claim::{History, Kind, Proposal};
@@ -233,6 +233,10 @@ enum Command {
         #[command(subcommand)]
         what: ImportCommand,
     },
+    /// Serve boom's commands to an agent's program as tools, over the
+    /// Model Context Protocol on standard input and output; none of them
+    /// is a person's act.
+    Mcp,
 }
 
 #[derive(Subcommand, Debug)]
@@ -270,6 +274,13 @@ struct ImportOptions {
     dry_run: bool,
 }
 
+/// The command line's own definition, clap's reading of its commands
+/// and arguments, which `boom mcp`'s tools are read from (agent-tools;
+/// design 3).
+pub(crate) fn definition() -> clap::Command {
+    Cli::command()
+}
+
 /// An answer: one JSON object naming its format, and its words.
 struct Answer {
     json: Value,
@@ -301,6 +312,9 @@ where
             };
         }
     };
+    if let Command::Mcp = cli.command {
+        return mcp(cli.json, cli.store.as_deref(), env);
+    }
     let path = store::resolve(
         cli.store.as_deref(),
         env.xdg_data_home.as_deref(),
@@ -322,7 +336,33 @@ where
     }
 }
 
-fn failed(json: bool, failure: Failure) -> Outcome {
+/// `boom mcp` (agent-tools; design 2): refused with `--json`, else
+/// serving the process's standard input and output until its input ends.
+fn mcp(json: bool, store: Option<&Path>, env: &Env) -> Outcome {
+    if json {
+        return failed(
+            true,
+            Failure::refused(
+                "boom mcp answers in the protocol's messages, one a line, never one JSON object",
+            ),
+        );
+    }
+    crate::mcp::serve(
+        std::io::stdin().lock(),
+        std::io::stdout().lock(),
+        store,
+        env,
+    );
+    Outcome {
+        code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    }
+}
+
+/// A failure's outcome: its words on standard error and, with `json`,
+/// its `boom-refused/1` or `boom-not-run/1` object on standard output.
+pub(crate) fn failed(json: bool, failure: Failure) -> Outcome {
     let (code, words, object) = match &failure {
         Failure::Refused(why) => (
             2,
@@ -416,6 +456,7 @@ fn execute(
             all,
             limit,
         } => search(&path?, &words, repository.as_deref(), all, limit, env),
+        Command::Mcp => unreachable!("boom mcp is served before a store's path is resolved"),
         Command::Import { what } => match what {
             ImportCommand::Adr { dir, options } => import(&path?, Form::Madr, &dir, options, env),
             ImportCommand::Rules { page, options } => {
@@ -719,6 +760,25 @@ fn propose(
         .version(&proposal.version)
         .expect("a proposal written is in the state");
     let status = version.status.as_str();
+    // What waits on a person is said: the command a person runs to accept
+    // the version, while it is proposed (agent-tools; design 7).
+    let accept = (status == "proposed").then(|| {
+        format!(
+            "boom accept {}@{} --key <key>",
+            proposal.name, proposal.version
+        )
+    });
+    let mut words = format!(
+        "{} {}@{} is {status}, by entry {}\nit binds {}\n",
+        claim.kind.as_str(),
+        proposal.name,
+        proposal.version,
+        written.seq(),
+        repository::words(&version.repositories)
+    );
+    if let Some(accept) = &accept {
+        words.push_str(&format!("a person accepts it with: {accept}\n"));
+    }
     Ok(Answer {
         json: json!({
             "format": "boom-propose/1",
@@ -729,15 +789,9 @@ fn propose(
             "status": status,
             "entry": written.seq(),
             "repositories": version.repositories,
+            "accept": accept,
         }),
-        words: format!(
-            "{} {}@{} is {status}, by entry {}\nit binds {}\n",
-            claim.kind.as_str(),
-            proposal.name,
-            proposal.version,
-            written.seq(),
-            repository::words(&version.repositories)
-        ),
+        words,
     })
 }
 

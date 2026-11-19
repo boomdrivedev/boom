@@ -7,13 +7,16 @@
 //! core.2): the views the store keeps beside it are rebuilt from it
 //! whenever they are missing or behind.
 //!
-//! The binary is a thin command line over [`cli::run`].
+//! The binary is a thin command line over [`cli::run`], and `boom mcp`
+//! serves an agent's program the commands it may run as tools, through
+//! [`mcp::serve`].
 
 pub mod claim;
 pub mod cli;
 pub mod entry;
 pub mod import;
 pub mod judge;
+pub mod mcp;
 pub mod repository;
 pub mod search;
 pub mod sign;
