@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use support::{initialize, request, text, Place, SCENARIO};
+use support::{initialize, request, text, Place};
 
 #[test]
 fn initialized() {
@@ -210,7 +210,6 @@ fn a_tools_arguments_are_its_commands() {
                 "kind",
                 "name",
                 "statement",
-                "scenarios",
                 "amends",
                 "body",
                 "provenance",
@@ -225,8 +224,13 @@ fn a_tools_arguments_are_its_commands() {
         properties["kind"]["enum"],
         json!(["invariant", "decision", "assumption"])
     );
-    assert_eq!(properties["scenarios"]["type"], "array");
-    assert_eq!(properties["scenarios"]["items"]["type"], "string");
+    assert_eq!(properties["repositories"]["type"], "array");
+    assert_eq!(properties["repositories"]["items"]["type"], "string");
+    assert_eq!(
+        properties.get("scenarios"),
+        None,
+        "a claim takes no scenarios"
+    );
     assert_eq!(properties["system"]["type"], "boolean");
     assert_eq!(properties["statement"]["type"], "string");
     assert_eq!(
@@ -299,7 +303,6 @@ fn a_proposal() -> Value {
         "kind": "invariant",
         "name": "money-has-currency",
         "statement": "Every amount names its currency.",
-        "scenarios": [SCENARIO],
         "provenance": "run-1",
     })
 }
@@ -315,14 +318,13 @@ fn a_proposal_through_its_tool() {
             "kind": "invariant",
             "name": "money-has-currency",
             "statement": "Every amount names its currency.",
-            "scenarios": ["Given an amount, then it names its currency."],
             "repositories": ["shop"],
             "provenance": "run-1",
         }),
     );
     assert_eq!(result["isError"], false, "{result}");
     let answer = text(&result);
-    assert_eq!(answer["format"], "boom-propose/1", "{answer}");
+    assert_eq!(answer["format"], "boom-propose/2", "{answer}");
     assert_eq!(answer["claim"], "money-has-currency");
     assert_eq!(answer["version"].as_str().unwrap().len(), 12, "{answer}");
     assert_eq!(answer["repositories"], json!(["shop"]));
@@ -343,8 +345,6 @@ fn the_commands_own_answer() {
         "invariant",
         "money-has-currency",
         "Every amount names its currency.",
-        "--scenario",
-        SCENARIO,
         "--repository",
         "shop",
         "--provenance",
@@ -369,8 +369,6 @@ fn a_search_through_its_tool() {
         "invariant",
         "money-has-currency",
         "Every amount names its currency.",
-        "--scenario",
-        SCENARIO,
         "--repository",
         "shop",
         "--provenance",
@@ -387,7 +385,7 @@ fn a_search_through_its_tool() {
     assert_eq!(command.code, 0, "{command:?}");
     assert_eq!(result["content"][0]["text"], command.stdout.trim());
     let answer = text(&result);
-    assert_eq!(answer["format"], "boom-search/1", "{answer}");
+    assert_eq!(answer["format"], "boom-search/2", "{answer}");
     assert_eq!(answer["claims"][0]["name"], "money-has-currency");
     assert_eq!(answer["claims"][0]["version"], version);
 }
@@ -433,8 +431,7 @@ fn words_beginning_with_a_hyphen() {
             "kind": "invariant",
             "name": "no-negative-zero",
             "statement": "-0 is never an amount.",
-            "scenarios": ["--given an amount of -0, then it is refused."],
-            "provenance": "run-1",
+            "provenance": "--run-1",
         }),
     );
     assert_eq!(result["isError"], false, "{result}");
@@ -442,8 +439,8 @@ fn words_beginning_with_a_hyphen() {
     let shown = place.show(&format!("no-negative-zero@{version}"));
     assert_eq!(shown["statement"], "-0 is never an amount.");
     assert_eq!(
-        shown["scenarios"],
-        json!(["--given an amount of -0, then it is refused."])
+        shown["proposer"],
+        json!({"agent": {"provenance": "--run-1"}})
     );
 }
 
@@ -455,7 +452,7 @@ fn the_working_folders_repository() {
     let result = place.call_in(&repo, "query", json!({}));
     assert_eq!(result["isError"], false, "{result}");
     let answer = text(&result);
-    assert_eq!(answer["format"], "boom-query/1", "{answer}");
+    assert_eq!(answer["format"], "boom-query/2", "{answer}");
     assert_eq!(answer["repository"], "shop");
 }
 
@@ -488,7 +485,19 @@ fn a_value_of_another_type() {
     place.made();
     let before = place.log();
     let mut arguments = a_proposal();
-    arguments["scenarios"] = json!(SCENARIO);
+    arguments["repositories"] = json!("shop");
+    let reason = refusal(&place.call("propose", arguments));
+    assert!(reason.contains("repositories"), "{reason}");
+    assert_eq!(place.log(), before);
+}
+
+#[test]
+fn scenarios_given() {
+    let place = Place::new();
+    place.made();
+    let before = place.log();
+    let mut arguments = a_proposal();
+    arguments["scenarios"] = json!(["Given an amount, then it names its currency."]);
     let reason = refusal(&place.call("propose", arguments));
     assert!(reason.contains("scenarios"), "{reason}");
     assert_eq!(place.log(), before);
@@ -508,8 +517,8 @@ fn a_misspelled_switch() {
     let drafts = place.file(
         "drafts.json",
         &json!({
-            "format": "boom-import-drafts/1",
-            "records": {"0001-amounts-in-cents.md": {"scenarios": [SCENARIO]}},
+            "format": "boom-import-drafts/2",
+            "records": {"0001-amounts-in-cents.md": {}},
         })
         .to_string(),
     );
@@ -582,13 +591,11 @@ fn the_instructions() {
 }
 
 /// The arguments the command line takes for [`a_proposal`].
-const PROPOSE: [&str; 8] = [
+const PROPOSE: [&str; 6] = [
     "propose",
     "invariant",
     "money-has-currency",
     "Every amount names its currency.",
-    "--scenario",
-    SCENARIO,
     "--provenance",
     "run-1",
 ];
@@ -631,7 +638,7 @@ fn a_version_that_stands() {
     assert_eq!(result["isError"], false, "{result}");
     let answer = text(&result);
     assert_eq!(answer["version"], version.as_str());
-    assert_eq!(answer["status"], "standing", "{answer}");
+    assert_eq!(answer["status"], "accepted", "{answer}");
     assert_eq!(answer["accept"], Value::Null, "{answer}");
     let outcome = place.run(&PROPOSE);
     assert_eq!(outcome.code, 0, "{outcome:?}");

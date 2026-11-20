@@ -28,13 +28,20 @@ claims that hold.
   version for each change, named by the fingerprint of its words. An
   amendment names the version it amends. boom keeps a long body once,
   under the fingerprint of its bytes.
+- **Each kind needs its own fields.** Every claim needs a statement of
+  one line. A decision also needs a body: its context, options, outcome
+  and consequences. An invariant's body is optional and says what it
+  rules out. An assumption's body is optional and says what would
+  challenge it. A new version has no scenarios. An old version keeps
+  the scenarios it was written with.
 - **An agent proposes; a person accepts.** An agent's proposal names
   its provenance. Only a person accepts or rejects, and signs the entry
   with a security key the store registers to them, the person present
   (record 0006). `ssh-keygen -Y verify` checks that signature with no
   boom.
 - **Every answer computed from the log.** boom reads whether a version
-  is proposed, standing, replaced, rejected or history from the log. It judges
+  is proposed, accepted, superseded, rejected or deprecated from the log.
+  A record that came in as history keeps its file's own status. It judges
   each entry it reads as it judges a write, so an entry written by hand
   that breaks a rule counts for nothing.
 - **Views kept in step with the log.** Each write updates the views in
@@ -56,7 +63,7 @@ claims that hold.
   repository reads none.
 - **An agent asks boom for its rules.** `boom query` gives every claim
   that stands for a repository, as the person accepted it: its kind,
-  name, version, statement and scenarios, and who accepted it. boom
+  name, version and statement, and who accepted it. boom
   answers from views it keeps in step with the log, and writes nothing
   into the repository for anyone to edit (record 0008).
 - **An agent finds claims by their words.** `boom search` gives the
@@ -71,8 +78,8 @@ claims that hold.
   boom searches the views and keeps no index (record 0009).
 - **A repository's records, imported once.** `boom import adr` reads a
   folder of MADR records and `boom import rules` a rules page, and
-  proposes each record in its file's own words, with the names and
-  scenarios the agent that runs the import drafts, each attached to the
+  proposes each record in its file's own words, with the names the
+  agent that runs the import drafts, each attached to the
   repository `--repository` names, so it stands for that repository
   alone. A person accepts them together, one signed entry each. From
   then on boom keeps them, and never takes a file again as the record
@@ -92,7 +99,6 @@ claims that hold.
 ```sh
 boom init --person ada --key ~/.ssh/id_ed25519_sk
 boom propose invariant money-has-currency "Every amount names its currency." \
-  --scenario "Given an amount, then it names its currency." \
   --repository shop --provenance run-1
 boom accept money-has-currency@<version> --key ~/.ssh/id_ed25519_sk
 boom import adr docs/adr --repository shop --drafts drafts.json --provenance run-1
@@ -168,7 +174,7 @@ tag.
   repository: a repository's agents get its rules from `boom query`
   (records 0005 and 0008).
 - **Checked at the merge.** `boom check` reads a change against the
-  standing claims it touches: scope first, then each claim's rule, then
+  accepted claims it touches: scope first, then each claim's rule, then
   a reviewer model for the claims in prose.
 
 ## This repository

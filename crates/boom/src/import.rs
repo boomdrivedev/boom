@@ -18,8 +18,6 @@ use crate::Failure;
 
 /// What a record still needs before it is proposed: a name.
 pub const NEEDS_NAME: &str = "a name";
-/// What a record still needs before it is proposed: a scenario.
-pub const NEEDS_SCENARIO: &str = "a scenario";
 
 /// A record read from a repository's file: a decision record or a rule,
 /// in its file's words, with what an agent drafts for it.
@@ -44,20 +42,14 @@ pub struct Record {
     /// The source of a superseded record's successor, a record of the
     /// same folder.
     pub successor: Option<String>,
-    /// Its scenarios, from its draft.
-    pub scenarios: Vec<String>,
 }
 
 impl Record {
-    /// What it still needs before it is proposed: a rule a name, and a
-    /// record to stand a scenario; history neither.
+    /// What it still needs before it is proposed: a rule a name.
     pub fn needs(&self) -> Vec<&'static str> {
         let mut needs = Vec::new();
         if self.name.is_none() {
             needs.push(NEEDS_NAME);
-        }
-        if self.history.is_none() && self.scenarios.is_empty() {
-            needs.push(NEEDS_SCENARIO);
         }
         needs
     }
@@ -87,7 +79,7 @@ impl Record {
             self.kind,
             self.name.as_deref().unwrap_or_default(),
             &self.statement,
-            self.scenarios.clone(),
+            Vec::new(),
             self.body
                 .as_deref()
                 .map(|body| crate::sha256_hex(body.as_bytes())),
@@ -354,11 +346,10 @@ fn read_madr(path: &Path, file: &str, repository: &str) -> Result<Option<Madr>, 
             date: field_text(&yaml, "date"),
             deciders,
             section: None,
-            drafted: true,
+            drafted: false,
         },
         history: history.map(|status| History { status, by: None }),
         successor: None,
-        scenarios: Vec::new(),
     };
     Ok(Some(Madr {
         record,
@@ -611,11 +602,10 @@ pub fn read_rules(page: &Path, repository: &str) -> Result<Read, Failure> {
                     date: None,
                     deciders: Vec::new(),
                     section: rule.heading.map(str::to_owned),
-                    drafted: true,
+                    drafted: false,
                 },
                 history: None,
                 successor: None,
-                scenarios: Vec::new(),
             }
         })
         .collect();
@@ -626,16 +616,12 @@ pub fn read_rules(page: &Path, repository: &str) -> Result<Read, Failure> {
 }
 
 /// The format a drafts file names.
-pub const DRAFTS_FORMAT: &str = "boom-import-drafts/1";
+pub const DRAFTS_FORMAT: &str = "boom-import-drafts/2";
 
-/// What an agent drafted for one record: its scenarios and, where it
-/// names it, its name.
+/// What an agent drafted for one record: its name.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Draft {
-    /// Its scenarios.
-    #[serde(default)]
-    pub scenarios: Vec<String>,
     /// Its name.
     pub name: Option<String>,
 }
@@ -690,8 +676,7 @@ pub fn read_drafts(path: &Path) -> Result<Drafts, Failure> {
 }
 
 impl Drafts {
-    /// Gives each record the scenarios and name its draft gives, and
-    /// nothing else; refused naming a draft whose key names no record of
+    /// Gives each record the name its draft gives, and nothing else; refused naming a draft whose key names no record of
     /// the import.
     pub fn apply(self, read: &mut Read) -> Result<(), Failure> {
         for key in self.records.keys() {
@@ -706,7 +691,6 @@ impl Drafts {
             let Some(draft) = self.records.get(&record.source) else {
                 continue;
             };
-            record.scenarios.clone_from(&draft.scenarios);
             if let Some(name) = &draft.name {
                 record.name = Some(name.clone());
             }

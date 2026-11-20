@@ -5,7 +5,7 @@
 mod support;
 
 use serde_json::{json, Value};
-use support::{Place, SCENARIO};
+use support::Place;
 
 const MONEY: &str = "Every amount names its currency.";
 const CENTS: &str = "Amounts are kept in integer cents.";
@@ -15,16 +15,12 @@ const REFUND: &str = "A refund never exceeds the payment.";
 /// An agent's proposal of a first version, with `extra`, giving its
 /// version.
 fn proposed(place: &Place, kind: &str, name: &str, statement: &str, extra: &[&str]) -> String {
-    let mut args = vec![
-        "propose",
-        kind,
-        name,
-        statement,
-        "--scenario",
-        SCENARIO,
-        "--provenance",
-        "run-1",
-    ];
+    let mut args = vec!["propose", kind, name, statement, "--provenance", "run-1"];
+    // A decision needs a body.
+    let body = place.decision_body();
+    if kind == "decision" && !extra.contains(&"--body") {
+        args.extend(["--body", &body]);
+    }
     args.extend_from_slice(extra);
     place.json(&args)["version"].as_str().unwrap().to_owned()
 }
@@ -139,7 +135,7 @@ fn what_stands_for_a_repository() {
             "kind": "invariant",
             "version": money,
             "statement": MONEY,
-            "scenarios": [SCENARIO],
+            "scenarios": [],
             "body": null,
             "repositories": ["shop"],
             "accepted": {"by": "ada", "entry": accepted["entry"]},
@@ -237,7 +233,7 @@ fn answered_as_json() {
     assert_eq!(outcome.code, 0, "{outcome:?}");
     assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
     let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
-    assert_eq!(answer["format"], "boom-query/1");
+    assert_eq!(answer["format"], "boom-query/2");
     assert_eq!(answer["repository"], "shop");
     let last = place.log().pop().unwrap();
     assert_eq!(
@@ -271,8 +267,8 @@ fn answered_in_words() {
         outcome.stdout,
         format!(
             "2 claims stand for shop, at entry {last} of the store's log.\n\
-             invariant money-has-currency@{money}: {MONEY}\n  - {SCENARIO}\n\
-             decision amounts-in-cents@{cents}: {CENTS}\n  - {SCENARIO}\n\
+             invariant money-has-currency@{money}: {MONEY}\n\
+             decision amounts-in-cents@{cents}: {CENTS}\n\
              \x20 body: boom show amounts-in-cents@{cents}\n"
         )
     );
@@ -444,7 +440,7 @@ fn a_status_edited_in_the_views_is_built_again_by_verify() {
     let conn = place.sqlite();
     let marked = conn
         .execute(
-            "UPDATE versions SET status = 'standing', decided_by = 'ada', decided_in = 2 \
+            "UPDATE versions SET status = 'accepted', decided_by = 'ada', decided_in = 2 \
              WHERE name = 'money-has-currency' AND version = ?1",
             [&version],
         )
@@ -460,7 +456,7 @@ fn a_status_edited_in_the_views_is_built_again_by_verify() {
     drop(conn);
     assert_eq!(
         place.status("money-has-currency", &version),
-        "standing",
+        "accepted",
         "the views were edited and left as fresh"
     );
     let verified = place.json(&["verify"]);
@@ -523,8 +519,8 @@ fn a_version_that_came_in_as_history_is_not_given() {
     let drafts = place.file(
         "drafts.json",
         &json!({
-            "format": "boom-import-drafts/1",
-            "records": {"0003-amounts-in-cents.md": {"scenarios": [SCENARIO]}},
+            "format": "boom-import-drafts/2",
+            "records": {"0003-amounts-in-cents.md": {}},
         })
         .to_string(),
     );
@@ -547,7 +543,7 @@ fn a_version_that_came_in_as_history_is_not_given() {
     place.json(&accept);
     assert_eq!(
         place.show("amounts-as-floats")["versions"][0]["status"],
-        "history"
+        "superseded"
     );
     let answer = query(&place, "shop");
     assert_eq!(names(&answer), ["amounts-in-cents"]);
@@ -633,7 +629,7 @@ fn if_declared_with_nothing_declared_answers_null_json() {
     let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
     assert_eq!(
         answer,
-        json!({"format": "boom-query/1", "repository": null, "head": null, "claims": []})
+        json!({"format": "boom-query/2", "repository": null, "head": null, "claims": []})
     );
     assert!(!store.exists());
 }

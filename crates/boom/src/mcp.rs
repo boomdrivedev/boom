@@ -455,12 +455,8 @@ mod tests {
             "kind": "invariant",
             "name": "money-has-currency",
             "statement": "-0 is never an amount.",
-            "scenarios": [
-                "Given an amount, then it names its currency.",
-                "--given an amount of -0, then it is refused.",
-            ],
             "provenance": "run-1",
-            "system": true,
+            "repositories": ["shop", "--ledger"],
         });
         let words = words(
             propose,
@@ -472,10 +468,9 @@ mod tests {
             words,
             [
                 "propose",
-                "--scenario=Given an amount, then it names its currency.",
-                "--scenario=--given an amount of -0, then it is refused.",
                 "--provenance=run-1",
-                "--system",
+                "--repository=shop",
+                "--repository=--ledger",
                 "--json",
                 "--store=/stores/boom.sqlite",
                 "--",

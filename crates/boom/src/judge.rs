@@ -36,15 +36,17 @@ pub struct Person {
 pub enum Status {
     /// Waiting on a person.
     Proposed,
-    /// Accepted, and no later version of its claim is.
-    Standing,
-    /// Accepted, and a later version of its claim is.
-    Replaced,
-    /// Rejected.
+    /// Accepted, and no later version of its claim is: it is in force.
+    Accepted,
+    /// Accepted, and a later version of its claim is; or, for a record
+    /// that came in as history, superseded as its file says.
+    Superseded,
+    /// Rejected by a person; or, for a record that came in as history,
+    /// rejected as its file says.
     Rejected,
-    /// Accepted as history: it never stands and replaces no version
-    /// (design 6).
-    History,
+    /// Retired with nothing in its place. Only a record that came in as
+    /// history, deprecated as its file says, has it; no act makes it yet.
+    Deprecated,
 }
 
 impl Status {
@@ -52,10 +54,10 @@ impl Status {
     pub fn from_name(name: &str) -> Option<Status> {
         [
             Status::Proposed,
-            Status::Standing,
-            Status::Replaced,
+            Status::Accepted,
+            Status::Superseded,
             Status::Rejected,
-            Status::History,
+            Status::Deprecated,
         ]
         .into_iter()
         .find(|status| status.as_str() == name)
@@ -65,10 +67,10 @@ impl Status {
     pub fn as_str(self) -> &'static str {
         match self {
             Status::Proposed => "proposed",
-            Status::Standing => "standing",
-            Status::Replaced => "replaced",
+            Status::Accepted => "accepted",
+            Status::Superseded => "superseded",
             Status::Rejected => "rejected",
-            Status::History => "history",
+            Status::Deprecated => "deprecated",
         }
     }
 }
@@ -584,28 +586,30 @@ fn check_accept(
     let (claim, found) = find(state, name, version)?;
     let by = found.decided_by.as_deref().unwrap_or_default();
     match found.status {
-        Status::Standing if by == accepter => {
+        Status::Proposed => {}
+        // A record that came in as history and was accepted keeps its
+        // file's status.
+        _ if found.proposal.history.is_some() && by == accepter => {
             return Ok(Verdict::Repeats(found.decided_in.unwrap_or_default()))
         }
-        Status::Standing => {
-            return Err(format!("{name}@{version} stands already, accepted by {by}"))
-        }
-        Status::Replaced => {
-            let standing = claim.standing.as_deref().unwrap_or_default();
+        _ if found.proposal.history.is_some() => {
             return Err(format!(
-                "{name}@{version} is replaced: {name}@{standing} stands"
+                "{name}@{version} came in as history and is {} already, accepted by {by}",
+                found.status.as_str()
+            ))
+        }
+        Status::Accepted if by == accepter => {
+            return Ok(Verdict::Repeats(found.decided_in.unwrap_or_default()))
+        }
+        Status::Accepted => return Err(format!("{name}@{version} is accepted already, by {by}")),
+        Status::Superseded => {
+            let accepted = claim.standing.as_deref().unwrap_or_default();
+            return Err(format!(
+                "{name}@{version} is superseded: {name}@{accepted} is accepted"
             ));
         }
         Status::Rejected => return Err(format!("{name}@{version} is rejected, by {by}")),
-        Status::History if by == accepter => {
-            return Ok(Verdict::Repeats(found.decided_in.unwrap_or_default()))
-        }
-        Status::History => {
-            return Err(format!(
-                "{name}@{version} is history already, accepted by {by}"
-            ))
-        }
-        Status::Proposed => {}
+        Status::Deprecated => return Err(format!("{name}@{version} is deprecated")),
     }
     if found.proposer == Actor::Person(accepter.to_owned()) {
         return Err(format!(
@@ -640,10 +644,14 @@ fn check_reject(
     let by = found.decided_by.as_deref().unwrap_or_default();
     match found.status {
         Status::Proposed => Ok(Verdict::Counts),
-        Status::Rejected if by == rejecter => {
+        // A person's reject carries its reason; a record that came in as
+        // history, rejected as its file says, was accepted.
+        Status::Rejected if found.reason.is_some() && by == rejecter => {
             Ok(Verdict::Repeats(found.decided_in.unwrap_or_default()))
         }
-        Status::Rejected => Err(format!("{name}@{version} is rejected already, by {by}")),
+        Status::Rejected if found.reason.is_some() => {
+            Err(format!("{name}@{version} is rejected already, by {by}"))
+        }
         status => Err(format!(
             "only a proposed version is rejected: {name}@{version} is {}",
             status.as_str()
@@ -702,22 +710,27 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
             let accepted = claim
                 .version_mut(version)
                 .expect("a counted accept's version");
-            if accepted.proposal.history.is_some() {
-                // History never stands and replaces no version.
-                accepted.status = Status::History;
+            if let Some(history) = &accepted.proposal.history {
+                // History is never in force and supersedes no version: it
+                // keeps its file's own status.
+                accepted.status = match history.status {
+                    claim::HistoryStatus::Superseded => Status::Superseded,
+                    claim::HistoryStatus::Deprecated => Status::Deprecated,
+                    claim::HistoryStatus::Rejected => Status::Rejected,
+                };
                 accepted.decided_by = actor;
                 accepted.decided_in = Some(seq);
                 return;
             }
             if let Some(standing) = claim.standing.take() {
-                if let Some(replaced) = claim.version_mut(&standing) {
-                    replaced.status = Status::Replaced;
+                if let Some(superseded) = claim.version_mut(&standing) {
+                    superseded.status = Status::Superseded;
                 }
             }
             let accepted = claim
                 .version_mut(version)
                 .expect("a counted accept's version");
-            accepted.status = Status::Standing;
+            accepted.status = Status::Accepted;
             accepted.decided_by = actor;
             accepted.decided_in = Some(seq);
             claim.standing = Some(version.clone());
@@ -795,8 +808,8 @@ mod tests {
                 },
                 proposed_in: 2,
                 status,
-                decided_by: (status == Status::Standing).then_some("ada".to_owned()),
-                decided_in: (status == Status::Standing).then_some(3),
+                decided_by: (status == Status::Accepted).then_some("ada".to_owned()),
+                decided_in: (status == Status::Accepted).then_some(3),
                 reason: None,
                 imported: None,
             }
@@ -808,14 +821,14 @@ mod tests {
                 Claim {
                     name: name.to_owned(),
                     kind,
-                    standing: (status == Status::Standing)
+                    standing: (status == Status::Accepted)
                         .then_some(version.proposal.version.clone()),
                     versions: vec![version],
                 },
             );
         };
         for &(kind, name, repositories) in standing {
-            insert(kind, name, repositories, Status::Standing);
+            insert(kind, name, repositories, Status::Accepted);
         }
         insert(Kind::Invariant, "a-proposal", &[], Status::Proposed);
         state
@@ -843,7 +856,7 @@ mod tests {
                 claim.standing.as_deref(),
                 Some(version.proposal.version.as_str())
             );
-            assert_eq!(version.status, Status::Standing);
+            assert_eq!(version.status, Status::Accepted);
         }
         assert_eq!(
             names(&state.standing_for(Some("ledger"))),

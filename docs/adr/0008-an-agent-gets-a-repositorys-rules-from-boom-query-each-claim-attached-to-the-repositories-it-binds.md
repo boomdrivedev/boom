@@ -169,3 +169,23 @@ What this changes:
   until `boom verify` runs. The user accepted this on 2026-11-20.
 - An entry that fails boom's checks still counts for nothing. boom
   judges each new entry when it applies it to the views.
+
+## Amendment of 2026-11-20, second (proposed)
+
+Status: proposed, for the user to accept. The change
+`claims-hold-what-their-kind-needs` makes it. The user approved the
+claim model on 2026-11-20.
+
+This amendment changes point 1 and the status words.
+
+1. `boom query` gives each claim that is accepted for the repository.
+   It gives the kind, name, version, statement and body pointer of each
+   claim. It gives who accepted the claim.
+2. A new version has no scenarios. `boom query` gives the scenarios of
+   an old version that has them.
+3. The status words are `proposed`, `accepted`, `rejected`,
+   `superseded` and `deprecated`. `accepted` replaces `standing`.
+   `superseded` replaces `replaced`.
+4. The JSON answer has the format `boom-query/2`.
+5. `boom query` reads the accepted versions only. It does not read the
+   other versions of a claim.

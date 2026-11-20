@@ -18,7 +18,7 @@ use crate::entry::{Act, Actor, Attach, Entry, Form, Imported};
 use crate::import::{self, Read, Record};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
-use crate::store::{self, Append, Store, Written};
+use crate::store::{self, Append, Scope, Store, Written};
 use crate::{repository, Failure};
 
 /// What a command reads from its process: the folders a store's path
@@ -136,9 +136,6 @@ enum Command {
         name: String,
         /// The claim in one line.
         statement: String,
-        /// A scenario; one at least.
-        #[arg(long = "scenario", value_name = "TEXT")]
-        scenarios: Vec<String>,
         /// The version this one amends.
         #[arg(long, value_name = "VERSION")]
         amends: Option<String>,
@@ -265,8 +262,8 @@ struct ImportOptions {
     /// The repository the records are of, kebab case.
     #[arg(long, value_name = "NAME")]
     repository: Option<String>,
-    /// The drafts file, `boom-import-drafts/1`: each record's scenarios
-    /// and each rule's name, by its source.
+    /// The drafts file, `boom-import-drafts/2`: each rule's name, and any
+    /// record's other name, by its source.
     #[arg(long, value_name = "FILE")]
     drafts: Option<PathBuf>,
     /// The agent's session or run.
@@ -417,7 +414,6 @@ fn execute(
             kind,
             name,
             statement,
-            scenarios,
             amends,
             body,
             provenance,
@@ -430,7 +426,6 @@ fn execute(
                 kind,
                 name,
                 statement,
-                scenarios,
                 amends,
                 body,
                 provenance,
@@ -475,11 +470,12 @@ fn execute(
 /// nothing appended.
 fn write(
     store: &mut Store,
+    scope: &Scope,
     signer: Option<&dyn Signer>,
     blob: Option<&[u8]>,
     build: impl FnOnce(&State) -> Result<Entry, Failure>,
 ) -> Result<(Written, State), Failure> {
-    let state = store.state()?;
+    let state = store.state_for(scope)?;
     let entry = build(&state)?;
     let signed = entry.signed_part();
     let proof = signer.map_or(Proof::Unsigned, |signer| {
@@ -544,7 +540,7 @@ fn init(
     let signer = keys.signer(key)?;
     let public_key = signer.public_key();
     if path.exists() {
-        let state = Store::open(path)?.state()?;
+        let state = Store::open(path)?.state_for(&Scope::default())?;
         return match state
             .first_owner
             .as_deref()
@@ -622,17 +618,23 @@ fn register(
     let mut store = Store::open(path)?;
     let registered = sign::read_public_key(public_key_file)?;
     let signer = keys.signer(key)?;
-    let (written, state) = write(&mut store, Some(signer.as_ref()), None, |state| {
-        Ok(Entry {
-            at: env.clock.now(),
-            actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
-            act: Act::Registered {
-                person: person.to_owned(),
-                key: sign::key_line(&registered),
-                owner,
-            },
-        })
-    })?;
+    let (written, state) = write(
+        &mut store,
+        &Scope::default(),
+        Some(signer.as_ref()),
+        None,
+        |state| {
+            Ok(Entry {
+                at: env.clock.now(),
+                actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
+                act: Act::Registered {
+                    person: person.to_owned(),
+                    key: sign::key_line(&registered),
+                    owner,
+                },
+            })
+        },
+    )?;
     Ok(registration_answer(
         "boom-register/1",
         path,
@@ -647,7 +649,6 @@ struct Proposed {
     kind: Kind,
     name: String,
     statement: String,
-    scenarios: Vec<String>,
     amends: Option<String>,
     body: Option<PathBuf>,
     provenance: Option<String>,
@@ -736,29 +737,36 @@ fn propose(
         proposed.kind,
         &proposed.name,
         &proposed.statement,
-        proposed.scenarios.clone(),
+        Vec::new(),
         body.as_deref().map(crate::sha256_hex),
         proposed.amends.clone(),
         None,
     );
     let signer = key.map(|key| keys.signer(key)).transpose()?;
-    let (written, state) = write(&mut store, signer.as_deref(), body.as_deref(), |state| {
-        let actor = match (&signer, key) {
-            (Some(signer), Some(key)) => Actor::Person(person_of(state, signer.as_ref(), key)?),
-            _ => Actor::Agent {
-                provenance: proposed.provenance.clone().unwrap_or_default(),
-            },
-        };
-        Ok(Entry {
-            at: env.clock.now(),
-            actor,
-            act: Act::Proposed {
-                claim: proposal.clone(),
-                imported: None,
-                attach: attachment(&proposed, &proposal, declared.as_deref(), state),
-            },
-        })
-    })?;
+    let scope = Scope::names([proposed.name.clone()]);
+    let (written, state) = write(
+        &mut store,
+        &scope,
+        signer.as_deref(),
+        body.as_deref(),
+        |state| {
+            let actor = match (&signer, key) {
+                (Some(signer), Some(key)) => Actor::Person(person_of(state, signer.as_ref(), key)?),
+                _ => Actor::Agent {
+                    provenance: proposed.provenance.clone().unwrap_or_default(),
+                },
+            };
+            Ok(Entry {
+                at: env.clock.now(),
+                actor,
+                act: Act::Proposed {
+                    claim: proposal.clone(),
+                    imported: None,
+                    attach: attachment(&proposed, &proposal, declared.as_deref(), state),
+                },
+            })
+        },
+    )?;
     let claim = &state.claims[&proposal.name];
     let version = claim
         .version(&proposal.version)
@@ -785,7 +793,7 @@ fn propose(
     }
     Ok(Answer {
         json: json!({
-            "format": "boom-propose/1",
+            "format": "boom-propose/2",
             "claim": proposal.name,
             "kind": claim.kind.as_str(),
             "version": proposal.version,
@@ -829,7 +837,8 @@ fn accept(
     };
     let mut store = Store::open(path)?;
     let signer = keys.signer(key)?;
-    let state = store.state()?;
+    let scope = Scope::names(versions.iter().map(|&(name, _)| name));
+    let state = store.state_for(&scope)?;
     let person = person_of(&state, signer.as_ref(), key)?;
     // Every target is judged, each against the state the ones before it
     // build, before the key signs any (design 9).
@@ -873,7 +882,7 @@ fn accept(
         })
         .collect();
     let state = if appends.is_empty() {
-        store.state()?
+        store.state_for(&scope)?
     } else {
         store.append_all(&appends)?.1
     };
@@ -889,7 +898,7 @@ fn accept(
             "claim": name,
             "version": version,
             "status": found.status.as_str(),
-            "replaced": found.proposal.base,
+            "superseded": found.proposal.base,
             "by": by,
             "entry": seq,
         }));
@@ -899,7 +908,7 @@ fn accept(
         ));
     }
     let mut object = serde_json::Map::new();
-    object.insert("format".into(), json!("boom-accept/1"));
+    object.insert("format".into(), json!("boom-accept/2"));
     if let [one] = accepted.as_slice() {
         if let Some(fields) = one.as_object() {
             object.extend(fields.clone());
@@ -941,17 +950,23 @@ fn reject(
     };
     let mut store = Store::open(path)?;
     let signer = keys.signer(key)?;
-    let (written, state) = write(&mut store, Some(signer.as_ref()), None, |state| {
-        Ok(Entry {
-            at: env.clock.now(),
-            actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
-            act: Act::Rejected {
-                name: name.to_owned(),
-                version: version.to_owned(),
-                reason,
-            },
-        })
-    })?;
+    let (written, state) = write(
+        &mut store,
+        &Scope::names([name]),
+        Some(signer.as_ref()),
+        None,
+        |state| {
+            Ok(Entry {
+                at: env.clock.now(),
+                actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
+                act: Act::Rejected {
+                    name: name.to_owned(),
+                    version: version.to_owned(),
+                    reason,
+                },
+            })
+        },
+    )?;
     let rejected = state.claims[name]
         .version(version)
         .expect("a reject written is in the state");
@@ -959,7 +974,7 @@ fn reject(
     let why = rejected.reason.clone().unwrap_or_default();
     Ok(Answer {
         json: json!({
-            "format": "boom-reject/1",
+            "format": "boom-reject/2",
             "claim": name,
             "version": version,
             "status": rejected.status.as_str(),
@@ -983,8 +998,10 @@ fn actor_words(actor: &Actor) -> String {
 }
 
 fn version_json(view: &store::VersionView) -> serde_json::Map<String, Value> {
-    let accepted = matches!(view.status.as_str(), "standing" | "replaced" | "history");
-    let rejected = view.status == "rejected";
+    // A person's reject carries its reason; every other decision is an
+    // accept, a record that came in as history among them.
+    let rejected = view.reason.is_some();
+    let accepted = view.decided_by.is_some() && !rejected;
     let mut object = serde_json::Map::new();
     object.insert("version".into(), json!(view.version));
     object.insert("status".into(), json!(view.status));
@@ -1016,7 +1033,7 @@ fn version_words(view: &store::VersionView) -> String {
         view.proposed_in
     ));
     if let (Some(by), Some(seq)) = (&view.decided_by, view.decided_in) {
-        let act = if view.status == "rejected" {
+        let act = if view.reason.is_some() {
             "rejected"
         } else {
             "accepted"
@@ -1064,10 +1081,10 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
             }
             return Ok(Answer {
                 json: json!({
-                    "format": "boom-show/1",
+                    "format": "boom-show/2",
                     "claim": claim.name,
                     "kind": claim.kind,
-                    "standing": claim.standing,
+                    "accepted": claim.standing,
                     "versions": versions,
                 }),
                 words,
@@ -1089,7 +1106,7 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
         };
         let (imported, history) = proposed_with(conn, view.proposed_in)?;
         let mut object = serde_json::Map::new();
-        object.insert("format".into(), json!("boom-show/1"));
+        object.insert("format".into(), json!("boom-show/2"));
         object.insert("claim".into(), json!(claim.name));
         object.insert("kind".into(), json!(claim.kind));
         object.extend(version_json(view));
@@ -1281,7 +1298,7 @@ fn query(
         if if_declared {
             return Ok(Answer {
                 json: json!({
-                    "format": "boom-query/1",
+                    "format": "boom-query/2",
                     "repository": null,
                     "head": null,
                     "claims": [],
@@ -1296,11 +1313,11 @@ fn query(
     };
     let mut store = Store::open(&path?)?;
     store.read(|conn| {
-        let state = store::load_state(conn)?;
+        let accepted = store::accepted_for(conn, Some(&repository))?;
         let (number, hash) = store::head_entry(conn)?;
         let mut claims = Vec::new();
         let mut lines = String::new();
-        for (claim, standing) in state.standing_for(Some(&repository)) {
+        for (claim, standing) in &accepted {
             let proposal = &standing.proposal;
             claims.push(Value::Object(standing_json(claim, standing)));
             lines.push_str(&format!(
@@ -1327,7 +1344,7 @@ fn query(
         };
         Ok(Answer {
             json: json!({
-                "format": "boom-query/1",
+                "format": "boom-query/2",
                 "repository": repository,
                 "head": {"number": number, "hash": hash},
                 "claims": claims,
@@ -1370,9 +1387,12 @@ fn search(
     };
     let mut store = Store::open(path)?;
     store.read(|conn| {
-        let state = store::load_state(conn)?;
+        let accepted = store::accepted_for(conn, repository.as_deref())?;
         let (number, hash) = store::head_entry(conn)?;
-        let standing = state.standing_for(repository.as_deref());
+        let standing: Vec<(&judge::Claim, &judge::Version)> = accepted
+            .iter()
+            .map(|(claim, version)| (claim, version))
+            .collect();
         // A body that is not text is searched as holding no word; one
         // whose bytes no longer match its fingerprint stops the search.
         let bodies = standing
@@ -1448,7 +1468,7 @@ fn search(
         };
         Ok(Answer {
             json: json!({
-                "format": "boom-search/1",
+                "format": "boom-search/2",
                 "words": words,
                 "repository": repository,
                 "head": {"number": number, "hash": hash},
@@ -1513,7 +1533,15 @@ fn import(
     import::check_names(&read.records)?;
     let provenance = provenance.unwrap_or_default();
     let mut store = Store::open(path)?;
-    let mut judged = store.state()?;
+    let scope = Scope {
+        names: read
+            .records
+            .iter()
+            .filter_map(|record| record.name.clone())
+            .collect(),
+        imported: true,
+    };
+    let mut judged = store.state_for(&scope)?;
     let mut entries = Vec::new();
     for record in &read.records {
         let entry = Entry {
@@ -1552,7 +1580,7 @@ fn import(
         })
         .collect();
     let state = if appends.is_empty() {
-        store.state()?
+        store.state_for(&scope)?
     } else {
         store.append_all(&appends)?.1
     };
@@ -1583,7 +1611,6 @@ fn import_answer(repository: &str, read: &Read, state: Option<&State>) -> Answer
             "entry": found.map(|version| version.proposed_in),
             "statement": record.statement,
             "body": record.body,
-            "scenarios": record.scenarios,
             "imported": record.imported,
             "history": record.history,
             "needs": record.needs(),
@@ -1620,7 +1647,7 @@ fn import_answer(repository: &str, read: &Read, state: Option<&State>) -> Answer
     });
     Answer {
         json: json!({
-            "format": "boom-import/1",
+            "format": "boom-import/2",
             "repository": repository,
             "dry_run": state.is_none(),
             "records": records,

@@ -25,21 +25,18 @@ struct Claim<'a> {
     kind: &'a str,
     name: &'a str,
     statement: &'a str,
-    scenario: &'a str,
     body: Option<&'a str>,
     /// What it binds, as `boom propose` takes it.
     binds: &'a [&'a str],
 }
 
 impl<'a> Claim<'a> {
-    /// A claim of `kind` for `shop`, with the scenario `HOLDS` and no
-    /// body.
+    /// A claim of `kind` for `shop`, with no body.
     fn new(kind: &'a str, name: &'a str, statement: &'a str) -> Self {
         Claim {
             kind,
             name,
             statement,
-            scenario: HOLDS,
             body: None,
             binds: SHOP,
         }
@@ -51,10 +48,6 @@ impl<'a> Claim<'a> {
 
     fn decision(name: &'a str, statement: &'a str) -> Self {
         Claim::new("decision", name, statement)
-    }
-
-    fn scenario(self, scenario: &'a str) -> Self {
-        Claim { scenario, ..self }
     }
 
     fn body(self, body: &'a str) -> Self {
@@ -70,16 +63,17 @@ impl<'a> Claim<'a> {
 
     /// An agent's proposal of it, giving its version.
     fn proposed(self, place: &Place) -> String {
+        // A decision needs a body: a builder that gives none gives it
+        // the shop's decision.
         let body = self
             .body
+            .or((self.kind == "decision").then_some(support::DECISION))
             .map(|text| place.file(&format!("{}.md", self.name), text));
         let mut args = vec![
             "propose",
             self.kind,
             self.name,
             self.statement,
-            "--scenario",
-            self.scenario,
             "--provenance",
             "run-1",
         ];
@@ -148,12 +142,37 @@ fn found_by_its_name() {
 }
 
 #[test]
-fn found_by_its_scenarios() {
+fn found_by_an_old_versions_scenarios() {
     let place = Place::new();
     let (ada, _) = money_in_shop(&place);
-    Claim::decision("orders-are-paid-once", "An order is paid once.")
-        .scenario("Given a payment, then the ledger records it once.")
-        .standing(&place, &ada);
+    // An old entry, written before claims lost their scenarios, keeps
+    // them, and a search finds its words there.
+    let old = boom::claim::Proposal::new(
+        boom::claim::Kind::Invariant,
+        "orders-are-paid-once",
+        "An order is paid once.",
+        vec!["Given a payment, then the ledger records it once.".to_owned()],
+        None,
+        None,
+        None,
+    );
+    place.append_by_hand(
+        &boom::entry::Entry {
+            at: 1_763_424_600,
+            actor: boom::entry::Actor::Agent {
+                provenance: "an-old-boom".to_owned(),
+            },
+            act: boom::entry::Act::Proposed {
+                claim: old.clone(),
+                imported: None,
+                attach: Some(boom::entry::Attach {
+                    repositories: vec!["shop".to_owned()],
+                }),
+            },
+        },
+        None,
+    );
+    place.accepted("orders-are-paid-once", &old.version, &ada);
     assert_eq!(
         names(&search(&place, &["ledger"])),
         ["orders-are-paid-once"]
@@ -257,10 +276,10 @@ fn rules_in_shop(place: &Place) {
     let drafts = place.file(
         "drafts.json",
         &json!({
-            "format": "boom-import-drafts/1",
+            "format": "boom-import-drafts/2",
             "records": {
-                "core.1": {"name": "status-from-events", "scenarios": ["Given a record accepted, then its status is read from its events."]},
-                "core.2": {"name": "views-computed", "scenarios": ["Given a view, then it is computed from the events."]},
+                "core.1": {"name": "status-from-events"},
+                "core.2": {"name": "views-computed"},
             },
         })
         .to_string(),
@@ -338,15 +357,15 @@ fn a_version_that_came_in_as_history_is_not_given() {
     let drafts = place.file(
         "drafts.json",
         &json!({
-            "format": "boom-import-drafts/1",
-            "records": {"0003-amounts-in-cents.md": {"scenarios": [HOLDS]}},
+            "format": "boom-import-drafts/2",
+            "records": {"0003-amounts-in-cents.md": {}},
         })
         .to_string(),
     );
     import_and_accept(&place, &ada, &["adr", &dir], &drafts);
     assert_eq!(
         place.show("amounts-as-floats")["versions"][0]["status"],
-        "history"
+        "superseded"
     );
     let answer = search(&place, &["floats"]);
     assert_eq!(answer["claims"], json!([]));
@@ -518,10 +537,10 @@ fn an_amendment_waiting_gives_the_standing_words() {
         "decision",
         "amounts-in-cents",
         "Amounts are kept in integer mills.",
-        "--scenario",
-        HOLDS,
         "--amends",
         &base,
+        "--body",
+        &place.decision_body(),
         "--provenance",
         "run-2",
     ]);
@@ -677,7 +696,8 @@ fn limited() {
         first.ends_with(" of the store's log; the first 2 follow."),
         "{words:?}"
     );
-    assert_eq!(words.stdout.lines().count(), 3, "{words:?}");
+    // The header, two claims, and the decision's excerpt and body.
+    assert_eq!(words.stdout.lines().count(), 5, "{words:?}");
     assert_eq!(
         search(&place, &["kept"])["claims"]
             .as_array()
@@ -712,7 +732,7 @@ fn answered_as_json() {
     assert_eq!(
         answer,
         json!({
-            "format": "boom-search/1",
+            "format": "boom-search/2",
             "words": ["amount"],
             "repository": "shop",
             "head": {"number": last["number"], "hash": last["hash"]},
@@ -722,7 +742,7 @@ fn answered_as_json() {
                 "kind": "invariant",
                 "version": version,
                 "statement": MONEY,
-                "scenarios": [HOLDS],
+                "scenarios": [],
                 "body": null,
                 "excerpt": null,
                 "legacy": null,

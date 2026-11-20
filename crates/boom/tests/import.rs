@@ -100,7 +100,7 @@ fn a_folder_of_madr_files_read() {
     );
     let before = place.log();
     let answer = dry_run(&place, &dir);
-    assert_eq!(answer["format"], "boom-import/1");
+    assert_eq!(answer["format"], "boom-import/2");
     assert_eq!(answer["repository"], "shop");
     assert_eq!(answer["records"].as_array().unwrap().len(), 2);
     let first = record(&answer, "0001-record-architecture-decisions.md");
@@ -123,11 +123,11 @@ fn a_folder_of_madr_files_read() {
             "date": "2026-01-02",
             "deciders": ["ada", "bo"],
             "section": null,
-            "drafted": true,
+            "drafted": false,
         })
     );
     assert_eq!(first["history"], Value::Null);
-    assert_eq!(first["needs"], json!(["a scenario"]));
+    assert_eq!(first["needs"], json!([]));
     let cents = record(&answer, "0003-amounts-in-cents.md");
     assert_eq!(cents["name"], "amounts-in-cents");
     assert_eq!(cents["statement"], "Amounts are kept in cents");
@@ -329,7 +329,7 @@ fn a_record_with_no_status_is_read_as_accepted() {
     assert_eq!(one["imported"]["legacy"], "0004");
     assert_eq!(one["imported"]["deciders"], json!([]));
     assert_eq!(one["history"], Value::Null);
-    assert_eq!(one["needs"], json!(["a scenario"]));
+    assert_eq!(one["needs"], json!([]));
 }
 
 #[test]
@@ -402,7 +402,7 @@ fn a_rules_page_read() {
     let page = rules_page(&place, RULES, None);
     let before = place.log();
     let answer = rules_dry_run(&place, &page);
-    assert_eq!(answer["format"], "boom-import/1");
+    assert_eq!(answer["format"], "boom-import/2");
     let records = answer["records"].as_array().unwrap();
     assert_eq!(records.len(), 2);
     let first = record(&answer, "core.1");
@@ -424,7 +424,7 @@ fn a_rules_page_read() {
             "date": null,
             "deciders": [],
             "section": "The ledger",
-            "drafted": true,
+            "drafted": false,
         })
     );
     let second = record(&answer, "core.2");
@@ -512,21 +512,16 @@ fn what_a_draft_still_needs() {
     for source in ["core.1", "core.2"] {
         assert_eq!(
             record(&answer, source)["needs"],
-            json!(["a name", "a scenario"]),
+            json!(["a name"]),
             "{source}"
         );
     }
     assert_eq!(place.log(), before);
 }
 
-const CENTS_SCENARIO: &str =
-    "Given an amount of 0.30, when it is kept, then it is kept as 30 cents.";
-const RECORDS_SCENARIO: &str =
-    "Given a decision that shapes the shop, when it is made, then a MADR file records it.";
-
 /// A drafts file in the place holding `records`, giving its path.
 fn drafts(place: &Place, file: &str, records: Value) -> String {
-    let text = json!({"format": "boom-import-drafts/1", "records": records}).to_string();
+    let text = json!({"format": "boom-import-drafts/2", "records": records}).to_string();
     place.file(file, &text)
 }
 
@@ -550,8 +545,8 @@ fn two_drafts(place: &Place) -> String {
         place,
         "drafts.json",
         json!({
-            "0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]},
-            "0003-amounts-in-cents.md": {"scenarios": [CENTS_SCENARIO]},
+            "0001-record-architecture-decisions.md": {},
+            "0003-amounts-in-cents.md": {},
         }),
     )
 }
@@ -579,7 +574,7 @@ fn imported_with_drafts() {
     let dir = two_records(&place);
     let drafts = two_drafts(&place);
     let answer = imported(&place, &dir, "shop", &drafts);
-    assert_eq!(answer["format"], "boom-import/1");
+    assert_eq!(answer["format"], "boom-import/2");
     let cents = record(&answer, "0003-amounts-in-cents.md");
     assert_eq!(cents["status"], "proposed");
     let version = cents["version"].as_str().unwrap();
@@ -591,7 +586,7 @@ fn imported_with_drafts() {
         shown["body"],
         "## Context\n\nFloats round: 0.1 + 0.2 is not 0.3.\n\n## Decision\n\nEvery amount is an integer of cents.\n"
     );
-    assert_eq!(shown["scenarios"], json!([CENTS_SCENARIO]));
+    assert_eq!(shown["scenarios"], json!([]));
     assert_eq!(
         shown["imported"],
         json!({
@@ -603,7 +598,7 @@ fn imported_with_drafts() {
             "date": "2026-01-04",
             "deciders": ["ada"],
             "section": null,
-            "drafted": true,
+            "drafted": false,
         })
     );
     assert_eq!(shown["history"], Value::Null);
@@ -619,8 +614,8 @@ fn a_rule_named_by_its_draft() {
         &place,
         "drafts.json",
         json!({
-            "core.1": {"name": "status-from-events", "scenarios": ["Given a record accepted, then its status is read from its events."]},
-            "core.2": {"name": "views-computed", "scenarios": ["Given a view, then it is computed from the ledger."]},
+            "core.1": {"name": "status-from-events"},
+            "core.2": {"name": "views-computed"},
         }),
     );
     let answer = place.json(&[
@@ -651,17 +646,17 @@ fn a_rule_named_by_its_draft() {
 fn a_draft_missing_is_refused() {
     let place = Place::new();
     place.made();
-    let dir = two_records(&place);
+    let page = rules_page(&place, RULES, None);
     let drafts = drafts(
         &place,
         "drafts.json",
-        json!({"0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]}}),
+        json!({"core.1": {"name": "status-from-events"}}),
     );
     place.refused(
         &[
             "import",
-            "adr",
-            &dir,
+            "rules",
+            &page,
             "--repository",
             "shop",
             "--drafts",
@@ -669,7 +664,7 @@ fn a_draft_missing_is_refused() {
             "--provenance",
             "run-1",
         ],
-        "0003-amounts-in-cents.md needs a scenario",
+        "needs a name",
     );
 }
 
@@ -682,9 +677,9 @@ fn a_draft_for_no_record_is_refused() {
         &place,
         "drafts.json",
         json!({
-            "0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]},
-            "0003-amounts-in-cents.md": {"scenarios": [CENTS_SCENARIO]},
-            "0009-gone.md": {"scenarios": ["Given nothing, then nothing."]},
+            "0001-record-architecture-decisions.md": {},
+            "0003-amounts-in-cents.md": {},
+            "0009-gone.md": {},
         }),
     );
     place.refused(
@@ -750,9 +745,9 @@ fn one_record_refused_appends_none() {
         &place,
         "drafts.json",
         json!({
-            "0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]},
-            "0003-amounts-in-cents.md": {"scenarios": [CENTS_SCENARIO], "name": "Bad_Name"},
-            "0004-one-database.md": {"scenarios": ["Given an order, then it is kept in the one database."]},
+            "0001-record-architecture-decisions.md": {},
+            "0003-amounts-in-cents.md": {"name": "Bad_Name"},
+            "0004-one-database.md": {},
         }),
     );
     place.refused(
@@ -805,7 +800,7 @@ fn a_superseded_record_comes_in_as_history() {
     let drafts = drafts(
         &place,
         "drafts.json",
-        json!({"0003-amounts-in-cents.md": {"scenarios": [CENTS_SCENARIO]}}),
+        json!({"0003-amounts-in-cents.md": {}}),
     );
     let answer = imported(&place, &dir, "shop", &drafts);
     let floats = record(&answer, "0002-amounts-as-floats.md");
@@ -831,6 +826,8 @@ status: accepted
 ---
 
 # Every amount names its currency
+
+An amount is a number and a currency.
 ";
 
 /// The folder holding `0002-money-has-currency.md`.
@@ -841,7 +838,7 @@ fn money_folder(place: &Place) -> String {
 /// Drafts for `0002-money-has-currency.md`, naming it `name` where one
 /// is given.
 fn money_drafts(place: &Place, name: Option<&str>) -> String {
-    let mut draft = json!({"scenarios": ["Given an amount, then it names its currency."]});
+    let mut draft = json!({});
     if let Some(name) = name {
         draft["name"] = json!(name);
     }
@@ -916,20 +913,20 @@ fn a_number_the_store_holds_is_refused() {
     let shop_drafts = drafts(
         &place,
         "shop-drafts.json",
-        json!({"0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]}}),
+        json!({"0001-record-architecture-decisions.md": {}}),
     );
     imported(&place, &shop, "shop", &shop_drafts);
     let billing = place.folder(
         "billing-adr",
         &[(
             "0001-use-postgres.md",
-            "---\nstatus: accepted\n---\n\n# Use Postgres\n",
+            "---\nstatus: accepted\n---\n\n# Use Postgres\n\nThe billing service keeps its invoices in Postgres.\n",
         )],
     );
     let billing_drafts = drafts(
         &place,
         "billing-drafts.json",
-        json!({"0001-use-postgres.md": {"scenarios": ["Given an invoice, then Postgres keeps it."]}}),
+        json!({"0001-use-postgres.md": {}}),
     );
     let refused = place.refused(
         &import_args(&billing, "billing", &billing_drafts),
@@ -950,8 +947,8 @@ fn two_records_under_one_name_are_refused() {
         &place,
         "drafts.json",
         json!({
-            "0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO], "name": "money"},
-            "0003-amounts-in-cents.md": {"scenarios": [CENTS_SCENARIO], "name": "money"},
+            "0001-record-architecture-decisions.md": {"name": "money"},
+            "0003-amounts-in-cents.md": {"name": "money"},
         }),
     );
     let refused = place.refused(&import_args(&dir, "shop", &drafts), "money");
@@ -1022,8 +1019,8 @@ fn another_repositorys_page_of_the_same_name() {
         &place,
         "shop-drafts.json",
         json!({
-            "core.1": {"name": "status-from-events", "scenarios": ["Given a record accepted, then its status is read from its events."]},
-            "core.2": {"name": "views-computed", "scenarios": ["Given a view, then it is computed from the ledger."]},
+            "core.1": {"name": "status-from-events"},
+            "core.2": {"name": "views-computed"},
         }),
     );
     place.json(&[
@@ -1048,7 +1045,7 @@ fn another_repositorys_page_of_the_same_name() {
     let billing_drafts = drafts(
         &place,
         "billing-drafts.json",
-        json!({"core.1": {"name": "invoices-billed-once", "scenarios": ["Given an invoice billed, then it is not billed again."]}}),
+        json!({"core.1": {"name": "invoices-billed-once"}}),
     );
     let answer = place.json(&[
         "import",
@@ -1124,16 +1121,16 @@ fn an_import_accepted_together() {
     let before = place.log().len();
     accept_given(&place, &answer, &ada);
     for (source, status) in [
-        ("0001-record-architecture-decisions.md", "standing"),
-        ("0002-amounts-as-floats.md", "history"),
-        ("0003-amounts-in-cents.md", "standing"),
+        ("0001-record-architecture-decisions.md", "accepted"),
+        ("0002-amounts-as-floats.md", "superseded"),
+        ("0003-amounts-in-cents.md", "accepted"),
     ] {
         let found = record(&answer, source);
         let name = found["name"].as_str().unwrap();
         let version = found["version"].as_str().unwrap();
         assert_eq!(place.status(name, version), status, "{source}");
     }
-    assert_eq!(place.show("amounts-as-floats")["standing"], Value::Null);
+    assert_eq!(place.show("amounts-as-floats")["accepted"], Value::Null);
     let log = place.log();
     assert_eq!(log.len(), before + 3);
     let ada_public = place.keys.public_key(std::path::Path::new(&ada));
@@ -1165,7 +1162,7 @@ fn an_imported_record_stands_for_its_repository_alone() {
     accept_given(&place, &answer, &ada);
     assert_eq!(place.last_signed()["act"], "accepted");
     let shown = place.show(&format!("amounts-in-cents@{version}"));
-    assert_eq!(shown["status"], "standing");
+    assert_eq!(shown["status"], "accepted");
     assert_eq!(shown["repositories"], json!(["shop"]));
     let names = |repository: &str| -> Vec<String> {
         place.json(&["query", "--repository", repository])["claims"]
@@ -1202,8 +1199,8 @@ fn a_record_left_proposed_waits() {
         &place,
         "drafts.json",
         json!({
-            "0001-record-architecture-decisions.md": {"scenarios": [RECORDS_SCENARIO]},
-            "0004-one-database.md": {"scenarios": ["Given an order, then it is kept in the one database."]},
+            "0001-record-architecture-decisions.md": {},
+            "0004-one-database.md": {},
         }),
     );
     let answer = imported(&place, &dir, "shop", &drafts);
@@ -1223,6 +1220,6 @@ fn a_record_left_proposed_waits() {
             "record-architecture-decisions",
             first["version"].as_str().unwrap()
         ),
-        "standing"
+        "accepted"
     );
 }

@@ -31,13 +31,11 @@ fn the_log_of_a_new_store() {
     assert!(lines[0].starts_with("1 registered by ada"), "{log:?}");
 }
 
-const PROPOSAL: [&str; 8] = [
+const PROPOSAL: [&str; 6] = [
     "propose",
     "invariant",
     "money-has-currency",
     "Every amount names its currency.",
-    "--scenario",
-    support::SCENARIO,
     "--provenance",
     "run-1",
 ];
@@ -52,7 +50,7 @@ fn a_proposal_answered_as_json() {
     assert_eq!(outcome.code, 0, "{outcome:?}");
     assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
     let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();
-    assert_eq!(answer["format"], "boom-propose/1");
+    assert_eq!(answer["format"], "boom-propose/2");
     assert_eq!(answer["claim"], "money-has-currency");
     assert_eq!(answer["version"].as_str().unwrap().len(), 12);
     assert_eq!(answer["status"], "proposed");
@@ -119,7 +117,7 @@ fn an_accept_repeated_adds_nothing() {
     let first = place.accepted("money-has-currency", &version, &ada);
     let second = place.accepted("money-has-currency", &version, &ada);
     assert_eq!(second, first);
-    assert_eq!(second["status"], "standing");
+    assert_eq!(second["status"], "accepted");
     assert_eq!(place.acts(), ["registered", "proposed", "accepted"]);
 }
 
@@ -220,6 +218,6 @@ fn an_import_answered_as_json() {
     assert_eq!(outcome.code, 0, "{outcome:?}");
     assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
     let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();
-    assert_eq!(answer["format"], "boom-import/1");
+    assert_eq!(answer["format"], "boom-import/2");
     assert!(!outcome.stderr.is_empty(), "the words go to standard error");
 }

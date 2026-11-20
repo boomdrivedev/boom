@@ -74,7 +74,8 @@ pub struct Imported {
     pub deciders: Vec<String>,
     /// A rule's `###` heading, or none.
     pub section: Option<String>,
-    /// Whether the scenarios were drafted at import.
+    /// Whether an agent drafted its scenarios at import: true only of an
+    /// old entry, since a new version has no scenarios.
     pub drafted: bool,
 }
 
