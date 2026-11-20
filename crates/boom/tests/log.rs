@@ -31,7 +31,7 @@ fn a_clock_set_back_changes_no_status() {
     place.accepted("money-has-currency", &version, &ada);
     let log = place.log();
     assert!(log[2]["at"].as_u64() < log[1]["at"].as_u64());
-    assert_eq!(place.status("money-has-currency", &version), "standing");
+    assert_eq!(place.status("money-has-currency", &version), "accepted");
 }
 
 #[test]

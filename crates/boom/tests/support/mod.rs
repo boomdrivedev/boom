@@ -288,8 +288,6 @@ impl Place {
             "invariant",
             name,
             statement,
-            "--scenario",
-            "Given an amount, then it names its currency.",
             "--provenance",
             "run-1",
         ]);
@@ -357,13 +355,21 @@ impl Place {
             "invariant",
             name,
             statement,
-            "--scenario",
-            SCENARIO,
             "--body",
             body,
             "--provenance",
             "run-1",
         ])
+    }
+}
+
+/// A decision's body: its context, options, outcome and consequences.
+pub const DECISION: &str = "## Context\n\nThe shop needs one way.\n\n## Options\n\n1. This way.\n2. Another way.\n\n## Outcome\n\nThis way.\n\n## Consequences\n\nEvery part follows it.\n";
+
+impl Place {
+    /// A file holding a decision's body, its path as an argument.
+    pub fn decision_body(&self) -> String {
+        self.file("decision.md", DECISION)
     }
 }
 
@@ -380,8 +386,6 @@ impl Place {
             "invariant",
             name,
             statement,
-            "--scenario",
-            SCENARIO,
             "--amends",
             base,
             "--provenance",
@@ -540,13 +544,14 @@ impl Place {
     /// An agent's proposal of a version of a decision with no base,
     /// giving its version.
     pub fn proposed_decision(&self, name: &str, statement: &str) -> String {
+        let body = self.decision_body();
         let answer = self.json(&[
             "propose",
             "decision",
             name,
             statement,
-            "--scenario",
-            SCENARIO,
+            "--body",
+            &body,
             "--provenance",
             "run-3",
         ]);

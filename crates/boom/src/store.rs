@@ -89,10 +89,17 @@ const VIEW_TABLES: [&str; 5] = ["views_head", "persons", "claims", "versions", "
 
 /// The views' form, kept in `views_head`. Views of another form are
 /// built again from the whole log.
-const VIEWS_FORM: i64 = 2;
+const VIEWS_FORM: i64 = 3;
 
 thread_local! {
     static ENTRIES_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static VERSIONS_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The number of versions this thread has read from a store's views,
+/// for a test to count what one command loads.
+pub fn versions_read() -> u64 {
+    VERSIONS_READ.with(std::cell::Cell::get)
 }
 
 /// The number of the log's entries this thread has read from a store,
@@ -309,16 +316,22 @@ impl Store {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        catch_up(&tx, &path)?;
+        catch_up(&tx, &path, Scope::default())?;
         let answered = answer(&tx);
         tx.commit()?;
         answered
     }
 
-    /// The state the log's entries build, read from the views once they
-    /// are at the log's last entry.
+    /// The whole state the log's entries build, read from the views once
+    /// they are at the log's last entry.
     pub fn state(&mut self) -> Result<State, Failure> {
         self.read(load_state)
+    }
+
+    /// The part of the state `scope` names, read from the views once they
+    /// are at the log's last entry.
+    pub fn state_for(&mut self, scope: &Scope) -> Result<State, Failure> {
+        self.read(|conn| load_state_for(conn, scope))
     }
 
     /// Appends the entry whose signed part is `signed`, with its
@@ -355,7 +368,7 @@ impl Store {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let mut state = catch_up(&tx, &path)?;
+        let mut state = catch_up(&tx, &path, Scope::of(&parsed))?;
         let (mut seq, mut prev) = views_head(&tx)?;
         let mut written = Vec::with_capacity(entries.len());
         for (append, entry) in entries.iter().zip(&parsed) {
@@ -419,6 +432,52 @@ impl Store {
             .map_or((0, GENESIS.to_owned()), |row| (row.seq, row.hash.clone()));
         tx.commit()?;
         Ok(Verified { seq, hash, rebuilt })
+    }
+}
+
+/// The part of the state a command needs: every person, the claims it
+/// names, and, for an import, every claim with a version that came in
+/// from a file. A command loads only these rows from the views.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Scope {
+    /// The claims named.
+    pub names: std::collections::BTreeSet<String>,
+    /// Whether every claim with an imported version is needed too.
+    pub imported: bool,
+}
+
+impl Scope {
+    /// The claims `names` names.
+    pub fn names<I: IntoIterator<Item = S>, S: Into<String>>(names: I) -> Scope {
+        Scope {
+            names: names.into_iter().map(Into::into).collect(),
+            imported: false,
+        }
+    }
+
+    /// What judging `entries` needs.
+    pub fn of<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Scope {
+        let mut scope = Scope::default();
+        for entry in entries {
+            match &entry.act {
+                Act::Registered { .. } => {}
+                Act::Proposed {
+                    claim, imported, ..
+                } => {
+                    scope.names.insert(claim.name.clone());
+                    scope.imported |= imported.is_some();
+                }
+                Act::Accepted { name, .. } | Act::Rejected { name, .. } => {
+                    scope.names.insert(name.clone());
+                }
+            }
+        }
+        scope
+    }
+
+    fn join(&mut self, other: Scope) {
+        self.names.extend(other.names);
+        self.imported |= other.imported;
     }
 }
 
@@ -640,11 +699,12 @@ fn fresh(conn: &Connection, path: &Path) -> Result<bool, Failure> {
 }
 
 /// Brings the views to the log's last entry, inside a write's
-/// transaction, and answers the state they then hold. Views missing or of
+/// transaction, and answers the part of the state they then hold that
+/// `scope` and the entries applied name. Views missing or of
 /// another form are built again from the whole log, its whole chain
 /// checked; otherwise the views' head entry is checked, and each entry
 /// after it is checked, judged and applied, its rows written.
-fn catch_up(conn: &Connection, path: &Path) -> Result<State, Failure> {
+fn catch_up(conn: &Connection, path: &Path, mut scope: Scope) -> Result<State, Failure> {
     let Some((seq, hash, form)) = head(conn)?.filter(|(_, _, form)| *form == VIEWS_FORM) else {
         let rows = read_log(conn)?;
         check_chain(path, &rows)?;
@@ -657,7 +717,12 @@ fn catch_up(conn: &Connection, path: &Path) -> Result<State, Failure> {
     check_head(path, at.as_ref(), seq, &hash)?;
     let rows = rows_after(conn, seq)?;
     check_chain_from(path, &rows, seq, &hash)?;
-    let mut state = load_state(conn)?;
+    let parsed: Vec<Entry> = rows
+        .iter()
+        .filter_map(|row| Entry::parse(&row.signed).ok())
+        .collect();
+    scope.join(Scope::of(&parsed));
+    let mut state = load_state_for(conn, &scope)?;
     for row in &rows {
         let judgment = judge::step(&mut state, row.seq, &row.signed, row.signature.as_deref());
         write_judgment(conn, row.seq, &judgment)?;
@@ -849,6 +914,53 @@ pub fn head_entry(conn: &Connection) -> Result<(u64, String), Failure> {
 /// `versions` with no entry of the log read (design 1). It is the state a
 /// replay of the log up to the views' head builds.
 pub fn load_state(conn: &Connection) -> Result<State, Failure> {
+    let mut state = load_persons(conn)?;
+    load_claims(conn, &mut state, "", [])?;
+    Ok(state)
+}
+
+/// The part of the state the views hold that `scope` names: every
+/// person, the claims it names, and, where it asks, every claim with an
+/// imported version. No other claim's rows are read.
+pub fn load_state_for(conn: &Connection, scope: &Scope) -> Result<State, Failure> {
+    let mut state = load_persons(conn)?;
+    for name in &scope.names {
+        load_claims(conn, &mut state, "WHERE name = ?1", [name.as_str()])?;
+    }
+    if scope.imported {
+        load_claims(
+            conn,
+            &mut state,
+            "WHERE name IN (SELECT DISTINCT name FROM versions WHERE imported IS NOT NULL)",
+            [],
+        )?;
+    }
+    Ok(state)
+}
+
+/// Each claim's accepted version, with the claim, for `Some(repository)`
+/// those that bind it or the whole system, in the order invariants,
+/// decisions, assumptions, each kind by name: no other version is read.
+pub fn accepted_for(
+    conn: &Connection,
+    repository: Option<&str>,
+) -> Result<Vec<(Claim, Version)>, Failure> {
+    let mut state = State::default();
+    load_claims(conn, &mut state, "WHERE standing IS NOT NULL", [])?;
+    // Only each claim's accepted version is read: load_claims reads the
+    // versions of the claims it loads, which a join narrows to those.
+    Ok(state
+        .standing_for(repository)
+        .into_iter()
+        .map(|(claim, version)| {
+            let mut claim = claim.clone();
+            claim.versions.clear();
+            (claim, version.clone())
+        })
+        .collect())
+}
+
+fn load_persons(conn: &Connection) -> Result<State, Failure> {
     let mut state = State::default();
     let mut persons = conn.prepare("SELECT name, key, owner, registered_in FROM persons")?;
     let rows = persons
@@ -880,9 +992,21 @@ pub fn load_state(conn: &Connection) -> Result<State, Failure> {
         );
     }
     state.first_owner = first.map(|(_, name)| name);
-    let mut claims = conn.prepare("SELECT name, kind, standing FROM claims")?;
+    Ok(state)
+}
+
+/// Reads into `state` the claims `filter` selects from `claims`, with
+/// their versions; with `WHERE standing IS NOT NULL`, each one's accepted
+/// version alone.
+fn load_claims<P: rusqlite::Params + Copy>(
+    conn: &Connection,
+    state: &mut State,
+    filter: &str,
+    params: P,
+) -> Result<(), Failure> {
+    let mut claims = conn.prepare(&format!("SELECT name, kind, standing FROM claims {filter}"))?;
     let rows = claims
-        .query_map([], |row| {
+        .query_map(params, |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -890,72 +1014,89 @@ pub fn load_state(conn: &Connection) -> Result<State, Failure> {
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    let accepted_only = filter == "WHERE standing IS NOT NULL";
     for (name, kind, standing) in rows {
+        if state.claims.contains_key(&name) {
+            continue;
+        }
         let kind: Kind = serde_json::from_value(serde_json::Value::String(kind))
             .map_err(|error| Failure::not_run(format!("a view could not be read: {error}")))?;
+        let versions = if accepted_only {
+            read_versions(
+                conn,
+                "WHERE name = ?1 AND version = ?2",
+                [name.as_str(), standing.as_deref().unwrap_or_default()],
+            )?
+        } else {
+            read_versions(conn, "WHERE name = ?1", [name.as_str()])?
+        };
         state.claims.insert(
             name.clone(),
             Claim {
                 name,
                 kind,
                 standing,
-                versions: Vec::new(),
+                versions,
             },
         );
     }
-    let mut versions = conn.prepare(
-        "SELECT name, proposer, proposed_in, status, decided_by, decided_in, reason, \
-         repositories, imported, proposal FROM versions ORDER BY proposed_in",
-    )?;
+    Ok(())
+}
+
+fn read_versions<P: rusqlite::Params>(
+    conn: &Connection,
+    filter: &str,
+    params: P,
+) -> Result<Vec<Version>, Failure> {
+    let mut versions = conn.prepare_cached(&format!(
+        "SELECT proposer, proposed_in, status, decided_by, decided_in, reason, \
+         repositories, imported, proposal FROM versions {filter} ORDER BY proposed_in"
+    ))?;
     let rows = versions
-        .query_map([], |row| {
+        .query_map(params, |row| {
             Ok((
                 row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<i64>>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, String>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, String>(9)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<i64>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, String>(8)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    for (
-        name,
-        proposer,
-        proposed_in,
-        status,
-        decided_by,
-        decided_in,
-        reason,
-        repositories,
-        imported,
-        proposal,
-    ) in rows
-    {
-        let claim = state.claims.get_mut(&name).ok_or_else(|| {
-            Failure::not_run(format!(
-                "a view could not be read: a version of {name} has no claim"
-            ))
-        })?;
-        claim.versions.push(Version {
-            proposal: from_json::<Proposal>(&proposal)?,
-            repositories: from_json(&repositories)?,
-            proposer: from_json(&proposer)?,
-            proposed_in: u64::try_from(proposed_in).unwrap_or(0),
-            status: Status::from_name(&status).ok_or_else(|| {
-                Failure::not_run(format!("a view could not be read: no status {status}"))
-            })?,
-            decided_by,
-            decided_in: decided_in.and_then(|seq| u64::try_from(seq).ok()),
-            reason,
-            imported: imported.as_deref().map(from_json).transpose()?,
-        });
-    }
-    Ok(state)
+    VERSIONS_READ.with(|read| read.set(read.get() + rows.len() as u64));
+    rows.into_iter()
+        .map(
+            |(
+                proposer,
+                proposed_in,
+                status,
+                decided_by,
+                decided_in,
+                reason,
+                repositories,
+                imported,
+                proposal,
+            )| {
+                Ok(Version {
+                    proposal: from_json::<Proposal>(&proposal)?,
+                    repositories: from_json(&repositories)?,
+                    proposer: from_json(&proposer)?,
+                    proposed_in: u64::try_from(proposed_in).unwrap_or(0),
+                    status: Status::from_name(&status).ok_or_else(|| {
+                        Failure::not_run(format!("a view could not be read: no status {status}"))
+                    })?,
+                    decided_by,
+                    decided_in: decided_in.and_then(|seq| u64::try_from(seq).ok()),
+                    reason,
+                    imported: imported.as_deref().map(from_json).transpose()?,
+                })
+            },
+        )
+        .collect()
 }
 
 /// An entry of the log as `boom log` gives it: as stored, with its

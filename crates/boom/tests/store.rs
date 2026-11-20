@@ -45,8 +45,6 @@ fn no_store_yet_exits_3_and_makes_nothing() {
         "invariant",
         "money-has-currency",
         "Every amount names its currency.",
-        "--scenario",
-        support::SCENARIO,
         "--provenance",
         "run-1",
     ]);
@@ -251,8 +249,6 @@ fn agents_proposal_command(place: &Place, name: &str) -> std::process::Command {
             "invariant",
             name,
             "Every amount names its currency.",
-            "--scenario",
-            support::SCENARIO,
             "--provenance",
             name,
             "--store",
@@ -336,8 +332,6 @@ fn an_append_and_its_views_are_one_transaction() {
         "invariant",
         "money-has-currency",
         "Every amount names its currency.",
-        "--scenario",
-        support::SCENARIO,
         "--provenance",
         "run-1",
     ]);
@@ -379,5 +373,5 @@ fn views_of_an_older_form_are_built_again() {
         .sqlite()
         .query_row("SELECT form FROM views_head", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(form, 2);
+    assert_eq!(form, 3);
 }

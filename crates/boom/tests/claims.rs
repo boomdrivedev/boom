@@ -4,7 +4,7 @@
 mod support;
 
 use serde_json::json;
-use support::{Place, SCENARIO};
+use support::Place;
 
 const MONEY: &str = "Every amount names its currency.";
 
@@ -17,16 +17,14 @@ fn a_claim_proposed_waits_on_a_person() {
         "invariant",
         "refund-within-payment",
         "A refund never exceeds what the order was paid.",
-        "--scenario",
-        "Given an order paid 40.00, when a refund of 45.00 is asked, then it is refused.",
         "--provenance",
         "run-1",
     ]);
     assert_eq!(outcome.code, 0, "{outcome:?}");
     let shown = place.show("refund-within-payment");
-    assert_eq!(shown["format"], "boom-show/1");
+    assert_eq!(shown["format"], "boom-show/2");
     assert_eq!(shown["kind"], "invariant");
-    assert_eq!(shown["standing"], json!(null));
+    assert_eq!(shown["accepted"], json!(null));
     let versions = shown["versions"].as_array().unwrap();
     assert_eq!(versions.len(), 1);
     assert_eq!(versions[0]["status"], "proposed");
@@ -47,8 +45,6 @@ fn a_name_not_in_kebab_case_is_refused() {
             "invariant",
             "Refund_Within",
             MONEY,
-            "--scenario",
-            SCENARIO,
             "--provenance",
             "run-1",
         ],
@@ -57,20 +53,50 @@ fn a_name_not_in_kebab_case_is_refused() {
 }
 
 #[test]
-fn a_claim_with_no_scenario_is_refused() {
+fn an_invariant_needs_a_statement_alone() {
+    let place = Place::new();
+    place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    let shown = place.show(&format!("money-has-currency@{version}"));
+    assert_eq!(shown["statement"], MONEY);
+    assert_eq!(shown["scenarios"], json!([]));
+    assert_eq!(shown["body"], json!(null));
+    let signed: serde_json::Value =
+        serde_json::from_str(place.log()[1]["signed"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        signed["claim"].get("scenarios"),
+        None,
+        "a new entry writes no scenarios"
+    );
+}
+
+#[test]
+fn a_decision_with_no_body_is_refused() {
     let place = Place::new();
     place.made();
     place.refused(
         &[
             "propose",
-            "invariant",
-            "money-has-currency",
-            MONEY,
+            "decision",
+            "amounts-in-cents",
+            "Amounts are kept in integer cents.",
             "--provenance",
             "run-1",
         ],
-        "a claim needs a scenario",
+        "a decision needs a body",
     );
+    let body = place.decision_body();
+    let answer = place.json(&[
+        "propose",
+        "decision",
+        "amounts-in-cents",
+        "Amounts are kept in integer cents.",
+        "--body",
+        &body,
+        "--provenance",
+        "run-1",
+    ]);
+    assert_eq!(answer["status"], "proposed");
 }
 
 #[test]
@@ -83,8 +109,6 @@ fn a_statement_of_two_lines_is_refused() {
             "invariant",
             "money-has-currency",
             "Every amount names its currency.\nAnd only one.",
-            "--scenario",
-            SCENARIO,
             "--provenance",
             "run-1",
         ],
@@ -117,14 +141,15 @@ fn a_name_taken_by_another_kind_is_refused() {
     let place = Place::new();
     place.made();
     place.proposed("billing", "Every invoice is billed once.");
+    let body = place.decision_body();
     place.refused(
         &[
             "propose",
             "decision",
             "billing",
             "We bill monthly.",
-            "--scenario",
-            SCENARIO,
+            "--body",
+            &body,
             "--provenance",
             "run-1",
         ],
@@ -146,7 +171,7 @@ fn two_first_versions_wait_side_by_side() {
     assert!(versions
         .iter()
         .all(|version| version["status"] == "proposed"));
-    assert_eq!(shown["standing"], json!(null));
+    assert_eq!(shown["accepted"], json!(null));
 }
 
 #[test]
@@ -160,8 +185,6 @@ fn a_base_the_claim_does_not_have_is_refused() {
             "invariant",
             "money-has-currency",
             "Every amount names one currency.",
-            "--scenario",
-            SCENARIO,
             "--amends",
             "ffffffffffff",
             "--provenance",
@@ -194,10 +217,10 @@ fn a_version_shown_gives_its_body() {
     let answer = place.proposed_with_body("money-has-currency", MONEY, &body);
     let version = answer["version"].as_str().unwrap();
     let shown = place.show(&format!("money-has-currency@{version}"));
-    assert_eq!(shown["format"], "boom-show/1");
+    assert_eq!(shown["format"], "boom-show/2");
     assert_eq!(shown["version"], version);
     assert_eq!(shown["statement"], MONEY);
-    assert_eq!(shown["scenarios"], json!([SCENARIO]));
+    assert_eq!(shown["scenarios"], json!([]));
     assert_eq!(shown["status"], "proposed");
     assert_eq!(shown["body"], support::BODY);
 }
@@ -217,8 +240,6 @@ fn a_name_whose_claim_stands_is_refused() {
             "invariant",
             "money-has-currency",
             ONE,
-            "--scenario",
-            SCENARIO,
             "--provenance",
             "run-2",
         ],
@@ -237,8 +258,8 @@ fn an_amendment_names_its_base() {
     let shown = place.show(&format!("money-has-currency@{amendment}"));
     assert_eq!(shown["status"], "proposed");
     assert_eq!(shown["base"], first.as_str());
-    assert_eq!(place.status("money-has-currency", &first), "standing");
-    assert_eq!(place.show("money-has-currency")["standing"], first.as_str());
+    assert_eq!(place.status("money-has-currency", &first), "accepted");
+    assert_eq!(place.show("money-has-currency")["accepted"], first.as_str());
 }
 
 #[test]
@@ -274,9 +295,9 @@ fn the_same_words_on_the_new_base_stand() {
     let iso_on_one = place.amended("money-has-currency", ISO, &one);
     assert_ne!(iso_on_one, iso);
     place.accepted("money-has-currency", &iso_on_one, &ada);
-    assert_eq!(place.status("money-has-currency", &iso_on_one), "standing");
+    assert_eq!(place.status("money-has-currency", &iso_on_one), "accepted");
     assert_eq!(place.status("money-has-currency", &iso), "proposed");
-    assert_eq!(place.status("money-has-currency", &one), "replaced");
+    assert_eq!(place.status("money-has-currency", &one), "superseded");
 }
 
 #[test]
@@ -289,13 +310,13 @@ fn proposed_standing_replaced() {
     let amendment = place.amended("money-has-currency", ONE, &first);
     place.accepted("money-has-currency", &amendment, &ada);
     let shown = place.show("money-has-currency");
-    assert_eq!(shown["standing"], amendment.as_str());
+    assert_eq!(shown["accepted"], amendment.as_str());
     let versions = shown["versions"].as_array().unwrap();
     assert_eq!(versions[0]["version"], first.as_str());
-    assert_eq!(versions[0]["status"], "replaced");
+    assert_eq!(versions[0]["status"], "superseded");
     assert_eq!(versions[0]["accepted_by"], "ada");
     assert_eq!(versions[1]["version"], amendment.as_str());
-    assert_eq!(versions[1]["status"], "standing");
+    assert_eq!(versions[1]["status"], "accepted");
     assert_eq!(versions[1]["base"], first.as_str());
 }
 
@@ -307,7 +328,7 @@ fn a_rejected_version_gives_who_and_why() {
     let target = format!("money-has-currency@{version}");
     let reason = "An amount in a ledger of one currency names none.";
     let answer = place.json(&["reject", &target, "--reason", reason, "--key", &ada]);
-    assert_eq!(answer["format"], "boom-reject/1");
+    assert_eq!(answer["format"], "boom-reject/2");
     assert_eq!(answer["status"], "rejected");
     let again = place.json(&["reject", &target, "--reason", reason, "--key", &ada]);
     assert_eq!(again, answer);
@@ -318,7 +339,7 @@ fn a_rejected_version_gives_who_and_why() {
     assert_eq!(versions[0]["rejected_by"], "ada");
     assert_eq!(versions[0]["accepted_by"], json!(null));
     assert_eq!(versions[0]["reason"], reason);
-    assert_eq!(shown["standing"], json!(null));
+    assert_eq!(shown["accepted"], json!(null));
 }
 
 const AMOUNTS_AS_FLOATS: &str = "---
@@ -335,13 +356,13 @@ status: accepted
 ---
 
 # Amounts are kept in cents
-";
 
-const FLOATS_SCENARIO: &str = "Given an amount of 0.30, then it is kept as a float.";
+Every amount is an integer of cents.
+";
 
 /// Imports the shop's superseded `0002` with `0003`, drafting the
 /// scenarios given for `0002`, giving `amounts-as-floats`'s version.
-fn floats_imported(place: &Place, floats_scenarios: &[&str]) -> String {
+fn floats_imported(place: &Place) -> String {
     let dir = place.folder(
         "adr",
         &[
@@ -350,10 +371,10 @@ fn floats_imported(place: &Place, floats_scenarios: &[&str]) -> String {
         ],
     );
     let drafts = json!({
-        "format": "boom-import-drafts/1",
+        "format": "boom-import-drafts/2",
         "records": {
-            "0002-amounts-as-floats.md": {"scenarios": floats_scenarios},
-            "0003-amounts-in-cents.md": {"scenarios": ["Given an amount of 0.30, then it is kept as 30 cents."]},
+            "0002-amounts-as-floats.md": {},
+            "0003-amounts-in-cents.md": {},
         },
     });
     let drafts = place.file("drafts.json", &drafts.to_string());
@@ -381,7 +402,7 @@ fn floats_imported(place: &Place, floats_scenarios: &[&str]) -> String {
 fn history_with_no_scenario() {
     let place = Place::new();
     place.made();
-    let version = floats_imported(&place, &[]);
+    let version = floats_imported(&place);
     let shown = place.show(&format!("amounts-as-floats@{version}"));
     assert_eq!(shown["status"], "proposed");
     assert_eq!(shown["scenarios"], json!([]));
@@ -393,15 +414,13 @@ fn history_with_no_scenario() {
 fn the_same_words_as_history_are_another_version() {
     let place = Place::new();
     place.made();
-    let history = floats_imported(&place, &[FLOATS_SCENARIO]);
+    let history = floats_imported(&place);
     let body = place.file("floats.md", "Amounts are kept as floats.\n");
     let proposed = place.json(&[
         "propose",
         "decision",
         "amounts-as-floats",
         "Amounts are floats",
-        "--scenario",
-        FLOATS_SCENARIO,
         "--body",
         &body,
         "--provenance",
@@ -425,22 +444,22 @@ fn the_same_words_as_history_are_another_version() {
 }
 
 #[test]
-fn history_accepted_never_stands() {
+fn history_accepted_keeps_its_files_status() {
     let place = Place::new();
     let ada = place.made();
-    let version = floats_imported(&place, &[]);
+    let version = floats_imported(&place);
     let answer = place.accepted("amounts-as-floats", &version, &ada);
-    assert_eq!(answer["status"], "history");
+    assert_eq!(answer["status"], "superseded");
     let shown = place.show("amounts-as-floats");
-    assert_eq!(shown["standing"], json!(null));
+    assert_eq!(shown["accepted"], json!(null));
     let versions = shown["versions"].as_array().unwrap();
     assert_eq!(versions.len(), 1);
-    assert_eq!(versions[0]["status"], "history");
+    assert_eq!(versions[0]["status"], "superseded");
     assert_eq!(versions[0]["accepted_by"], "ada");
     let again = place.accepted("amounts-as-floats", &version, &ada);
     assert_eq!(again, answer);
     let first = place.proposed_decision("amounts-as-floats", "Amounts are floats again");
     place.accepted("amounts-as-floats", &first, &ada);
-    assert_eq!(place.status("amounts-as-floats", &first), "standing");
-    assert_eq!(place.status("amounts-as-floats", &version), "history");
+    assert_eq!(place.status("amounts-as-floats", &first), "accepted");
+    assert_eq!(place.status("amounts-as-floats", &version), "superseded");
 }

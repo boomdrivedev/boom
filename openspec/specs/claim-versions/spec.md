@@ -10,128 +10,146 @@ every version read from the log (record 0005, point 2; interview:
 
 ### Requirement: A claim and its name
 
-A claim SHALL be of one kind, `invariant`, `decision` or `assumption`, fixed with its name at its first proposal. Its name SHALL be kebab case, lowercase letters and digits in words joined by single hyphens. Each version SHALL hold a one-line statement, at least one scenario and an optional body; a version that comes in as history (record-import) MAY hold no scenario.
+A claim SHALL have one kind: `invariant`, `decision` or `assumption`. The first proposal SHALL fix the kind and the name. A name SHALL be kebab case: lowercase letters and digits, in words that single hyphens join. Each version SHALL have a statement of one line. A decision version SHALL also have a body. An invariant version and an assumption version MAY have a body. A new version SHALL have no scenarios. An old version SHALL keep the scenarios that its entry holds.
 
 #### Scenario: A claim proposed
 
-- **WHEN** `boom propose invariant refund-within-payment "A refund never exceeds what the order was paid." --scenario "Given an order paid 40.00, when a refund of 45.00 is asked, then it is refused." --provenance run-1` runs
-- **THEN** it exits 0, and `boom show refund-within-payment --json` gives an invariant with that one version, proposed
+- **WHEN** `boom propose invariant refund-within-payment "A refund never exceeds what the order was paid." --provenance run-1` runs
+- **THEN** boom exits 0, and `boom show refund-within-payment --json` gives an invariant with one proposed version
 
 #### Scenario: A name not in kebab case
 
-- **WHEN** a claim is proposed under the name `Refund_Within`
-- **THEN** it exits 2 saying a name is kebab case, and nothing is appended
+- **WHEN** an agent proposes a claim with the name `Refund_Within`
+- **THEN** boom exits 2 and says that a name is kebab case, and boom appends nothing
 
 #### Scenario: No scenario
 
-- **WHEN** a claim is proposed with no `--scenario`
-- **THEN** it exits 2 saying a claim needs a scenario, and nothing is appended
+- **WHEN** an agent proposes an invariant with a statement and no other field
+- **THEN** boom exits 0, and the proposal's entry holds no scenarios
 
 #### Scenario: A statement of two lines
 
-- **WHEN** a claim is proposed with a statement holding a line break
-- **THEN** it exits 2 saying a statement is one line, and nothing is appended
+- **WHEN** an agent proposes a claim whose statement holds a line break
+- **THEN** boom exits 2 and says that a statement is one line, and boom appends nothing
 
 #### Scenario: History with no scenario
 
-- **WHEN** a superseded decision is imported with no scenario drafted for it
-- **THEN** its version is proposed with no scenario, as history
+- **WHEN** an import proposes a superseded decision
+- **THEN** boom proposes its version as history, with no scenarios
+
+#### Scenario: A decision with no body
+
+- **WHEN** an agent proposes a decision with no `--body`
+- **THEN** boom exits 2 and says that a decision needs a body, and boom appends nothing
+
+#### Scenario: An old version with scenarios
+
+- **WHEN** another program appends an old proposal entry that holds a scenario, chained correctly
+- **THEN** the entry counts, and `boom show` gives the version with its scenario
 
 ### Requirement: A version is the fingerprint of its content
 
-A version SHALL be named by the first 12 hexadecimal characters of the SHA-256 of its content: its kind, name, statement, scenarios, body's fingerprint and the version it amends, and, for a version that comes in as history, its history. The same content proposed again SHALL be the same version and add nothing.
+Boom SHALL name a version by the first 12 hexadecimal characters of the SHA-256 of its content. The content SHALL be the kind, the name, the statement, the scenarios, the body's fingerprint and the version that it amends. For a version that comes in as history, the content SHALL also include its history. When a proposal gives the same content again, boom SHALL give the same version and append nothing.
 
 #### Scenario: The same proposal twice
 
-- **WHEN** one claim is proposed twice with the same words, scenarios and body
+- **WHEN** an agent proposes one claim twice, with the same words and body
 - **THEN** both runs give the same version, and the log holds one `proposed` entry for it
 
 #### Scenario: One word changed
 
-- **WHEN** a version is proposed again with one word of its statement changed
-- **THEN** it is a second version, under another fingerprint
+- **WHEN** an agent proposes a version again with one word of its statement changed
+- **THEN** boom gives a second version, with a different fingerprint
 
 #### Scenario: The same words as history
 
-- **WHEN** a superseded decision is imported with a drafted scenario, and `boom propose` proposes its kind, name, statement, scenario and body with no history
-- **THEN** the two are two versions, under two fingerprints
+- **WHEN** an import proposes a superseded decision, and `boom propose` proposes its kind, name, statement and body with no history
+- **THEN** boom gives two versions, with two fingerprints
 
 ### Requirement: One name space
 
-No two claims of a store SHALL share a name. A first version under a name a claim of another kind holds SHALL be refused naming that claim; one under a name whose claim has a standing version SHALL be refused naming that version, to be amended. Several first versions MAY wait side by side while none stands.
+Two claims of a store SHALL NOT have the same name. Boom SHALL refuse a first version whose name a claim of another kind has, and SHALL name that claim. Boom SHALL refuse a first version whose claim has an accepted version, and SHALL name that version, to be amended. Several first versions MAY wait together while no version of the claim is accepted.
 
 #### Scenario: A name taken by another kind
 
-- **WHEN** a decision `billing` is proposed where an invariant `billing` exists
-- **THEN** it exits 2 naming the invariant `billing`, and nothing is appended
+- **WHEN** an agent proposes a decision `billing` while an invariant `billing` exists
+- **THEN** boom exits 2 and names the invariant `billing`, and boom appends nothing
 
 #### Scenario: A name whose claim stands
 
-- **WHEN** a first version of `money-has-currency` is proposed while a version of it stands
-- **THEN** it exits 2 naming the standing version and saying to amend it, and nothing is appended
+- **WHEN** an agent proposes a first version of `money-has-currency` while a version of it is accepted
+- **THEN** boom exits 2, names the accepted version and says to amend it, and boom appends nothing
 
 #### Scenario: Two first versions waiting
 
-- **WHEN** two first versions of one invariant, with different statements, are proposed while none stands
-- **THEN** both are appended and both wait on a person
+- **WHEN** an agent proposes two first versions of one invariant, with different statements, while no version is accepted
+- **THEN** boom appends both, and both wait for a person
 
 ### Requirement: An amendment names the version it amends
 
-A version proposed with `--amends <version>` SHALL name a version of the same claim as its base, and one naming a version the claim does not have SHALL be refused naming the claim. An amendment SHALL keep its claim's kind.
+A version that `--amends <version>` proposes SHALL name a version of the same claim as its base. Boom SHALL refuse an amendment whose base the claim does not have, and SHALL name the claim. An amendment SHALL keep the kind of its claim.
 
 #### Scenario: An amendment proposed
 
-- **WHEN** `boom propose invariant money-has-currency "<new words>" --scenario "<text>" --amends <standing version> --provenance run-2` runs
-- **THEN** the new version is proposed with that version as its base, and the standing version still stands
+- **WHEN** `boom propose invariant money-has-currency "<new words>" --amends <accepted version> --provenance run-2` runs
+- **THEN** boom proposes the new version with that version as its base, and the accepted version stays accepted
 
 #### Scenario: A base the claim does not have
 
-- **WHEN** an amendment names a version no version of its claim has
-- **THEN** it exits 2 naming the claim and the version it lacks, and nothing is appended
+- **WHEN** an amendment names a version that its claim does not have
+- **THEN** boom exits 2 and names the claim and the version it does not have, and boom appends nothing
 
 ### Requirement: An accept stands only on its base
 
-Accepting a version SHALL be refused, naming the standing version and recording nothing, unless the version it amends is the one that stands, or, for a first version, no version of the claim stands. boom SHALL never merge two amendments into one text.
+Boom SHALL refuse to accept a version unless its base is the accepted version of its claim. For a first version, boom SHALL refuse unless the claim has no accepted version. A refusal SHALL name the accepted version and record nothing. Boom SHALL NOT merge two amendments into one text.
 
 #### Scenario: Two amendments of one base
 
-- **WHEN** two amendments of the standing version are proposed and a person accepts the first
-- **THEN** accepting the second exits 2 naming the first as the standing version, and the second stays proposed
+- **WHEN** an agent proposes two amendments of the accepted version, and a person accepts the first
+- **THEN** an accept of the second exits 2 and names the first as the accepted version, and the second stays proposed
 
 #### Scenario: The same words on the new base
 
-- **WHEN** the second amendment's words are proposed again amending the new standing version, and a person accepts it
-- **THEN** it stands as a new version, and the second amendment stays proposed
+- **WHEN** an agent proposes the words of the second amendment again, as an amendment of the new accepted version, and a person accepts it
+- **THEN** the new version is accepted, and the second amendment stays proposed
 
 ### Requirement: Each version's status is read from the log
 
-A version's status SHALL be computed from the log: `proposed` until a counted accept or reject; `standing` once accepted while no later-accepted version of its claim exists; `replaced` once a later version of its claim is accepted; `rejected` once rejected; and `history` once accepted where it came in as history, which never stands or replaces. A version SHALL keep its status's history in the log and never lose an entry.
+Boom SHALL compute the status of a version from the log. The status SHALL be one of these:
+
+- `proposed`, until a counted accept or reject.
+- `accepted`, after an accept, while no later version of its claim is accepted.
+- `superseded`, after a later version of its claim is accepted.
+- `rejected`, after a person rejects it.
+- For an accepted version that came in as history, the status of its file.
+
+No act makes a version `deprecated` yet. The log SHALL keep each entry.
 
 #### Scenario: Proposed, standing, replaced
 
-- **WHEN** a version is accepted, then an amendment of it is proposed and accepted
-- **THEN** `boom show <name> --json` gives the first version as replaced, the amendment as standing, and the claim's standing version as the amendment
+- **WHEN** a person accepts a version, then an agent proposes an amendment of it, and a person accepts the amendment
+- **THEN** `boom show <name> --json` gives the first version as `superseded`, the amendment as `accepted`, and the amendment as the accepted version of the claim
 
 #### Scenario: Rejected
 
-- **WHEN** a proposed version is rejected with a reason
-- **THEN** `boom show <name> --json` gives it as rejected, with the person who rejected it and the reason
+- **WHEN** a person rejects a proposed version, with a reason
+- **THEN** `boom show <name> --json` gives it as `rejected`, with the person who rejected it and the reason
 
 #### Scenario: History accepted
 
-- **WHEN** a person accepts a version that came in as history
-- **THEN** `boom show <name> --json` gives that version as history and the claim with no standing version
+- **WHEN** a person accepts a version that came in as history from a file whose status is superseded
+- **THEN** `boom show <name> --json` gives that version as `superseded`, and gives the claim no accepted version
 
 ### Requirement: A claim shown by its name
 
-`boom show <name>` SHALL give the claim's kind, its standing version or none, and each of its versions in the order proposed with its status, base, proposer and the person who accepted or rejected it. `boom show <name>@<version>` SHALL give that version's statement, scenarios and body. An unknown name or version SHALL be refused.
+`boom show <name>` SHALL give the kind of the claim and its accepted version, or none. It SHALL give each version in the order proposed, with its status, base and proposer, and the person who accepted or rejected it. `boom show <name>@<version>` SHALL give the statement, the scenarios and the body of that version. Boom SHALL refuse an unknown name or version. The JSON answer SHALL have the format `boom-show/2`.
 
 #### Scenario: A version shown
 
 - **WHEN** `boom show money-has-currency@<version> --json` runs for a version proposed with a body
-- **THEN** it gives the version's statement, scenarios, status and body
+- **THEN** it gives `boom-show/2` with the statement, the scenarios, the status and the body of the version
 
 #### Scenario: An unknown name
 
 - **WHEN** `boom show no-such-claim` runs
-- **THEN** it exits 2 saying no claim has that name
+- **THEN** boom exits 2 and says that no claim has that name

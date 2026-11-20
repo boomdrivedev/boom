@@ -100,8 +100,6 @@ fn an_agents_proposal_names_its_provenance() {
         "invariant",
         "money-has-currency",
         "Every amount names its currency.",
-        "--scenario",
-        support::SCENARIO,
         "--provenance",
         "flume:place-7",
     ]);
@@ -127,8 +125,6 @@ fn an_agents_proposal_with_no_provenance_is_refused() {
             "invariant",
             "money-has-currency",
             "Every amount names its currency.",
-            "--scenario",
-            support::SCENARIO,
         ],
         "an agent's proposal names its provenance",
     );
@@ -244,10 +240,10 @@ fn a_person_accepts_an_agents_proposal() {
     let ada = place.made();
     let version = place.proposed("money-has-currency", MONEY);
     let answer = place.accepted("money-has-currency", &version, &ada);
-    assert_eq!(answer["format"], "boom-accept/1");
-    assert_eq!(answer["status"], "standing");
+    assert_eq!(answer["format"], "boom-accept/2");
+    assert_eq!(answer["status"], "accepted");
     assert_eq!(answer["by"], "ada");
-    assert_eq!(place.status("money-has-currency", &version), "standing");
+    assert_eq!(place.status("money-has-currency", &version), "accepted");
     let accepted = place.log().pop().unwrap();
     assert_eq!(accepted["act"], "accepted");
     assert_eq!(accepted["actor"], serde_json::json!({"person": "ada"}));
@@ -262,8 +258,6 @@ fn no_one_accepts_their_own_proposal() {
         "invariant",
         "money-has-currency",
         MONEY,
-        "--scenario",
-        support::SCENARIO,
         "--key",
         &ada,
     ]);
@@ -294,14 +288,12 @@ fn another_person_accepts_it() {
         "invariant",
         "money-has-currency",
         MONEY,
-        "--scenario",
-        support::SCENARIO,
         "--key",
         &ada,
     ]);
     let version = proposed["version"].as_str().unwrap();
     let answer = place.accepted("money-has-currency", version, &bo);
-    assert_eq!(answer["status"], "standing");
+    assert_eq!(answer["status"], "accepted");
     assert_eq!(answer["by"], "bo");
     let accepted = place.log().pop().unwrap();
     assert_eq!(accepted["act"], "accepted");
@@ -377,7 +369,7 @@ fn three_accepted_together() {
     args.extend(targets.iter().map(String::as_str));
     args.extend(["--key", &ada]);
     let answer = place.json(&args);
-    assert_eq!(answer["format"], "boom-accept/1");
+    assert_eq!(answer["format"], "boom-accept/2");
     let accepted = answer["accepted"].as_array().unwrap();
     assert_eq!(accepted.len(), 3);
     let ada_public = place.keys.public_key(std::path::Path::new(&ada));
@@ -387,10 +379,10 @@ fn three_accepted_together() {
         let (name, version) = target.split_once('@').unwrap();
         assert_eq!(listed["claim"], name);
         assert_eq!(listed["version"], version);
-        assert_eq!(listed["status"], "standing");
+        assert_eq!(listed["status"], "accepted");
         assert_eq!(listed["by"], "ada");
         assert_eq!(listed["entry"], entry["number"]);
-        assert_eq!(place.status(name, version), "standing");
+        assert_eq!(place.status(name, version), "accepted");
         assert_eq!(entry["act"], "accepted");
         assert_eq!(entry["actor"], serde_json::json!({"person": "ada"}));
         assert_eq!(entry["counted"], true);
@@ -415,8 +407,6 @@ fn one_of_them_refused_signs_and_appends_nothing() {
         "assumption",
         "invoices-are-monthly",
         "Invoices are sent monthly.",
-        "--scenario",
-        support::SCENARIO,
         "--key",
         &ada,
     ]);

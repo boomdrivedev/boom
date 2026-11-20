@@ -78,7 +78,9 @@ pub struct Proposal {
     pub base: Option<String>,
     /// The claim in one line.
     pub statement: String,
-    /// Its scenarios, one at least.
+    /// Its scenarios: a version in the old form has one at least; a
+    /// version in the new form has none, and its entry writes none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scenarios: Vec<String>,
     /// The fingerprint of its body, where it has one.
     pub body: Option<String>,
@@ -145,14 +147,17 @@ impl Proposal {
         crate::sha256_hex(content.as_bytes())[..12].to_owned()
     }
 
-    /// The rules of a version's form: its name, its statement, its
-    /// scenarios, its history, and its version the fingerprint of its
-    /// content. A version with a history may hold no scenario, has no
+    /// The rules of a version's form: its name, its statement, what its
+    /// kind needs, its history, and its version the fingerprint of its
+    /// content. A version with scenarios is in the old form, valid as it
+    /// was written, none of them empty. A version with none is in the new
+    /// form: a decision needs a body. A version with a history has no
     /// base, and names as its successor another claim (design 6).
     pub fn check(&self) -> Result<(), String> {
         check_name(&self.name)?;
         check_statement(&self.statement)?;
         match &self.history {
+            None if self.scenarios.is_empty() => check_kind(self.kind, self.body.as_deref())?,
             None => check_scenarios(&self.scenarios)?,
             Some(history) => check_history(self, history)?,
         }
@@ -181,7 +186,7 @@ fn check_history(proposal: &Proposal, history: &History) -> Result<(), String> {
         .iter()
         .any(|scenario| scenario.trim().is_empty())
     {
-        return Err("a claim needs a scenario: one given is empty".to_owned());
+        return Err("a scenario of an old version is empty".to_owned());
     }
     if let Some(by) = &history.by {
         check_name(by).map_err(|why| format!("its successor: {why}"))?;
@@ -224,12 +229,23 @@ pub fn check_statement(statement: &str) -> Result<(), String> {
     }
 }
 
-/// A claim needs a scenario, and no scenario is empty.
+/// What a version in the new form needs for its kind: every kind a
+/// statement; a decision a body too, its context, options, outcome and
+/// consequences. An invariant's body and an assumption's are optional.
+pub fn check_kind(kind: Kind, body: Option<&str>) -> Result<(), String> {
+    match (kind, body) {
+        (Kind::Decision, None) => Err(
+            "a decision needs a body: its context, options, outcome and consequences, with --body"
+                .to_owned(),
+        ),
+        _ => Ok(()),
+    }
+}
+
+/// An old version's scenarios: none of them is empty.
 pub fn check_scenarios(scenarios: &[String]) -> Result<(), String> {
-    if scenarios.is_empty() {
-        Err("a claim needs a scenario: give one with --scenario".to_owned())
-    } else if scenarios.iter().any(|scenario| scenario.trim().is_empty()) {
-        Err("a claim needs a scenario: one given is empty".to_owned())
+    if scenarios.iter().any(|scenario| scenario.trim().is_empty()) {
+        Err("a scenario of an old version is empty".to_owned())
     } else {
         Ok(())
     }
@@ -304,14 +320,34 @@ mod tests {
     }
 
     #[test]
-    fn a_claim_needs_a_scenario() {
-        let refused = check_scenarios(&[]).unwrap_err();
-        assert!(refused.starts_with("a claim needs a scenario"), "{refused}");
+    fn a_new_version_needs_what_its_kind_needs() {
+        // A new version has no scenarios: an invariant needs a statement.
+        let invariant = Proposal::new(
+            Kind::Invariant,
+            "money-has-currency",
+            "Every amount names its currency.",
+            Vec::new(),
+            None,
+            None,
+            None,
+        );
+        assert_eq!(invariant.check(), Ok(()));
+        let written = serde_json::to_string(&invariant).unwrap();
+        assert!(!written.contains("scenarios"), "{written}");
+        // A decision needs a body too.
+        let refused = floats(Vec::new(), None).check().unwrap_err();
+        assert!(refused.starts_with("a decision needs a body"), "{refused}");
+        let mut with_body = floats(Vec::new(), None);
+        with_body.body = Some("a".repeat(64));
+        with_body.version = with_body.fingerprint();
+        assert_eq!(with_body.check(), Ok(()));
+        // An old version keeps its scenarios, none of them empty.
         assert!(check_scenarios(&[String::new()]).is_err());
         assert_eq!(check_scenarios(&["Given x, then y.".to_owned()]), Ok(()));
-        let mut proposal = money("Every amount names its currency.", None);
-        proposal.scenarios.clear();
-        assert!(proposal.check().is_err());
+        assert_eq!(
+            floats(vec!["Given x, then y.".to_owned()], None).check(),
+            Ok(())
+        );
     }
 
     #[test]
@@ -394,11 +430,11 @@ mod tests {
             }),
         );
         assert_eq!(rejected.check(), Ok(()));
-        let standing = floats(Vec::new(), None);
-        assert!(standing
+        let accepted = floats(Vec::new(), None);
+        assert!(accepted
             .check()
             .unwrap_err()
-            .starts_with("a claim needs a scenario"));
+            .starts_with("a decision needs a body"));
         let empty = floats(vec![" ".to_owned()], Some(superseded(None)));
         assert!(empty.check().is_err());
         for by in ["Amounts_In_Cents", "amounts-as-floats"] {

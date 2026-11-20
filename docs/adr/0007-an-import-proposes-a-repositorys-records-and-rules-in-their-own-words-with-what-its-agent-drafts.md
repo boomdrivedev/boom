@@ -126,3 +126,25 @@ change, on the design's decisions 2 to 7:
   bullet and the lines under it, `- **core.1** ...` among it. Not
   taken: the words after the id alone, which drop the bullet the file
   wrote.
+
+## Amendment of 2026-11-20 (proposed)
+
+Status: proposed, for the user to accept. The change
+`claims-hold-what-their-kind-needs` makes it. The user approved the
+claim model on 2026-11-20.
+
+This amendment changes what an agent drafts and what an import
+proposes.
+
+1. An agent drafts names only. A drafts file has the format
+   `boom-import-drafts/2`. A draft gives a record a name. A draft gives
+   no scenarios.
+2. An imported version has no scenarios.
+3. An imported decision needs a body. The body is the text of its file
+   after the title. An import refuses a decision file that has a title
+   and no other text.
+4. A record that comes in as history keeps its file's status. That
+   status is `superseded`, `deprecated` or `rejected`. The status
+   `history` is not used.
+
+An entry from an earlier import keeps its scenarios. Boom shows them.

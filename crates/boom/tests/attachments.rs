@@ -6,7 +6,7 @@
 mod support;
 
 use serde_json::json;
-use support::{Place, SCENARIO};
+use support::Place;
 
 const MONEY: &str = "Every amount names its currency.";
 
@@ -17,8 +17,6 @@ fn money<'a>(extra: &[&'a str]) -> Vec<&'a str> {
         "invariant",
         "money-has-currency",
         MONEY,
-        "--scenario",
-        SCENARIO,
         "--provenance",
         "run-1",
     ];
@@ -88,8 +86,6 @@ fn bound_to_the_whole_system() {
             "invariant",
             "refund-within-payment",
             "A refund never exceeds the payment.",
-            "--scenario",
-            SCENARIO,
             "--provenance",
             provenance,
         ]
@@ -149,7 +145,7 @@ fn a_repository_named_twice_by_hand_counts_for_nothing() {
                 boom::claim::Kind::Invariant,
                 "money-has-currency",
                 MONEY,
-                vec![SCENARIO.to_owned()],
+                Vec::new(),
                 None,
                 None,
                 None,
@@ -193,7 +189,7 @@ fn one_fingerprint_wherever_it_binds() {
         boom::claim::Kind::Invariant,
         "money-has-currency",
         MONEY,
-        vec![SCENARIO.to_owned()],
+        Vec::new(),
         None,
         None,
         None,
@@ -241,7 +237,7 @@ fn the_same_words_for_another_repository_are_refused() {
                 boom::claim::Kind::Invariant,
                 "money-has-currency",
                 MONEY,
-                vec![SCENARIO.to_owned()],
+                Vec::new(),
                 None,
                 None,
                 None,
@@ -282,8 +278,6 @@ fn amending<'a>(base: &'a str, extra: &[&'a str]) -> Vec<&'a str> {
         "invariant",
         "money-has-currency",
         "Every amount names exactly one currency.",
-        "--scenario",
-        SCENARIO,
         "--amends",
         base,
         "--provenance",

@@ -9,7 +9,7 @@ mod support;
 use boom::claim::{Kind, Proposal};
 use boom::entry::{Act, Actor, Attach, Entry};
 use boom::store::{self, Append, Store};
-use support::{Place, SCENARIO};
+use support::Place;
 
 const MONEY: &str = "Every amount names its currency.";
 
@@ -32,7 +32,7 @@ fn proposals_for_other(place: &Place, from: usize, count: usize) {
                             Kind::Invariant,
                             &format!("other-claim-{at}"),
                             &format!("Other claim number {at} holds."),
-                            vec![SCENARIO.to_owned()],
+                            Vec::new(),
                             None,
                             None,
                             None,
@@ -73,8 +73,6 @@ fn store_of(other: usize) -> Place {
             "invariant",
             name,
             statement,
-            "--scenario",
-            SCENARIO,
             "--repository",
             "shop",
             "--provenance",
@@ -110,7 +108,7 @@ fn three_by_hand(place: &Place, from: usize) {
                     Kind::Invariant,
                     &format!("by-hand-{at}"),
                     "A claim another program proposed.",
-                    vec![SCENARIO.to_owned()],
+                    Vec::new(),
                     None,
                     None,
                     None,
@@ -166,8 +164,6 @@ fn a_command_does_not_grow_with_the_log() {
         "invariant",
         "orders-are-paid-once",
         "An order is paid once.",
-        "--scenario",
-        SCENARIO,
         "--repository",
         "shop",
         "--provenance",
@@ -265,8 +261,6 @@ fn the_views_and_a_full_replay_agree() {
                     "invariant",
                     &name,
                     "A claim the mix proposed.",
-                    "--scenario",
-                    SCENARIO,
                     "--provenance",
                     "the-mix",
                 ];
@@ -337,4 +331,72 @@ fn the_views_and_a_full_replay_agree() {
     }
     let verified = place.json(&["verify"]);
     assert_eq!(verified["rebuilt"], serde_json::json!([]));
+}
+
+/// A claim with `versions` versions, each amending the one before and
+/// accepted by `key`, bound to `repository`.
+fn amended_times(place: &Place, key: &str, name: &str, repository: &str, versions: usize) {
+    let first = place.json(&[
+        "propose",
+        "invariant",
+        name,
+        "Version 0 of the claim.",
+        "--repository",
+        repository,
+        "--provenance",
+        "run-1",
+    ]);
+    let mut accepted = first["version"].as_str().unwrap().to_owned();
+    place.accepted(name, &accepted, key);
+    for at in 1..versions {
+        let statement = format!("Version {at} of the claim.");
+        accepted = place.amended(name, &statement, &accepted);
+        place.accepted(name, &accepted, key);
+    }
+}
+
+/// The versions of the views one command reads, and its outcome.
+fn versions_read(place: &Place, args: &[&str]) -> (u64, boom::cli::Outcome) {
+    let before = store::versions_read();
+    let outcome = place.run(args);
+    (store::versions_read() - before, outcome)
+}
+
+#[test]
+fn a_command_reads_only_the_versions_it_needs() {
+    let place = Place::new();
+    let ada = place.made();
+    amended_times(&place, &ada, "money-has-currency", "shop", 20);
+    amended_times(&place, &ada, "refunds-name-their-order", "ledger", 20);
+    // A query reads the accepted version of each claim, and no other.
+    let (read, outcome) = versions_read(&place, &["query", "--repository", "shop", "--json"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(read, 2, "one accepted version of each of the two claims");
+    let (read, outcome) = versions_read(&place, &["search", "claim", "--all", "--json"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(read, 2);
+    // A write reads the versions of the claim it names, twice: once to
+    // judge before it signs, and once in the write's transaction.
+    let accepted = place.show("money-has-currency")["accepted"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (read, outcome) = versions_read(
+        &place,
+        &[
+            "propose",
+            "invariant",
+            "money-has-currency",
+            "Version 20 of the claim.",
+            "--amends",
+            &accepted,
+            "--provenance",
+            "run-2",
+        ],
+    );
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(
+        read, 40,
+        "the 20 versions of the claim it names, read twice"
+    );
 }
