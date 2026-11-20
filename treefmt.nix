@@ -39,6 +39,9 @@ in
     "site/**/*.astro"
     # Empty markers that keep OpenSpec's empty directories in the tree.
     "**/.gitkeep"
+    # OpenSpec's marker of the harness its skills were written for, one
+    # word written by `openspec init`, which only OpenSpec reads.
+    ".agents/skills/.openspec-target"
     # Build outputs and caches.
     "target/**"
     ".devenv/**"
