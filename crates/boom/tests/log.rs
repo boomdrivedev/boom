@@ -110,7 +110,7 @@ fn each_entry_gives_its_hash_and_the_one_before() {
 }
 
 #[test]
-fn an_entrys_words_changed_is_found() {
+fn an_entrys_words_changed_is_found_by_verify() {
     let place = Place::new();
     place.three_entries();
     let changed = place
@@ -122,7 +122,10 @@ fn an_entrys_words_changed_is_found() {
         .unwrap();
     assert_eq!(changed, 1);
     let rows = place.rows();
-    let outcome = place.run(&["show", "money-has-currency"]);
+    // A command reads the views' head and what follows it, not entry 2.
+    let shown = place.run(&["show", "money-has-currency"]);
+    assert_eq!(shown.code, 0, "{shown:?}");
+    let outcome = place.run(&["verify"]);
     assert_eq!(outcome.code, 3, "{outcome:?}");
     assert!(
         outcome.stderr.contains("is altered: entry 2 "),
@@ -133,7 +136,66 @@ fn an_entrys_words_changed_is_found() {
 }
 
 #[test]
-fn an_entry_removed_is_found() {
+fn the_head_entrys_words_changed_is_found_by_every_command() {
+    let place = Place::new();
+    place.three_entries();
+    let changed = place
+        .sqlite()
+        .execute(
+            "UPDATE log SET signed = replace(signed, 'the payment', 'any payment') WHERE seq = 3",
+            [],
+        )
+        .unwrap();
+    assert_eq!(changed, 1);
+    let rows = place.rows();
+    let outcome = place.run(&["show", "money-has-currency"]);
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    assert!(
+        outcome.stderr.contains("is altered: entry 3 "),
+        "{outcome:?}"
+    );
+    assert!(outcome.stdout.is_empty(), "{outcome:?}");
+    assert_eq!(place.rows(), rows);
+}
+
+#[test]
+fn an_entry_appended_by_hand_that_does_not_follow_is_found() {
+    let place = Place::new();
+    place.three_entries();
+    let conn = place.sqlite();
+    let signed: String = conn
+        .query_row("SELECT signed FROM log WHERE seq = 3", [], |row| row.get(0))
+        .unwrap();
+    let signed = signed.replace("refund-within-payment", "refund-within-order");
+    let prev = boom::entry::GENESIS;
+    conn.execute(
+        "INSERT INTO log (seq, prev, hash, signed, signature) VALUES (4, ?1, ?2, ?3, NULL)",
+        rusqlite::params![prev, boom::entry::hash(prev, &signed, None), signed],
+    )
+    .unwrap();
+    let head: i64 = conn
+        .query_row("SELECT seq FROM views_head", [], |row| row.get(0))
+        .unwrap();
+    drop(conn);
+    let outcome = place.run(&["query", "--repository", "shop"]);
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    assert!(
+        outcome.stderr.contains("is altered: entry 4 "),
+        "{outcome:?}"
+    );
+    assert!(
+        outcome.stderr.contains("previous hash does not match"),
+        "{outcome:?}"
+    );
+    let after: i64 = place
+        .sqlite()
+        .query_row("SELECT seq FROM views_head", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(after, head, "the views are as they were");
+}
+
+#[test]
+fn an_entry_removed_is_found_by_verify() {
     let place = Place::new();
     place.three_entries();
     let removed = place
@@ -142,16 +204,7 @@ fn an_entry_removed_is_found() {
         .unwrap();
     assert_eq!(removed, 1);
     let rows = place.rows();
-    let outcome = place.run(&[
-        "propose",
-        "assumption",
-        "orders-are-paid-once",
-        "An order is paid once.",
-        "--scenario",
-        support::SCENARIO,
-        "--provenance",
-        "run-3",
-    ]);
+    let outcome = place.run(&["verify"]);
     assert_eq!(outcome.code, 3, "{outcome:?}");
     assert!(
         outcome.stderr.contains("is altered: entry 3 "),
@@ -162,6 +215,25 @@ fn an_entry_removed_is_found() {
         "{outcome:?}"
     );
     assert_eq!(place.rows(), rows);
+}
+
+#[test]
+fn boom_log_checks_the_whole_chain() {
+    let place = Place::new();
+    place.three_entries();
+    place
+        .sqlite()
+        .execute(
+            "UPDATE log SET signed = replace(signed, 'its currency', 'any currency') WHERE seq = 2",
+            [],
+        )
+        .unwrap();
+    let outcome = place.run(&["log"]);
+    assert_eq!(outcome.code, 3, "{outcome:?}");
+    assert!(
+        outcome.stderr.contains("is altered: entry 2 "),
+        "{outcome:?}"
+    );
 }
 
 #[test]

@@ -187,7 +187,8 @@ fn not_run_answered_as_json() {
             [],
         )
         .unwrap();
-    let outcome = place.run(&["show", "money-has-currency", "--json"]);
+    // An older entry changed is found by boom verify (record-log).
+    let outcome = place.run(&["verify", "--json"]);
     assert_eq!(outcome.code, 3, "{outcome:?}");
     assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
     let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();

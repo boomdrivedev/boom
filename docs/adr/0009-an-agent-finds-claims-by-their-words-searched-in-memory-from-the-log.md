@@ -129,3 +129,23 @@ For the command:
 - Neutral: a search replays the whole log and reads each body in scope,
   linear in both, which a kept index can later shorten without changing
   an answer.
+
+## Amendment of 2026-11-20 (proposed)
+
+Status: proposed, for the user to accept. The change
+`boom-keeps-its-views-in-step` makes it.
+
+This amendment changes point 1 and the last consequence.
+
+`boom search` no longer replays the whole log for each search. It reads
+the standing claims from the views. The views are tables that boom keeps
+in step with the log, as record 0008's amendment says.
+
+`boom search` still builds its full-text table in memory for each
+search. It keeps no index.
+
+A search reads the log's last entry and no older entry. Its cost grows
+with the claims in scope. It does not grow with the log.
+
+A view that another program edits changes what `boom search` finds,
+until `boom verify` runs. The user accepted this on 2026-11-20.

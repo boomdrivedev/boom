@@ -535,7 +535,7 @@ fn an_amendment_waiting_gives_the_standing_words() {
 }
 
 #[test]
-fn a_statement_edited_in_the_views_changes_nothing() {
+fn a_statement_edited_in_the_views_is_built_again_by_verify() {
     let place = Place::new();
     let (_, version) = money_in_shop(&place);
     let edited = place
@@ -552,6 +552,8 @@ fn a_statement_edited_in_the_views_changes_nothing() {
         "Every amount is forged.",
         "the views were edited and left as fresh"
     );
+    let verified = place.json(&["verify"]);
+    assert_eq!(verified["rebuilt"], json!(["versions"]));
     assert_eq!(search(&place, &["forged"])["claims"], json!([]));
     let answer = search(&place, &["currency"]);
     assert_eq!(names(&answer), ["money-has-currency"]);

@@ -345,3 +345,39 @@ fn an_append_and_its_views_are_one_transaction() {
     assert!(outcome.stderr.contains("versions refused"), "{outcome:?}");
     assert_eq!(place.rows(), rows);
 }
+
+#[test]
+fn views_of_an_older_form_are_built_again() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.proposed("money-has-currency", "Every amount names its currency.");
+    place.accepted("money-has-currency", &version, &ada);
+    let args = ["show", "money-has-currency", "--json"];
+    let before = place.run(&args);
+    // Views as boom wrote them before they held a form: a head with no
+    // `form`.
+    let conn = place.sqlite();
+    let (seq, hash): (i64, String) = conn
+        .query_row("SELECT seq, hash FROM views_head", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap();
+    conn.execute_batch(
+        "DROP TABLE views_head; CREATE TABLE views_head (seq INTEGER NOT NULL, hash TEXT NOT NULL);",
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO views_head (seq, hash) VALUES (?1, ?2)",
+        rusqlite::params![seq, hash],
+    )
+    .unwrap();
+    drop(conn);
+    let after = place.run(&args);
+    assert_eq!(after.code, 0, "{after:?}");
+    assert_eq!(after.stdout, before.stdout);
+    let form: i64 = place
+        .sqlite()
+        .query_row("SELECT form FROM views_head", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(form, 2);
+}

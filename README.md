@@ -37,6 +37,12 @@ claims that hold.
   is proposed, standing, replaced, rejected or history from the log. It judges
   each entry it reads as it judges a write, so an entry written by hand
   that breaks a rule counts for nothing.
+- **Views kept in step with the log.** Each write updates the views in
+  the same transaction. A command checks the log's last entry against
+  the views, applies any entries after them, and answers from the
+  views. It reads no older entry, so it does not slow down as the log
+  grows. `boom verify` checks the whole chain, replays the whole log,
+  and builds the views again, naming any view that differed.
 - **A version binds a repository, or the whole system.** A proposal
   names the repositories its version binds with `--repository`, or the
   whole system with `--system`, and the version binds them once a
@@ -51,9 +57,8 @@ claims that hold.
 - **An agent asks boom for its rules.** `boom query` gives every claim
   that stands for a repository, as the person accepted it: its kind,
   name, version, statement and scenarios, and who accepted it. boom
-  replays the log for each answer and reads no view, so a view edited
-  by hand changes nothing an agent gets, and it writes nothing into the
-  repository for anyone to edit (record 0008).
+  answers from views it keeps in step with the log, and writes nothing
+  into the repository for anyone to edit (record 0008).
 - **An agent finds claims by their words.** `boom search` gives the
   claims that stand whose words hold every word searched. A word may
   fall in a claim's name, statement, scenarios, body, legacy id or
@@ -63,8 +68,7 @@ claims that hold.
   ranks the claims, a word in a name above one in a body, and gives the
   first ten, or the number `--limit` names. Each comes with the passage
   of its body where the words fall and a pointer to the whole text.
-  boom replays the log for each search and keeps no index, so nothing
-  kept beside the log changes what an agent finds (record 0009).
+  boom searches the views and keeps no index (record 0009).
 - **A repository's records, imported once.** `boom import adr` reads a
   folder of MADR records and `boom import rules` a rules page, and
   proposes each record in its file's own words, with the names and
@@ -171,7 +175,7 @@ tag.
 
 | path | what |
 |---|---|
-| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `import`, `query`, `search` and `mcp` |
+| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import`, `query`, `search` and `mcp` |
 | `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom query --if-declared`, listed by the marketplace in `.claude-plugin/` |
 | `flake.nix`, `nix/` | boom's flake, giving `boom` and `boom-claude-plugin` at one version, and its offline checks |
 | `.github/workflows/release.yml` | the release: a landing with a new version, tagged on a release commit off main, its binaries built by cargo |

@@ -14,7 +14,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use serde_json::{json, Value};
 
 use crate::claim::{History, Kind, Proposal};
-use crate::entry::{Act, Actor, Attach, Entry, Form, Imported, GENESIS};
+use crate::entry::{Act, Actor, Attach, Entry, Form, Imported};
 use crate::import::{self, Read, Record};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
@@ -190,9 +190,12 @@ enum Command {
     },
     /// Show the log's entries in order, each with whether it counts.
     Log,
+    /// Check the log's whole chain, replay the whole log, and build the
+    /// views again from it, naming each view that differed.
+    Verify,
     /// Give every claim that stands for a repository, as the person
-    /// accepted it, replayed from the log: words an agent's harness can
-    /// put in its context as they are.
+    /// accepted it: words an agent's harness can put in its context as
+    /// they are.
     Query {
         /// The repository; by default the one the working folder's
         /// `.config/boom.toml` declares.
@@ -205,7 +208,7 @@ enum Command {
     },
     /// Find the claims that stand whose words hold every word searched,
     /// in a repository or every repository, the best matches first,
-    /// replayed from the log with no index kept.
+    /// with no index kept.
     Search {
         /// The words, each searched as written; `--` before a word that
         /// begins with `-`.
@@ -446,6 +449,7 @@ fn execute(
         } => reject(&path?, &target, reason, key.as_deref(), keys, env),
         Command::Show { target } => show(&path?, &target),
         Command::Log => log(&path?),
+        Command::Verify => verify(&path?),
         Command::Query {
             repository,
             if_declared,
@@ -1166,10 +1170,11 @@ fn proposed_with(
 
 fn log(path: &Path) -> Result<Answer, Failure> {
     let mut store = Store::open(path)?;
+    let path = path.to_owned();
     store.read(|conn| {
         let mut entries = Vec::new();
         let mut words = String::new();
-        for found in store::log_entries(conn)? {
+        for found in store::log_entries(conn, &path)? {
             let row = &found.row;
             let signed: Option<Value> = serde_json::from_str(&row.signed).ok();
             let field = |name: &str| {
@@ -1214,6 +1219,30 @@ fn log(path: &Path) -> Result<Answer, Failure> {
     })
 }
 
+fn verify(path: &Path) -> Result<Answer, Failure> {
+    let verified = Store::open(path)?.verify()?;
+    let rebuilt = if verified.rebuilt.is_empty() {
+        "No view differed from the replay.".to_owned()
+    } else {
+        format!(
+            "Built again, as they differed from the replay: {}.",
+            verified.rebuilt.join(", ")
+        )
+    };
+    Ok(Answer {
+        json: json!({
+            "format": "boom-verify/1",
+            "head": {"number": verified.seq, "hash": verified.hash},
+            "chain": "holds",
+            "rebuilt": verified.rebuilt,
+        }),
+        words: format!(
+            "The chain holds, to entry {} of the store's log.\n{rebuilt}\n",
+            verified.seq
+        ),
+    })
+}
+
 /// A standing claim's fields as `boom query` gives them, in its order;
 /// `boom search` gives the same and more.
 fn standing_json(
@@ -1238,8 +1267,8 @@ fn standing_json(
 
 /// The claims that stand for the repository `named`, or else the one the
 /// working folder declares (repository-rules; design 5): taken from the
-/// judge's replay of the whole log for this answer, never from the views
-/// (record 0008, point 2), and appending nothing. With `if_declared`,
+/// views, once they are at the log's last entry (record 0008, point 2, as
+/// amended on 2026-11-20), and appending nothing. With `if_declared`,
 /// where none is named or declared, nothing: no store opened, no words,
 /// and `boom-query/1` with no repository (design 10).
 fn query(
@@ -1267,14 +1296,8 @@ fn query(
     };
     let mut store = Store::open(&path?)?;
     store.read(|conn| {
-        let rows = store::log_rows(conn)?;
-        let (state, _) = judge::replay(
-            rows.iter()
-                .map(|row| (row.seq, row.signed.as_str(), row.signature.as_deref())),
-        );
-        let (number, hash) = rows
-            .last()
-            .map_or((0, GENESIS), |row| (row.seq, row.hash.as_str()));
+        let state = store::load_state(conn)?;
+        let (number, hash) = store::head_entry(conn)?;
         let mut claims = Vec::new();
         let mut lines = String::new();
         for (claim, standing) in state.standing_for(Some(&repository)) {
@@ -1318,9 +1341,9 @@ fn query(
 
 /// The claims that stand whose words hold every word of `given`, for
 /// the repository `named`, or else the one the working folder declares,
-/// or with `all` every claim (claim-search; designs 1 to 6): replayed
-/// from the whole log for this answer, never from the views, searched
-/// in memory, keeping nothing and appending nothing.
+/// or with `all` every claim (claim-search; designs 1 to 6): taken from
+/// the views, once they are at the log's last entry, searched in memory,
+/// keeping no index and appending nothing.
 fn search(
     path: &Path,
     given: &[String],
@@ -1347,14 +1370,8 @@ fn search(
     };
     let mut store = Store::open(path)?;
     store.read(|conn| {
-        let rows = store::log_rows(conn)?;
-        let (state, _) = judge::replay(
-            rows.iter()
-                .map(|row| (row.seq, row.signed.as_str(), row.signature.as_deref())),
-        );
-        let (number, hash) = rows
-            .last()
-            .map_or((0, GENESIS), |row| (row.seq, row.hash.as_str()));
+        let state = store::load_state(conn)?;
+        let (number, hash) = store::head_entry(conn)?;
         let standing = state.standing_for(repository.as_deref());
         // A body that is not text is searched as holding no word; one
         // whose bytes no longer match its fingerprint stops the search.

@@ -402,7 +402,7 @@ fn a_declaration_it_cannot_read_is_refused() {
 }
 
 #[test]
-fn a_statement_edited_in_the_views_changes_nothing() {
+fn a_statement_edited_in_the_views_is_built_again_by_verify() {
     let place = Place::new();
     let (_, version) = money_in_shop(&place);
     let target = format!("money-has-currency@{version}");
@@ -420,6 +420,8 @@ fn a_statement_edited_in_the_views_changes_nothing() {
         "Any amount will do.",
         "the views were edited and left as fresh"
     );
+    let verified = place.json(&["verify"]);
+    assert_eq!(verified["rebuilt"], json!(["versions"]));
     let answer = query(&place, "shop");
     assert_eq!(answer["claims"][0]["version"], version.as_str());
     assert_eq!(answer["claims"][0]["statement"], MONEY);
@@ -429,7 +431,7 @@ fn a_statement_edited_in_the_views_changes_nothing() {
 }
 
 #[test]
-fn a_status_edited_in_the_views_changes_nothing() {
+fn a_status_edited_in_the_views_is_built_again_by_verify() {
     let place = Place::new();
     place.made();
     let version = proposed(
@@ -461,6 +463,8 @@ fn a_status_edited_in_the_views_changes_nothing() {
         "standing",
         "the views were edited and left as fresh"
     );
+    let verified = place.json(&["verify"]);
+    assert_eq!(verified["rebuilt"], json!(["claims", "versions"]));
     assert_eq!(query(&place, "shop")["claims"], json!([]));
 }
 

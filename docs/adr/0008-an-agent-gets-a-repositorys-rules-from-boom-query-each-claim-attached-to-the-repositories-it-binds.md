@@ -139,3 +139,33 @@ For what binds a claim to a repository:
   trusts nothing of the tree is `boom check`'s, a later change.
 - Neutral: a query replays the whole log, linear in its entries, which
   a verified checkpoint can later shorten without changing an entry.
+
+## Amendment of 2026-11-20 (proposed)
+
+Status: proposed, for the user to accept. The change
+`boom-keeps-its-views-in-step` makes it.
+
+This amendment changes point 2.
+
+`boom query` no longer replays the whole log for each answer. It reads
+the views. The views are tables that boom keeps in step with the log.
+
+Each write updates the views in the same transaction as its entry.
+Before a command answers, boom compares the views' head with the log's
+last entry. If they match, boom answers from the views. If they do not
+match, boom applies the entries after the head first.
+
+A command reads the head entry and the entries after it. It reads no
+older entry. So a query does not get slower as the log grows.
+
+`boom verify` checks the whole chain and replays the whole log. It
+builds the views again and names each view that was different.
+
+What this changes:
+
+- A change to an older entry is not found by each command. `boom verify`
+  finds it. The user accepted this on 2026-11-20.
+- A view that another program edits changes what `boom query` gives,
+  until `boom verify` runs. The user accepted this on 2026-11-20.
+- An entry that fails boom's checks still counts for nothing. boom
+  judges each new entry when it applies it to the views.
