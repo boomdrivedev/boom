@@ -12,33 +12,34 @@ decision-makers:
 Status: accepted by the user on 2026-11-01.
 
 Deciders: the user, on 2026-10-31 and 2026-11-01.
-Sources: flume's and sluice's scaffolding, which this repository copies.
+Sources: the scaffolding of flume and sluice, which this repository copies.
 
 ## Context and problem statement
 
-A project's invariants, decisions, assumptions, decision records, rules
-for a scope, design book and context map are one thing seen several
-ways: a ledger of claims and the events that propose, accept, reject or
-supersede them, with every other form a view of it. Where does the tool
-that keeps that ledger live, is it open, and what is its binary called?
+A project has invariants, decisions, assumptions, decision records,
+rules for a scope, a design book and a context map. These are one thing,
+seen in several ways. That thing is a ledger of claims, and of the
+events that propose, accept, reject or supersede the claims. Each other
+form is a view of the ledger. Where does the tool that keeps that ledger
+live? Is the tool open? What is the name of its binary?
 
 ## Considered options
 
-1. A part of another tool, a command of its binary.
-2. A repository of its own, agentplot/boom, open source under MIT, its binary named `boom`, in Rust.
+1. A part of another tool: a command of the binary of that tool.
+2. A repository of its own, agentplot/boom, open source under MIT, in Rust. Its binary is `boom`.
 
 ## Decision outcome
 
-Option 2. The ledger's format must be open so a project trusts that it
-owns its history, and a tool of its own keeps that format free of any
-one caller. Rust, so it shares the family's crates. `boom` is a working
-name.
+Option 2. The format of the ledger must be open, so that a project
+trusts that it owns its history. A tool of its own keeps that format
+free of any one caller. The tool is in Rust, so that it shares the
+crates of the family. `boom` is a working name.
 
-The decisions after this one are recorded here, one MADR record each,
-and the rules in `docs/architecture/core.md` name them as sources.
+This repository records each later decision here, in one MADR record.
+The rules in `docs/architecture/core.md` name these records as sources.
 
 ### Consequences
 
 - The repository carries the MIT license.
-- Status is read from events and every view is computed (core.1, core.2).
-- Nothing commercial appears in it (core.4).
+- boom reads status from events and computes each view (core.1, core.2).
+- The repository holds nothing commercial (core.4).
