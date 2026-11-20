@@ -22,6 +22,17 @@ on:
 permissions:
   contents: read
 
+# One run at a time, in the order GitHub starts them, and no run in
+# progress is cancelled. Each run reckons its tag only after the run
+# before it ends, so two landings close together get two tags. GitHub
+# keeps one waiting run in a group. When a third run comes, it cancels
+# the waiting run, and the third run releases the commits of both. No
+# job has a group of its own: a job in the group of its own run waits
+# for that run, which never ends.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   # The candidate a push to main landed, from the head's Sluice-Tested
   # trailer as git reads trailers; empty on a push no landing made.
@@ -120,7 +131,6 @@ jobs:
     if: ${{ !cancelled() && needs.binaries.result == 'success' }}
     needs: [version, binaries]
     runs-on: ubuntu-latest
-    concurrency: release
     permissions:
       contents: write
     steps:
