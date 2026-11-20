@@ -17,6 +17,8 @@
 #             by path as `chore(release): $TAG`, tags that commit, pushes
 #             the tag alone, with no branch and no force, and publishes the
 #             GitHub release at the tag it pushed;
+# that the whole workflow takes turns in the concurrency group release,
+# with no job in a group of its own, so two landings get two tags,
 # and no line of the workflow names BOOM_VERSION or --impure, so no build
 # is given its version, and none pushes anything but the tag. It reads
 # YAML, never a Markdown file (core.5); yamlfmt, under root:format, lays
@@ -120,6 +122,23 @@ done
   fail version "runs no git-cliff --unreleased --bumped-version"
 [ -n "$(at "$version" 'git rev-parse -q --verify "refs/tags/$tag"' in)" ] ||
   fail version "does not hold back a tag that already exists"
+
+# turns: the whole workflow is one concurrency group, `release`, and no
+# run in progress is cancelled, so each run reckons its tag after the
+# run before it pushes its tag. No job has a group of its own: a job in
+# the group of its own run waits for that run.
+top=$(sed -n '/^jobs:$/q;p' "$workflow")
+[ -n "$(at "$top" 'concurrency:')" ] ||
+  fail workflow "takes no turns: it has no top-level concurrency:"
+[ -n "$(at "$top" '  group: release')" ] ||
+  fail workflow "takes no turns in the group release: its concurrency has no group: release"
+[ -n "$(at "$top" '  cancel-in-progress: false')" ] ||
+  fail workflow "can cancel a run in progress: its concurrency has no cancel-in-progress: false"
+for name in landing version binaries release; do
+  if job "$name" | grep -qE '^concurrency:'; then
+    fail "$name" "has a concurrency group of its own: the workflow's group holds each job"
+  fi
+done
 
 # binaries: the release's tree, built with nothing given, saying its
 # version on a runner with nothing of Nix's, Linux's static.
