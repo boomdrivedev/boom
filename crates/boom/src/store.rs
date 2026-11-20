@@ -551,7 +551,7 @@ fn last_row(conn: &Connection) -> Result<Option<Row>, Failure> {
 }
 
 /// The entry numbered `seq`, where there is one: one entry read.
-fn row_at(conn: &Connection, seq: u64) -> Result<Option<Row>, Failure> {
+pub fn row_at(conn: &Connection, seq: u64) -> Result<Option<Row>, Failure> {
     let row = conn
         .query_row(
             "SELECT seq, prev, hash, signed, signature FROM log WHERE seq = ?1",

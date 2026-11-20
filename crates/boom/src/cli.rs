@@ -182,7 +182,8 @@ enum Command {
     },
     /// Show a claim and its versions, or one version, `<name>@<version>`.
     Show {
-        /// The claim's name, or `<name>@<version>`.
+        /// The claim's name, `<name>@<version>`, or the number of an
+        /// entry of the log, for the version that the entry names.
         target: String,
     },
     /// Show the log's entries in order, each with whether it counts.
@@ -1047,44 +1048,75 @@ fn version_words(view: &store::VersionView) -> String {
 }
 
 fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
-    let (name, version) = match target.split_once('@') {
-        Some((name, version)) => (name, Some(version)),
-        None => (target, None),
-    };
     let mut store = Store::open(path)?;
     store.read(|conn| {
+        let named;
+        let (name, version) = if !target.is_empty() && target.bytes().all(|b| b.is_ascii_digit()) {
+            named = entry_target(conn, target)?;
+            (named.0.as_str(), Some(named.1.as_str()))
+        } else {
+            match target.split_once('@') {
+                Some((name, version)) => (name, Some(version)),
+                None => (target, None),
+            }
+        };
         let claim = store::claim_view(conn, name)?
             .ok_or_else(|| Failure::refused(format!("no claim has the name {name}")))?;
         let Some(version) = version else {
-            let versions: Vec<Value> = claim
+            // The newest version in full, then the others, newest first
+            // (claim-versions, "A claim shown by its name").
+            let newest = claim
                 .versions
-                .iter()
-                .map(|view| Value::Object(version_json(view)))
-                .collect();
+                .last()
+                .ok_or_else(|| Failure::not_run(format!("the claim {name} has no version")))?;
+            let newest_body = body_text(conn, newest.body.as_deref())?;
+            let others: Vec<_> = claim.versions.iter().rev().skip(1).collect();
             let mut words = format!(
-                "{} {}, {}\n",
+                "{} {}, {}\n\nnewest: {}\n{}\nbinds: {}\n",
                 claim.kind,
                 claim.name,
                 claim
                     .standing
                     .as_deref()
-                    .map_or("no version stands".to_owned(), |standing| format!(
-                        "{standing} stands"
-                    ))
+                    .map_or("no version is accepted".to_owned(), |standing| format!(
+                        "accepted: {standing}"
+                    )),
+                version_words(newest),
+                newest.statement,
+                repository::words(&newest.repositories)
             );
-            for view in &claim.versions {
+            if let Some(body) = &newest_body {
+                words.push_str(&format!("\n{}", body));
+                if !body.ends_with('\n') {
+                    words.push('\n');
+                }
+            }
+            if !others.is_empty() {
+                words.push_str("\nother versions:\n");
+            }
+            for view in &others {
                 words.push_str(&format!(
-                    "  {}\n    binds: {}\n",
+                    "  {}\n    {}\n    binds: {}\n",
                     version_words(view),
+                    view.statement,
                     repository::words(&view.repositories)
                 ));
             }
+            let mut newest_json = version_json(newest);
+            newest_json.insert("statement".into(), json!(newest.statement));
+            newest_json.insert("body".into(), json!(newest_body));
+            let versions: Vec<Value> = claim
+                .versions
+                .iter()
+                .map(|view| Value::Object(version_json(view)))
+                .collect();
             return Ok(Answer {
                 json: json!({
                     "format": "boom-show/2",
                     "claim": claim.name,
                     "kind": claim.kind,
                     "accepted": claim.standing,
+                    "newest": newest_json,
                     "versions": versions,
                 }),
                 words,
@@ -1097,13 +1129,7 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
             .ok_or_else(|| {
                 Failure::refused(format!("the claim {name} has no version {version}"))
             })?;
-        let body = match &view.body {
-            Some(fingerprint) => Some(
-                String::from_utf8(store::blob(conn, fingerprint)?)
-                    .map_err(|_| Failure::not_run(format!("the blob {fingerprint} is not text")))?,
-            ),
-            None => None,
-        };
+        let body = body_text(conn, view.body.as_deref())?;
         let (imported, history) = proposed_with(conn, view.proposed_in)?;
         let mut object = serde_json::Map::new();
         object.insert("format".into(), json!("boom-show/2"));
@@ -1185,6 +1211,42 @@ fn proposed_with(
     }
 }
 
+/// The text of the body whose fingerprint is `fingerprint`, or none.
+fn body_text(
+    conn: &rusqlite::Connection,
+    fingerprint: Option<&str>,
+) -> Result<Option<String>, Failure> {
+    fingerprint
+        .map(|fingerprint| {
+            String::from_utf8(store::blob(conn, fingerprint)?)
+                .map_err(|_| Failure::not_run(format!("the blob {fingerprint} is not text")))
+        })
+        .transpose()
+}
+
+/// The claim's name and the version that the entry numbered `number`
+/// names (record-log, "Each version named by its entry"): refused where
+/// the log has no such entry, or where the entry names no version.
+fn entry_target(conn: &rusqlite::Connection, number: &str) -> Result<(String, String), Failure> {
+    let seq: u64 = number
+        .parse()
+        .map_err(|_| Failure::refused(format!("the log has no entry {number}")))?;
+    let row = store::row_at(conn, seq)?
+        .ok_or_else(|| Failure::refused(format!("the log has no entry {number}")))?;
+    let entry = Entry::parse(&row.signed)
+        .map_err(|why| Failure::refused(format!("boom cannot read entry {number}: {why}")))?;
+    entry
+        .act
+        .target()
+        .map(|(name, version)| (name.to_owned(), version.to_owned()))
+        .ok_or_else(|| {
+            Failure::refused(format!(
+                "entry {number} names no version: it is a {} entry",
+                entry.act.name()
+            ))
+        })
+}
+
 fn log(path: &Path) -> Result<Answer, Failure> {
     let mut store = Store::open(path)?;
     let path = path.to_owned();
@@ -1201,8 +1263,15 @@ fn log(path: &Path) -> Result<Answer, Failure> {
                     .cloned()
                     .unwrap_or(Value::Null)
             };
+            let target = Entry::parse(&row.signed).ok().and_then(|entry| {
+                entry
+                    .act
+                    .target()
+                    .map(|(name, version)| format!("{name}@{version}"))
+            });
             entries.push(json!({
                 "number": row.seq,
+                "target": target,
                 "hash": row.hash,
                 "prev": row.prev,
                 "format": field("format"),
@@ -1218,9 +1287,10 @@ fn log(path: &Path) -> Result<Answer, Failure> {
             let actor = serde_json::from_value::<Actor>(field("actor"))
                 .map_or("no one boom reads".to_owned(), |actor| actor_words(&actor));
             words.push_str(&format!(
-                "{} {} by {}{}\n",
+                "{} {}{} by {}{}\n",
                 row.seq,
                 act.as_str().unwrap_or("(unreadable)"),
+                target.map_or(String::new(), |target| format!(" {target}")),
                 actor,
                 found
                     .reason
