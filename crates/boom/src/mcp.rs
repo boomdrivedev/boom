@@ -51,6 +51,10 @@ pub(crate) const ABSENT: &[(&str, &str)] = &[
         "reject",
         "only a person rejects, in their own terminal, signing with their security key",
     ),
+    (
+        "verify",
+        "it checks the whole log and builds the views again, a check a person or a host's schedule runs",
+    ),
     ("mcp", "it is the server itself"),
 ];
 

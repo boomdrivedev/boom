@@ -94,7 +94,7 @@ Not taken: a timing bound. Time on a shared host varies, and a gate must not fai
 - `boom query --repository shop --json` reads one entry;
 - after another program appends three proposals, the next query reads four;
 - `boom search` reads one entry;
-- `boom propose` reads one entry before it appends;
+- `boom propose` reads the log's last entry, and no other, before it appends;
 - the query gives the same bytes as a query after the views are dropped, which rebuilds them by a full replay.
 
 A second test runs the same random mix of 200 proposals, amendments, accepts and rejects twice. One store keeps its views in step. The other has its views dropped before every read. Every answer must match.

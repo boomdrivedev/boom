@@ -15,8 +15,9 @@ use std::time::Duration;
 
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 
+use crate::claim::{Kind, Proposal};
 use crate::entry::{self, Act, Actor, Entry, GENESIS};
-use crate::judge::{self, Claim, Judgment, Person, Proof, State, Verdict};
+use crate::judge::{self, Claim, Judgment, Person, Proof, State, Status, Verdict, Version};
 use crate::Failure;
 
 /// The schema's version, the file's `user_version`.
@@ -44,7 +45,8 @@ CREATE TABLE blobs (
 const VIEWS: &str = "
 CREATE TABLE views_head (
     seq INTEGER NOT NULL,
-    hash TEXT NOT NULL
+    hash TEXT NOT NULL,
+    form INTEGER NOT NULL
 );
 CREATE TABLE persons (
     name TEXT PRIMARY KEY,
@@ -70,6 +72,9 @@ CREATE TABLE versions (
     decided_by TEXT,
     decided_in INTEGER,
     reason TEXT,
+    repositories TEXT NOT NULL,
+    imported TEXT,
+    proposal TEXT NOT NULL,
     PRIMARY KEY (name, version)
 );
 CREATE TABLE judgments (
@@ -81,6 +86,24 @@ CREATE TABLE judgments (
 
 /// The views' tables, each dropped and made again by a rebuild.
 const VIEW_TABLES: [&str; 5] = ["views_head", "persons", "claims", "versions", "judgments"];
+
+/// The views' form, kept in `views_head`. Views of another form are
+/// built again from the whole log.
+const VIEWS_FORM: i64 = 2;
+
+thread_local! {
+    static ENTRIES_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The number of the log's entries this thread has read from a store,
+/// for a test to count what one command reads.
+pub fn entries_read() -> u64 {
+    ENTRIES_READ.with(std::cell::Cell::get)
+}
+
+fn count_read(entries: usize) {
+    ENTRIES_READ.with(|read| read.set(read.get() + entries as u64));
+}
 
 impl From<rusqlite::Error> for Failure {
     fn from(error: rusqlite::Error) -> Self {
@@ -264,8 +287,10 @@ impl Store {
         &self.path
     }
 
-    /// Checks the log's chain and brings the views to its last entry,
-    /// then answers from them with `answer`, in one read of the store.
+    /// Brings the views to the log's last entry and answers from them
+    /// with `answer`. Where the views' head names the log's last entry,
+    /// it reads that entry alone; otherwise it catches up first, as a
+    /// write does (record-store, "A command answers from the views").
     pub fn read<T>(
         &mut self,
         answer: impl FnOnce(&Connection) -> Result<T, Failure>,
@@ -275,9 +300,7 @@ impl Store {
             let tx = self
                 .conn
                 .transaction_with_behavior(TransactionBehavior::Deferred)?;
-            let rows = read_log(&tx)?;
-            check_chain(&path, &rows)?;
-            if views_fresh(&tx, &rows)? {
+            if fresh(&tx, &path)? {
                 let answered = answer(&tx);
                 tx.commit()?;
                 return answered;
@@ -286,27 +309,16 @@ impl Store {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let rows = read_log(&tx)?;
-        check_chain(&path, &rows)?;
-        if !views_fresh(&tx, &rows)? {
-            let (state, judgments) = replay(&rows);
-            write_views(&tx, &state, &judgments, &rows)?;
-        }
+        catch_up(&tx, &path)?;
         let answered = answer(&tx);
         tx.commit()?;
         answered
     }
 
-    /// The state the log's entries build, its chain checked.
+    /// The state the log's entries build, read from the views once they
+    /// are at the log's last entry.
     pub fn state(&mut self) -> Result<State, Failure> {
-        let path = self.path.clone();
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Deferred)?;
-        let rows = read_log(&tx)?;
-        check_chain(&path, &rows)?;
-        tx.commit()?;
-        Ok(replay(&rows).0)
+        self.read(load_state)
     }
 
     /// Appends the entry whose signed part is `signed`, with its
@@ -328,11 +340,12 @@ impl Store {
     }
 
     /// Appends `entries`, each with its signature and blob, in one
-    /// `IMMEDIATE` transaction that judges each again against the state
-    /// the ones before it built and updates the views with it (design
-    /// 8). A refusal of any rolls the transaction back, so nothing is
-    /// written; a repeat adds nothing. Answers what each wrote, in
-    /// order, and the state after them.
+    /// `IMMEDIATE` transaction: it brings the views to the log's last
+    /// entry, judges each entry against the state the views and the
+    /// entries before it hold, and updates the rows each one touches
+    /// (design 8). A refusal of any rolls the transaction back, so
+    /// nothing is written; a repeat adds nothing. Answers what each
+    /// wrote, in order, and the state after them.
     pub fn append_all(&mut self, entries: &[Append<'_>]) -> Result<(Vec<Written>, State), Failure> {
         let parsed = entries
             .iter()
@@ -342,16 +355,8 @@ impl Store {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let rows = read_log(&tx)?;
-        check_chain(&path, &rows)?;
-        let (mut state, judgments) = replay(&rows);
-        if !views_fresh(&tx, &rows)? {
-            write_views(&tx, &state, &judgments, &rows)?;
-        }
-        let mut seq = rows.last().map_or(0, |row| row.seq);
-        let mut prev = rows
-            .last()
-            .map_or(GENESIS.to_owned(), |row| row.hash.clone());
+        let mut state = catch_up(&tx, &path)?;
+        let (mut seq, mut prev) = views_head(&tx)?;
         let mut written = Vec::with_capacity(entries.len());
         for (append, entry) in entries.iter().zip(&parsed) {
             match judge::judge(&state, entry, append.signed, Proof::of(append.signature)) {
@@ -376,13 +381,7 @@ impl Store {
             }
             judge::apply(&mut state, seq, entry);
             write_judgment(&tx, seq, &Judgment::counted())?;
-            match &entry.act {
-                Act::Registered { person, .. } => write_person(&tx, &state.persons[person])?,
-                Act::Proposed { claim, .. } => write_claim(&tx, &state.claims[&claim.name])?,
-                Act::Accepted { name, .. } | Act::Rejected { name, .. } => {
-                    write_claim(&tx, &state.claims[name])?
-                }
-            }
+            write_touched(&tx, &state, entry)?;
             write_head(&tx, seq, &hash)?;
             prev = hash;
             written.push(Written::Entry(seq));
@@ -390,6 +389,49 @@ impl Store {
         tx.commit()?;
         Ok((written, state))
     }
+
+    /// Checks the whole chain, replays the whole log and builds every
+    /// view again from it, naming each view table whose rows differed
+    /// (record-store, "boom verify checks the log and rebuilds the
+    /// views"). Where the chain does not hold, not run, naming the first
+    /// entry whose chain fails, and nothing written.
+    pub fn verify(&mut self) -> Result<Verified, Failure> {
+        let path = self.path.clone();
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let rows = read_log(&tx)?;
+        check_chain(&path, &rows)?;
+        let before = VIEW_TABLES
+            .iter()
+            .map(|table| snapshot(&tx, table))
+            .collect::<Result<Vec<_>, _>>()?;
+        let (state, judgments) = replay(&rows);
+        write_views(&tx, &state, &judgments, &rows)?;
+        let mut rebuilt = Vec::new();
+        for (table, was) in VIEW_TABLES.iter().zip(before) {
+            if was.as_ref() != Some(&snapshot(&tx, table)?.unwrap_or_default()) {
+                rebuilt.push((*table).to_owned());
+            }
+        }
+        let (seq, hash) = rows
+            .last()
+            .map_or((0, GENESIS.to_owned()), |row| (row.seq, row.hash.clone()));
+        tx.commit()?;
+        Ok(Verified { seq, hash, rebuilt })
+    }
+}
+
+/// What `boom verify` found: the log's last entry, and the view tables
+/// it built again because their rows differed from the replay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Verified {
+    /// The log's last entry's number, 0 for an empty log.
+    pub seq: u64,
+    /// Its hash.
+    pub hash: String,
+    /// The view tables whose rows differed, in the views' order.
+    pub rebuilt: Vec<String>,
 }
 
 /// An entry to append: its signed part, its signature where it has
@@ -422,7 +464,249 @@ fn read_log(conn: &Connection) -> Result<Vec<Row>, Failure> {
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    count_read(rows.len());
     Ok(rows)
+}
+
+fn row_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
+    Ok(Row {
+        seq: u64::try_from(row.get::<_, i64>(0)?).unwrap_or(0),
+        prev: row.get(1)?,
+        hash: row.get(2)?,
+        signed: row.get(3)?,
+        signature: row.get(4)?,
+    })
+}
+
+/// The log's last entry, where it has one: one entry read.
+fn last_row(conn: &Connection) -> Result<Option<Row>, Failure> {
+    let row = conn
+        .query_row(
+            "SELECT seq, prev, hash, signed, signature FROM log ORDER BY seq DESC LIMIT 1",
+            [],
+            row_from,
+        )
+        .optional()?;
+    count_read(usize::from(row.is_some()));
+    Ok(row)
+}
+
+/// The entry numbered `seq`, where there is one: one entry read.
+fn row_at(conn: &Connection, seq: u64) -> Result<Option<Row>, Failure> {
+    let row = conn
+        .query_row(
+            "SELECT seq, prev, hash, signed, signature FROM log WHERE seq = ?1",
+            [sql_int(seq)],
+            row_from,
+        )
+        .optional()?;
+    count_read(usize::from(row.is_some()));
+    Ok(row)
+}
+
+/// The entries after the one numbered `seq`, in order.
+fn rows_after(conn: &Connection, seq: u64) -> Result<Vec<Row>, Failure> {
+    let mut statement = conn.prepare(
+        "SELECT seq, prev, hash, signed, signature FROM log WHERE seq > ?1 ORDER BY seq",
+    )?;
+    let rows = statement
+        .query_map([sql_int(seq)], row_from)?
+        .collect::<Result<Vec<_>, _>>()?;
+    count_read(rows.len());
+    Ok(rows)
+}
+
+fn altered(path: &Path, seq: u64, what: &str) -> Failure {
+    Failure::not_run(format!(
+        "the store at {} is altered: entry {seq} {what}",
+        path.display()
+    ))
+}
+
+/// Checks that `row` still has the hash `hash` the views' head names,
+/// and that its words hash to it.
+fn check_head(path: &Path, row: Option<&Row>, seq: u64, hash: &str) -> Result<(), Failure> {
+    if seq == 0 {
+        return if hash == GENESIS {
+            Ok(())
+        } else {
+            Err(Failure::not_run(format!(
+                "the store at {} is altered: its views name an entry its log lacks",
+                path.display()
+            )))
+        };
+    }
+    let Some(row) = row else {
+        return Err(altered(path, seq, "is missing: the views were built at it"));
+    };
+    if row.hash != hash {
+        return Err(altered(
+            path,
+            seq,
+            "does not match the hash the views were built at",
+        ));
+    }
+    if row.hash != entry::hash(&row.prev, &row.signed, row.signature.as_deref()) {
+        return Err(altered(path, seq, "does not match its hash"));
+    }
+    Ok(())
+}
+
+/// Checks that each of `rows` follows the one before it, from the entry
+/// numbered `seq` whose hash is `prev`.
+fn check_chain_from(path: &Path, rows: &[Row], seq: u64, prev: &str) -> Result<(), Failure> {
+    let mut prev = prev;
+    for (at, row) in rows.iter().enumerate() {
+        if row.prev != prev {
+            return Err(altered(
+                path,
+                row.seq,
+                "does not follow the entry before it: its previous hash does not match",
+            ));
+        }
+        if row.hash != entry::hash(&row.prev, &row.signed, row.signature.as_deref()) {
+            return Err(altered(path, row.seq, "does not match its hash"));
+        }
+        if row.seq != seq + at as u64 + 1 {
+            return Err(altered(path, row.seq, "is numbered out of order"));
+        }
+        prev = &row.hash;
+    }
+    Ok(())
+}
+
+/// The views' head, `(seq, hash, form)`, where every view table is there
+/// and the head can be read.
+fn head(conn: &Connection) -> Result<Option<(u64, String, i64)>, Failure> {
+    for table in VIEW_TABLES {
+        let found: Option<i64> = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                [table],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if found.is_none() {
+            return Ok(None);
+        }
+    }
+    let read = conn
+        .query_row("SELECT seq, hash, form FROM views_head", [], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .optional();
+    match read {
+        Ok(Some((seq, hash, form))) => Ok(Some((u64::try_from(seq).unwrap_or(0), hash, form))),
+        // A head of an older form, with no `form`, is built again.
+        Ok(None) | Err(_) => Ok(None),
+    }
+}
+
+/// The entry the views were built at, `(seq, hash)`.
+fn views_head(conn: &Connection) -> Result<(u64, String), Failure> {
+    let (seq, hash): (i64, String) =
+        conn.query_row("SELECT seq, hash FROM views_head", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?;
+    Ok((u64::try_from(seq).unwrap_or(0), hash))
+}
+
+/// Whether the views are of this form and at the log's last entry, read
+/// from that entry alone; not run where that entry is the views' head
+/// and no longer hashes to what they name.
+fn fresh(conn: &Connection, path: &Path) -> Result<bool, Failure> {
+    let Some((seq, hash, form)) = head(conn)? else {
+        return Ok(false);
+    };
+    if form != VIEWS_FORM {
+        return Ok(false);
+    }
+    let last = last_row(conn)?;
+    match &last {
+        Some(row) if row.seq == seq => {
+            check_head(path, last.as_ref(), seq, &hash)?;
+            Ok(true)
+        }
+        None if seq == 0 => {
+            check_head(path, None, seq, &hash)?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+/// Brings the views to the log's last entry, inside a write's
+/// transaction, and answers the state they then hold. Views missing or of
+/// another form are built again from the whole log, its whole chain
+/// checked; otherwise the views' head entry is checked, and each entry
+/// after it is checked, judged and applied, its rows written.
+fn catch_up(conn: &Connection, path: &Path) -> Result<State, Failure> {
+    let Some((seq, hash, form)) = head(conn)?.filter(|(_, _, form)| *form == VIEWS_FORM) else {
+        let rows = read_log(conn)?;
+        check_chain(path, &rows)?;
+        let (state, judgments) = replay(&rows);
+        write_views(conn, &state, &judgments, &rows)?;
+        return Ok(state);
+    };
+    debug_assert_eq!(form, VIEWS_FORM);
+    let at = if seq == 0 { None } else { row_at(conn, seq)? };
+    check_head(path, at.as_ref(), seq, &hash)?;
+    let rows = rows_after(conn, seq)?;
+    check_chain_from(path, &rows, seq, &hash)?;
+    let mut state = load_state(conn)?;
+    for row in &rows {
+        let judgment = judge::step(&mut state, row.seq, &row.signed, row.signature.as_deref());
+        write_judgment(conn, row.seq, &judgment)?;
+        if judgment.counted {
+            let entry = Entry::parse(&row.signed).map_err(Failure::not_run)?;
+            write_touched(conn, &state, &entry)?;
+        }
+        write_head(conn, row.seq, &row.hash)?;
+    }
+    Ok(state)
+}
+
+/// Writes the view rows an entry that counts touched.
+fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), Failure> {
+    match &entry.act {
+        Act::Registered { person, .. } => write_person(conn, &state.persons[person]),
+        Act::Proposed { claim, .. } => write_claim(conn, &state.claims[&claim.name]),
+        Act::Accepted { name, .. } | Act::Rejected { name, .. } => {
+            write_claim(conn, &state.claims[name])
+        }
+    }
+}
+
+/// A view table's rows, each as its columns' text, in order; none where
+/// the table is missing.
+fn snapshot(conn: &Connection, table: &str) -> Result<Option<Vec<Vec<String>>>, Failure> {
+    let Ok(mut statement) = conn.prepare(&format!("SELECT * FROM {table}")) else {
+        return Ok(None);
+    };
+    let columns = statement.column_count();
+    let mut rows = statement
+        .query_map([], |row| {
+            (0..columns)
+                .map(|at| {
+                    Ok(match row.get_ref(at)? {
+                        rusqlite::types::ValueRef::Null => "null".to_owned(),
+                        rusqlite::types::ValueRef::Integer(value) => value.to_string(),
+                        rusqlite::types::ValueRef::Real(value) => value.to_string(),
+                        rusqlite::types::ValueRef::Text(text) => {
+                            format!("'{}", String::from_utf8_lossy(text))
+                        }
+                        rusqlite::types::ValueRef::Blob(bytes) => format!("{bytes:?}"),
+                    })
+                })
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    rows.sort();
+    Ok(Some(rows))
 }
 
 /// Checks each entry's `prev` against the hash of the one before it, and
@@ -461,32 +745,6 @@ fn replay(rows: &[Row]) -> (State, Vec<(u64, Judgment)>) {
     )
 }
 
-/// Whether every view's table is there and the views were built at the
-/// log's last entry.
-fn views_fresh(conn: &Connection, rows: &[Row]) -> Result<bool, Failure> {
-    for table in VIEW_TABLES {
-        let found: Option<i64> = conn
-            .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
-                [table],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if found.is_none() {
-            return Ok(false);
-        }
-    }
-    let head: Option<(i64, String)> = conn
-        .query_row("SELECT seq, hash FROM views_head", [], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
-        .optional()?;
-    let last = rows
-        .last()
-        .map_or((0, GENESIS), |row| (sql_int(row.seq), row.hash.as_str()));
-    Ok(head.is_some_and(|(seq, hash)| seq == last.0 && hash == last.1))
-}
-
 /// Drops the views and writes them again from a replay of the log.
 fn write_views(
     conn: &Connection,
@@ -516,8 +774,8 @@ fn write_views(
 fn write_head(conn: &Connection, seq: u64, hash: &str) -> Result<(), Failure> {
     conn.execute("DELETE FROM views_head", [])?;
     conn.execute(
-        "INSERT INTO views_head (seq, hash) VALUES (?1, ?2)",
-        params![sql_int(seq), hash],
+        "INSERT INTO views_head (seq, hash, form) VALUES (?1, ?2, ?3)",
+        params![sql_int(seq), hash, VIEWS_FORM],
     )?;
     Ok(())
 }
@@ -556,8 +814,9 @@ fn write_claim(conn: &Connection, claim: &Claim) -> Result<(), Failure> {
     for version in &claim.versions {
         conn.execute(
             "INSERT INTO versions (name, version, base, statement, scenarios, body, proposer, \
-             proposed_in, status, decided_by, decided_in, reason) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             proposed_in, status, decided_by, decided_in, reason, repositories, imported, \
+             proposal) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 claim.name,
                 version.proposal.version,
@@ -571,16 +830,132 @@ fn write_claim(conn: &Connection, claim: &Claim) -> Result<(), Failure> {
                 version.decided_by,
                 version.decided_in.map(sql_int),
                 version.reason,
+                to_json(&version.repositories),
+                version.imported.as_ref().map(to_json),
+                to_json(&version.proposal),
             ],
         )?;
     }
     Ok(())
 }
 
-/// The log's entries in order, as stored, for a reader inside
-/// [`Store::read`] to replay with [`judge::replay`].
-pub fn log_rows(conn: &Connection) -> Result<Vec<Row>, Failure> {
-    read_log(conn)
+/// The entry the views were built at, `(number, hash)`: the log's last
+/// entry inside [`Store::read`].
+pub fn head_entry(conn: &Connection) -> Result<(u64, String), Failure> {
+    views_head(conn)
+}
+
+/// The state the views hold, built from `persons`, `claims` and
+/// `versions` with no entry of the log read (design 1). It is the state a
+/// replay of the log up to the views' head builds.
+pub fn load_state(conn: &Connection) -> Result<State, Failure> {
+    let mut state = State::default();
+    let mut persons = conn.prepare("SELECT name, key, owner, registered_in FROM persons")?;
+    let rows = persons
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, bool>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut first: Option<(u64, String)> = None;
+    for (name, key, owner, registered_in) in rows {
+        let key = ssh_key::PublicKey::from_openssh(&key)
+            .map_err(|error| Failure::not_run(format!("a view could not be read: {error}")))?;
+        let registered_in = u64::try_from(registered_in).unwrap_or(0);
+        if first.as_ref().is_none_or(|(seq, _)| registered_in < *seq) {
+            first = Some((registered_in, name.clone()));
+        }
+        state.persons.insert(
+            name.clone(),
+            Person {
+                name,
+                key,
+                owner,
+                registered_in,
+            },
+        );
+    }
+    state.first_owner = first.map(|(_, name)| name);
+    let mut claims = conn.prepare("SELECT name, kind, standing FROM claims")?;
+    let rows = claims
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (name, kind, standing) in rows {
+        let kind: Kind = serde_json::from_value(serde_json::Value::String(kind))
+            .map_err(|error| Failure::not_run(format!("a view could not be read: {error}")))?;
+        state.claims.insert(
+            name.clone(),
+            Claim {
+                name,
+                kind,
+                standing,
+                versions: Vec::new(),
+            },
+        );
+    }
+    let mut versions = conn.prepare(
+        "SELECT name, proposer, proposed_in, status, decided_by, decided_in, reason, \
+         repositories, imported, proposal FROM versions ORDER BY proposed_in",
+    )?;
+    let rows = versions
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<i64>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, String>(9)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (
+        name,
+        proposer,
+        proposed_in,
+        status,
+        decided_by,
+        decided_in,
+        reason,
+        repositories,
+        imported,
+        proposal,
+    ) in rows
+    {
+        let claim = state.claims.get_mut(&name).ok_or_else(|| {
+            Failure::not_run(format!(
+                "a view could not be read: a version of {name} has no claim"
+            ))
+        })?;
+        claim.versions.push(Version {
+            proposal: from_json::<Proposal>(&proposal)?,
+            repositories: from_json(&repositories)?,
+            proposer: from_json(&proposer)?,
+            proposed_in: u64::try_from(proposed_in).unwrap_or(0),
+            status: Status::from_name(&status).ok_or_else(|| {
+                Failure::not_run(format!("a view could not be read: no status {status}"))
+            })?,
+            decided_by,
+            decided_in: decided_in.and_then(|seq| u64::try_from(seq).ok()),
+            reason,
+            imported: imported.as_deref().map(from_json).transpose()?,
+        });
+    }
+    Ok(state)
 }
 
 /// An entry of the log as `boom log` gives it: as stored, with its
@@ -595,11 +970,14 @@ pub struct LogEntry {
     pub reason: Option<String>,
 }
 
-/// The log's entries in order, each with its judgment.
-pub fn log_entries(conn: &Connection) -> Result<Vec<LogEntry>, Failure> {
+/// The log's entries in order, each with its judgment, the whole chain
+/// checked as they are read: not run, naming the first entry whose
+/// chain fails, where it does not hold.
+pub fn log_entries(conn: &Connection, path: &Path) -> Result<Vec<LogEntry>, Failure> {
     let mut judgments = conn.prepare("SELECT counted, reason FROM judgments WHERE seq = ?1")?;
-    read_log(conn)?
-        .into_iter()
+    let rows = read_log(conn)?;
+    check_chain(path, &rows)?;
+    rows.into_iter()
         .map(|row| {
             let (counted, reason) = judgments
                 .query_row([sql_int(row.seq)], |found| {
@@ -642,8 +1020,8 @@ pub struct VersionView {
     pub scenarios: Vec<String>,
     /// Its body's fingerprint.
     pub body: Option<String>,
-    /// What it binds, read from the entry that proposed it: the
-    /// repositories it names, or none for the whole system.
+    /// What it binds: the repositories its proposal names, or none for
+    /// the whole system.
     pub repositories: Vec<String>,
     /// Who proposed it.
     pub proposer: Actor,
@@ -678,60 +1056,44 @@ pub fn claim_view(conn: &Connection, name: &str) -> Result<Option<ClaimView>, Fa
     };
     let mut statement = conn.prepare(
         "SELECT version, base, statement, scenarios, body, proposer, proposed_in, status, \
-         decided_by, decided_in, reason FROM versions WHERE name = ?1 ORDER BY proposed_in",
+         decided_by, decided_in, reason, repositories FROM versions WHERE name = ?1 \
+         ORDER BY proposed_in",
     )?;
     let rows = statement
         .query_map([name], |row| {
             Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, i64>(6)?,
-                row.get::<_, String>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, Option<i64>>(9)?,
-                row.get::<_, Option<String>>(10)?,
+                (
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
+                ),
+                (
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                    row.get::<_, Option<i64>>(9)?,
+                    row.get::<_, Option<String>>(10)?,
+                    row.get::<_, String>(11)?,
+                ),
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let mut proposing = conn.prepare("SELECT signed FROM log WHERE seq = ?1")?;
     let mut versions = Vec::with_capacity(rows.len());
     for (
-        version,
-        base,
-        words,
-        scenarios,
-        body,
-        proposer,
-        proposed_in,
-        status,
-        by,
-        decided_in,
-        reason,
+        (version, base, words, scenarios, body, proposer),
+        (proposed_in, status, by, decided_in, reason, repositories),
     ) in rows
     {
-        let signed: String = proposing.query_row([proposed_in], |row| row.get(0))?;
-        let repositories = match Entry::parse(&signed) {
-            Ok(Entry {
-                act: Act::Proposed { attach, .. },
-                ..
-            }) => judge::repositories(attach.as_ref()).to_vec(),
-            _ => {
-                return Err(Failure::not_run(format!(
-                    "a view could not be read: entry {proposed_in} proposes no version"
-                )))
-            }
-        };
         versions.push(VersionView {
             version,
             base,
             statement: words,
             scenarios: from_json(&scenarios)?,
             body,
-            repositories,
+            repositories: from_json(&repositories)?,
             proposer: from_json(&proposer)?,
             proposed_in: u64::try_from(proposed_in).unwrap_or(0),
             status,
@@ -750,13 +1112,7 @@ pub fn claim_view(conn: &Connection, name: &str) -> Result<Option<ClaimView>, Fa
 
 /// The signed part of the entry numbered `seq`, where there is one.
 pub fn signed_at(conn: &Connection, seq: u64) -> Result<Option<String>, Failure> {
-    Ok(conn
-        .query_row(
-            "SELECT signed FROM log WHERE seq = ?1",
-            [sql_int(seq)],
-            |row| row.get(0),
-        )
-        .optional()?)
+    Ok(row_at(conn, seq)?.map(|row| row.signed))
 }
 
 /// The bytes of the blob named `fingerprint`, checked against it: not

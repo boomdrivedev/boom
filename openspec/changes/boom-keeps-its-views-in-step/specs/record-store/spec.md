@@ -43,7 +43,7 @@ A command SHALL answer from the views, once they are at the log's last entry. It
 #### Scenario: A write on a large log
 
 - **WHEN** `boom propose` runs on that log with its views at its last entry
-- **THEN** boom reads one entry of the log before it appends, and the proposal is judged as a full replay would judge it
+- **THEN** boom reads the log's last entry, and no other, before it appends, and reads as many as it does on a log of ten entries
 
 ### Requirement: boom verify checks the log and rebuilds the views
 

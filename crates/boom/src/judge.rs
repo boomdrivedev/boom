@@ -48,6 +48,19 @@ pub enum Status {
 }
 
 impl Status {
+    /// The status an answer names `name`, where there is one.
+    pub fn from_name(name: &str) -> Option<Status> {
+        [
+            Status::Proposed,
+            Status::Standing,
+            Status::Replaced,
+            Status::Rejected,
+            Status::History,
+        ]
+        .into_iter()
+        .find(|status| status.as_str() == name)
+    }
+
     /// The status as an answer names it.
     pub fn as_str(self) -> &'static str {
         match self {
