@@ -23,4 +23,4 @@
 
 - [x] 4.1 Write the edges into `README.md` and `CLAUDE.md`, in Plain
 - [x] 4.2 Test on boom and on sluice: a link to a missing claim is refused, and a claim walks back to its mockup
-- [ ] 4.3 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main`
+- [x] 4.3 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main`
