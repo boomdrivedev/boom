@@ -167,6 +167,7 @@ fn found_by_an_old_versions_scenarios() {
                 imported: None,
                 attach: Some(boom::entry::Attach {
                     repositories: vec!["shop".to_owned()],
+                    contexts: Vec::new(),
                 }),
             },
         },
@@ -748,6 +749,7 @@ fn answered_as_json() {
                 "excerpt": null,
                 "legacy": null,
                 "repositories": ["shop"],
+                "contexts": [],
                 "accepted": {"by": "ada", "entry": accepted["entry"]},
             }],
         })

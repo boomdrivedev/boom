@@ -138,6 +138,7 @@ fn what_stands_for_a_repository() {
             "scenarios": [],
             "body": null,
             "repositories": ["shop"],
+            "contexts": [],
             "accepted": {"by": "ada", "entry": accepted["entry"]},
         })
     );

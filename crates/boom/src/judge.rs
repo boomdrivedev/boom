@@ -96,9 +96,12 @@ impl Status {
 pub struct Version {
     /// The version as proposed.
     pub proposal: Proposal,
-    /// What it binds: the repositories its proposal names, or none for
-    /// the whole system.
+    /// The repositories its proposal binds.
     pub repositories: Vec<String>,
+    /// The contexts its proposal binds, each `<name>@<version>` of the
+    /// version that the binding meant (context-claims). With no
+    /// repository and no context, a version binds the whole system.
+    pub contexts: Vec<String>,
     /// Who proposed it.
     pub proposer: Actor,
     /// The entry that proposed it.
@@ -130,6 +133,23 @@ pub struct Claim {
     pub standing: Option<String>,
     /// Its versions, in the order proposed.
     pub versions: Vec<Version>,
+}
+
+impl Version {
+    /// Whether it binds the whole system: no repository and no context.
+    pub fn binds_the_whole_system(&self) -> bool {
+        self.repositories.is_empty() && self.contexts.is_empty()
+    }
+
+    /// Whether it binds `repository`, or a context named in `contexts`,
+    /// or the whole system.
+    pub fn binds(&self, repository: &str, contexts: &[String]) -> bool {
+        self.binds_the_whole_system()
+            || self.repositories.iter().any(|name| name == repository)
+            || crate::context::names(&self.contexts)
+                .iter()
+                .any(|name| contexts.iter().any(|context| context == name))
+    }
 }
 
 impl Claim {
@@ -210,17 +230,23 @@ impl State {
 
     /// Each claim that stands with its standing version: for
     /// `Some(repository)`, those whose standing version binds that
-    /// repository or the whole system; for `None`, every one. In the
-    /// order invariants, decisions, assumptions and terms, each kind by
-    /// name and a term then by its repository (claim-search; design 4;
-    /// term-claims).
-    pub fn standing_for(&self, repository: Option<&str>) -> Vec<(&Claim, &Version)> {
+    /// repository, a context named in `contexts`, or the whole system;
+    /// for `None`, every one. In the order invariants, decisions,
+    /// assumptions, terms and contexts, each kind by name and a term then
+    /// by its repository (claim-search; design 4; term-claims;
+    /// context-claims).
+    pub fn standing_for(
+        &self,
+        repository: Option<&str>,
+        contexts: &[String],
+    ) -> Vec<(&Claim, &Version)> {
         let mut standing = Vec::new();
         for kind in [
             Kind::Invariant,
             Kind::Decision,
             Kind::Assumption,
             Kind::Term,
+            Kind::Context,
         ] {
             for claim in self.claims.values().filter(|claim| claim.kind == kind) {
                 let Some(version) = claim
@@ -230,13 +256,7 @@ impl State {
                 else {
                     continue;
                 };
-                let binds = &version.repositories;
-                let bound = match repository {
-                    None => true,
-                    Some(repository) => {
-                        binds.is_empty() || binds.iter().any(|name| name == repository)
-                    }
-                };
+                let bound = repository.is_none_or(|repository| version.binds(repository, contexts));
                 if bound {
                     standing.push((claim, version));
                 }
@@ -337,6 +357,26 @@ fn check_form(act: &Act) -> Result<(), String> {
         }
         Act::Proposed { claim, attach, .. } => {
             check_attach(attach.as_ref())?;
+            let bound = contexts(attach.as_ref());
+            if !bound.is_empty() {
+                match claim.kind {
+                    Kind::Term => {
+                        return Err(format!(
+                            "a term binds one repository, and never a context: {} binds {}",
+                            claim.name,
+                            crate::repository::words(bound)
+                        ))
+                    }
+                    Kind::Context => {
+                        return Err(format!(
+                            "a context binds the repositories of its globs, and no context: {} binds {}",
+                            claim.name,
+                            crate::repository::words(bound)
+                        ))
+                    }
+                    _ => {}
+                }
+            }
             claim.check(repositories(attach.as_ref()))
         }
         Act::Accepted { versions } => {
@@ -375,17 +415,39 @@ fn check_form(act: &Act) -> Result<(), String> {
     }
 }
 
-/// An attachment's form: a repository at least, each kebab case, in
-/// ascending order and none twice (claim-attachments; design 2).
+/// An attachment's form: a repository or a context at least; each
+/// repository kebab case, in ascending order and none twice; each context
+/// `<name>@<version>`, in the order of their names and each name once
+/// (claim-attachments; design 2; context-claims).
 fn check_attach(attach: Option<&Attach>) -> Result<(), String> {
     let Some(attach) = attach else {
         return Ok(());
     };
-    if attach.repositories.is_empty() {
+    if attach.repositories.is_empty() && attach.contexts.is_empty() {
         return Err(
-            "an attach names a repository at least: one of the whole system holds no attach"
+            "an attach names a repository or a context at least: one of the whole system holds no attach"
                 .to_owned(),
         );
+    }
+    for stored in &attach.contexts {
+        claim::edge(stored).map_err(|_| {
+            format!("an attach names a context as <name>@<version>: {stored} does not")
+        })?;
+    }
+    let names = crate::context::names(&attach.contexts);
+    for pair in names.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(format!(
+                "an attach names each context once: {} is named twice",
+                pair[0]
+            ));
+        }
+        if pair[0] > pair[1] {
+            return Err(format!(
+                "an attach names its contexts in the order of their names: {} comes before {}",
+                pair[1], pair[0]
+            ));
+        }
     }
     for name in &attach.repositories {
         repository::check_name(name)?;
@@ -407,9 +469,22 @@ fn check_attach(attach: Option<&Attach>) -> Result<(), String> {
     Ok(())
 }
 
-/// The repositories an attachment names, none for the whole system.
+/// The repositories an attachment names.
 pub fn repositories(attach: Option<&Attach>) -> &[String] {
     attach.map_or(&[], |attach| attach.repositories.as_slice())
+}
+
+/// The contexts an attachment names, each `<name>@<version>`.
+pub fn contexts(attach: Option<&Attach>) -> &[String] {
+    attach.map_or(&[], |attach| attach.contexts.as_slice())
+}
+
+/// Whether two bindings are the same: the same repositories, and the
+/// same contexts by name, whatever version of each they meant
+/// (context-claims, "The same binding by name").
+pub fn same_binding(repositories: &[String], contexts: &[String], attach: Option<&Attach>) -> bool {
+    repositories == self::repositories(attach)
+        && crate::context::names(contexts) == crate::context::names(self::contexts(attach))
 }
 
 fn registered_key(key: &str) -> Result<PublicKey, String> {
@@ -643,14 +718,28 @@ fn check_proposal(
         let version = held
             .version(&proposal.version)
             .expect("the claim holds the version");
-        if version.repositories == repositories(attach) {
+        if same_binding(&version.repositories, &version.contexts, attach) {
             return Ok(Verdict::Repeats(version.proposed_in));
         }
         return Err(format!(
             "{name}@{} is attached to {}; a version's attachment does not move",
             proposal.version,
-            repository::words(&version.repositories)
+            crate::context::binds_words(&version.repositories, &version.contexts)
         ));
+    }
+    // Each context it binds is a version of a context of the store
+    // (context-claims, "A claim binds a context").
+    for stored in contexts(attach) {
+        let (target, version) = claim::edge(stored)?;
+        let (context, _) =
+            find(state, target, version).map_err(|why| format!("--context {stored}: {why}"))?;
+        if context.kind != Kind::Context {
+            return Err(format!(
+                "{target} is not a context: it is {} {}",
+                claim::article(context.kind),
+                context.kind.as_str()
+            ));
+        }
     }
     // One name space, except that a word has a term in each repository
     // (term-claims).
@@ -890,6 +979,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
             entry_claim.versions.push(Version {
                 proposal: (**claim).clone(),
                 repositories: repositories(attach.as_ref()).to_vec(),
+                contexts: contexts(attach.as_ref()).to_vec(),
                 proposer: entry.actor.clone(),
                 proposed_in: seq,
                 status: Status::Proposed,
@@ -1031,6 +1121,7 @@ mod tests {
             Version {
                 proposal,
                 repositories: repositories.iter().map(|&name| name.to_owned()).collect(),
+                contexts: Vec::new(),
                 proposer: Actor::Agent {
                     provenance: "run-1".to_owned(),
                 },
@@ -1078,7 +1169,7 @@ mod tests {
             (Kind::Invariant, "in-ledger", &["ledger"]),
             (Kind::Decision, "in-both", &["ledger", "shop"]),
         ]);
-        let standing = state.standing_for(Some("shop"));
+        let standing = state.standing_for(Some("shop"), &[]);
         assert_eq!(names(&standing), ["in-shop", "in-the-system", "in-both"]);
         for (claim, version) in &standing {
             assert_eq!(
@@ -1088,10 +1179,13 @@ mod tests {
             assert_eq!(version.status, Status::Accepted);
         }
         assert_eq!(
-            names(&state.standing_for(Some("ledger"))),
+            names(&state.standing_for(Some("ledger"), &[])),
             ["in-ledger", "in-the-system", "in-both"]
         );
-        assert_eq!(names(&state.standing_for(Some("docs"))), ["in-the-system"]);
+        assert_eq!(
+            names(&state.standing_for(Some("docs"), &[])),
+            ["in-the-system"]
+        );
     }
 
     #[test]
@@ -1104,7 +1198,7 @@ mod tests {
             (Kind::Invariant, "delta-holds", &["docs"]),
         ]);
         assert_eq!(
-            names(&state.standing_for(None)),
+            names(&state.standing_for(None, &[])),
             [
                 "delta-holds",
                 "gamma-holds",
@@ -1112,6 +1206,35 @@ mod tests {
                 "beta-kept",
                 "alpha-assumed"
             ]
+        );
+    }
+
+    #[test]
+    fn standing_for_a_repository_gives_the_claims_of_the_contexts_named() {
+        let mut state = state(&[
+            (Kind::Invariant, "in-shop", &["shop"]),
+            (Kind::Invariant, "in-the-system", &[]),
+            (Kind::Invariant, "in-billing", &[]),
+            (Kind::Invariant, "in-shipping", &[]),
+        ]);
+        for (name, context) in [
+            ("in-billing", "shop-billing@aaaaaaaaaaaa"),
+            ("in-shipping", "shop-shipping@aaaaaaaaaaaa"),
+        ] {
+            let claim = state.claims.get_mut(&key(name, None)).unwrap();
+            claim.versions[0].contexts = vec![context.to_owned()];
+        }
+        assert_eq!(
+            names(&state.standing_for(Some("shop"), &[])),
+            ["in-shop", "in-the-system"]
+        );
+        assert_eq!(
+            names(&state.standing_for(Some("shop"), &["shop-billing".to_owned()])),
+            ["in-billing", "in-shop", "in-the-system"]
+        );
+        assert_eq!(
+            names(&state.standing_for(None, &[])),
+            ["in-billing", "in-shipping", "in-shop", "in-the-system"]
         );
     }
 

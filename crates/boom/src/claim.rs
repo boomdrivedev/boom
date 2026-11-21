@@ -2,7 +2,8 @@
 //! a version as the fingerprint of its content, the history a version
 //! that comes in from an import may carry (claim-versions; design 5),
 //! and the edges a version stores: its sources, the claims a decision
-//! changes, and its origins (claim-edges).
+//! changes, and its origins (claim-edges), and the globs of a context
+//! (context-claims).
 
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +20,9 @@ pub enum Kind {
     /// A word and its meaning in one repository, with the old words it
     /// replaces (term-claims).
     Term,
+    /// A part of the system that owns path globs, each in one repository
+    /// (context-claims).
+    Context,
 }
 
 impl Kind {
@@ -29,6 +33,7 @@ impl Kind {
             Kind::Decision => "decision",
             Kind::Assumption => "assumption",
             Kind::Term => "term",
+            Kind::Context => "context",
         }
     }
 }
@@ -93,6 +98,10 @@ pub struct Proposal {
     /// in order; written only where there is one (term-claims).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub replaces: Vec<String>,
+    /// The globs a context owns, each `<repository>:<pattern>`, each one
+    /// time and sorted; written only where there is one (context-claims).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
     /// Its history, where it comes in as history; written only where
     /// present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -261,9 +270,9 @@ pub fn once<T: PartialEq + Clone>(edges: &[T]) -> Vec<T> {
 }
 
 /// The content a version is the fingerprint of, in the order it is
-/// written: its history, a term's repository, a term's old words and its
-/// edges last, and each only where present, so a version with none keeps
-/// the fingerprint it had before they were.
+/// written: its history, a term's repository, a term's old words, the
+/// globs of a context and its edges last, and each only where present, so
+/// a version with none keeps the fingerprint it had before they were.
 #[derive(Serialize)]
 struct Content<'a> {
     kind: Kind,
@@ -278,6 +287,8 @@ struct Content<'a> {
     repository: Option<&'a str>,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     replaces: &'a [String],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    paths: &'a [String],
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     source: &'a [String],
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
@@ -306,6 +317,7 @@ impl Proposal {
             scenarios,
             body,
             replaces: Vec::new(),
+            paths: Vec::new(),
             history,
             source: Vec::new(),
             changes: Vec::new(),
@@ -332,11 +344,29 @@ impl Proposal {
         proposal
     }
 
+    /// A version of a context: its name, its statement, its body, its
+    /// base and the globs it owns, kept as [`crate::context::globs`] keeps
+    /// them (context-claims).
+    pub fn context(
+        name: &str,
+        statement: &str,
+        body: Option<String>,
+        base: Option<String>,
+        globs: &[String],
+    ) -> Proposal {
+        let mut proposal =
+            Proposal::new(Kind::Context, name, statement, Vec::new(), body, base, None);
+        proposal.paths = crate::context::globs(globs);
+        proposal.version = proposal.fingerprint(None);
+        proposal
+    }
+
     /// The first 12 hexadecimal characters of the SHA-256 of its kind,
     /// name, statement, scenarios, body's fingerprint, base and, where
     /// it has them, its history, the repository of a term, given as
-    /// `repository`, the old words of a term, and its edges `source`,
-    /// `changes` and `origin` (claim-versions; claim-edges).
+    /// `repository`, the old words of a term, the globs of a context, and
+    /// its edges `source`, `changes` and `origin` (claim-versions;
+    /// claim-edges; context-claims).
     pub fn fingerprint(&self, repository: Option<&str>) -> String {
         let content = serde_json::to_string(&Content {
             kind: self.kind,
@@ -348,6 +378,7 @@ impl Proposal {
             history: self.history.as_ref(),
             repository,
             replaces: &self.replaces,
+            paths: &self.paths,
             source: &self.source,
             changes: &self.changes,
             origin: &self.origin,
@@ -363,7 +394,10 @@ impl Proposal {
     /// form: a decision needs a body. A version with a history has no
     /// base, and names as its successor another claim (design 6). A
     /// term binds one repository of `repositories`, the ones its entry
-    /// binds, and only a term replaces words (term-claims).
+    /// binds, and only a term replaces words (term-claims). A context
+    /// owns one glob at least, each one time and sorted, and binds the
+    /// repositories of its globs; only a context owns globs
+    /// (context-claims).
     pub fn check(&self, repositories: &[String]) -> Result<(), String> {
         check_name(&self.name)?;
         check_statement(&self.statement)?;
@@ -396,6 +430,7 @@ impl Proposal {
                 self.kind.as_str()
             ));
         }
+        self.check_paths(repositories)?;
         self.check_edges()?;
         let fingerprint = self.fingerprint(repository);
         if self.version != fingerprint {
@@ -409,6 +444,47 @@ impl Proposal {
 }
 
 impl Proposal {
+    /// The globs of a context: one at least, each in its form, each one
+    /// time and sorted, and its repositories the ones its entry binds.
+    fn check_paths(&self, repositories: &[String]) -> Result<(), String> {
+        if self.kind != Kind::Context {
+            if self.paths.is_empty() {
+                return Ok(());
+            }
+            return Err(format!(
+                "only a context owns paths: {} is {} {}",
+                self.name,
+                article(self.kind),
+                self.kind.as_str()
+            ));
+        }
+        if !self.scenarios.is_empty() || self.history.is_some() {
+            return Err("a context has no scenarios and no history".to_owned());
+        }
+        if self.paths.is_empty() {
+            return Err(format!(
+                "a context owns one glob at least, with --path <repository>:<pattern>: {} owns none",
+                self.name
+            ));
+        }
+        for glob in &self.paths {
+            crate::context::glob(glob)?;
+        }
+        if self.paths != crate::context::globs(&self.paths) {
+            return Err("a context keeps each glob one time, sorted".to_owned());
+        }
+        let named = crate::context::repositories(&self.paths);
+        if repositories != named.as_slice() {
+            return Err(format!(
+                "a context binds the repositories of its globs: {} binds {}, and its globs name {}",
+                self.name,
+                crate::repository::words(repositories),
+                crate::repository::words(&named)
+            ));
+        }
+        Ok(())
+    }
+
     /// The form of its edges: each edge to a claim `<name>@<version>` of
     /// another claim, each one time; `changes` only on a decision; each
     /// origin in its form, each one time (claim-edges).
@@ -449,10 +525,11 @@ impl Proposal {
     }
 }
 
-fn article(kind: Kind) -> &'static str {
+/// The article of a kind's name, `an invariant` or `a term`.
+pub fn article(kind: Kind) -> &'static str {
     match kind {
         Kind::Invariant | Kind::Assumption => "an",
-        Kind::Decision | Kind::Term => "a",
+        Kind::Decision | Kind::Term | Kind::Context => "a",
     }
 }
 
@@ -903,6 +980,75 @@ mod tests {
         assert!(file("mockup.svg", &fingerprint[..12]).check().is_err());
         let twice = with_edges(&[], &[], vec![git("a.svg"), git("a.svg")]);
         assert!(twice.check(&[]).unwrap_err().contains("each edge one time"));
+    }
+
+    fn overview(globs: &[&str]) -> Proposal {
+        let globs: Vec<String> = globs.iter().map(|glob| (*glob).to_owned()).collect();
+        Proposal::context(
+            "sluice-overview",
+            "The overview that a reader of the queue sees.",
+            None,
+            None,
+            &globs,
+        )
+    }
+
+    #[test]
+    fn the_globs_of_a_context_are_part_of_its_content() {
+        let one = overview(&["sluice:src/overview*.rs"]);
+        let expected = crate::sha256_hex(
+            br#"{"kind":"context","name":"sluice-overview","statement":"The overview that a reader of the queue sees.","scenarios":[],"body":null,"base":null,"paths":["sluice:src/overview*.rs"]}"#,
+        );
+        assert_eq!(one.version, expected[..12]);
+        let two = overview(&["sluice:src/overview*.rs", "flume:src/status.rs"]);
+        assert_ne!(one.version, two.version);
+        assert_eq!(
+            two.version,
+            overview(&["flume:src/status.rs", "sluice:src/overview*.rs"]).version
+        );
+        assert_eq!(one.check(&["sluice".to_owned()]), Ok(()));
+        assert_eq!(
+            two.check(&["flume".to_owned(), "sluice".to_owned()]),
+            Ok(())
+        );
+        let refused = one.check(&["flume".to_owned()]).unwrap_err();
+        assert!(
+            refused.starts_with("a context binds the repositories of its globs"),
+            "{refused}"
+        );
+        let written = serde_json::to_string(&one).unwrap();
+        assert!(
+            written.contains(r#""paths":["sluice:src/overview*.rs"]"#),
+            "{written}"
+        );
+        assert_eq!(serde_json::from_str::<Proposal>(&written).unwrap(), one);
+    }
+
+    #[test]
+    fn a_context_owns_one_glob_at_least_and_only_a_context_owns_globs() {
+        let none = overview(&[]);
+        assert!(none
+            .check(&[])
+            .unwrap_err()
+            .starts_with("a context owns one glob at least"));
+        let mut unsorted = overview(&["sluice:a.rs"]);
+        unsorted.paths = vec!["sluice:b.rs".to_owned(), "sluice:a.rs".to_owned()];
+        unsorted.version = unsorted.fingerprint(None);
+        assert!(unsorted
+            .check(&["sluice".to_owned()])
+            .unwrap_err()
+            .contains("each glob one time, sorted"));
+        let mut invariant = money("Every amount names its currency.", None);
+        invariant.paths = vec!["sluice:a.rs".to_owned()];
+        invariant.version = invariant.fingerprint(None);
+        assert!(invariant
+            .check(&[])
+            .unwrap_err()
+            .starts_with("only a context owns paths"));
+        // A version with no glob writes none, and keeps its content.
+        let written =
+            serde_json::to_string(&money("Every amount names its currency.", None)).unwrap();
+        assert!(!written.contains("paths"), "{written}");
     }
 
     #[test]

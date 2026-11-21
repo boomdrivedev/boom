@@ -76,6 +76,7 @@ CREATE TABLE versions (
     decided_in INTEGER,
     reason TEXT,
     repositories TEXT NOT NULL,
+    contexts TEXT NOT NULL,
     imported TEXT,
     proposal TEXT NOT NULL,
     PRIMARY KEY (name, version)
@@ -106,10 +107,29 @@ CREATE TABLE edges (
 );
 CREATE INDEX edges_target ON edges (target_name);
 CREATE INDEX edges_artifact ON edges (artifact);
+CREATE TABLE paths (
+    name TEXT NOT NULL,
+    term TEXT NOT NULL,
+    version TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    repository TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    PRIMARY KEY (name, version, position)
+);
+CREATE INDEX paths_repository ON paths (repository);
+CREATE TABLE bindings (
+    name TEXT NOT NULL,
+    term TEXT NOT NULL,
+    version TEXT NOT NULL,
+    context TEXT NOT NULL,
+    context_version TEXT NOT NULL,
+    PRIMARY KEY (name, version, context)
+);
+CREATE INDEX bindings_context ON bindings (context);
 ";
 
 /// The views' tables, each dropped and made again by a rebuild.
-const VIEW_TABLES: [&str; 7] = [
+const VIEW_TABLES: [&str; 9] = [
     "views_head",
     "persons",
     "claims",
@@ -117,11 +137,13 @@ const VIEW_TABLES: [&str; 7] = [
     "repositories",
     "judgments",
     "edges",
+    "paths",
+    "bindings",
 ];
 
 /// The views' form, kept in `views_head`. Views of another form are
 /// built again from the whole log.
-const VIEWS_FORM: i64 = 6;
+const VIEWS_FORM: i64 = 7;
 
 thread_local! {
     static ENTRIES_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -605,17 +627,21 @@ impl Scope {
             match &entry.act {
                 Act::Registered { .. } => {}
                 Act::Proposed {
-                    claim, imported, ..
+                    claim,
+                    imported,
+                    attach,
                 } => {
                     scope.names.insert(claim.name.clone());
                     scope.imported |= imported.is_some();
-                    // The claims its edges name, for the judge to find
-                    // the versions they meant (claim-edges).
+                    // The claims its edges and its contexts name, for the
+                    // judge to find the versions they meant (claim-edges;
+                    // context-claims).
                     scope.names.extend(
                         claim
                             .source
                             .iter()
                             .chain(&claim.changes)
+                            .chain(crate::judge::contexts(attach.as_ref()))
                             .filter_map(|edge| edge.split_once('@'))
                             .map(|(name, _)| name.to_owned()),
                     );
@@ -1085,10 +1111,12 @@ fn write_claim(conn: &Connection, claim: &Claim) -> Result<(), Failure> {
         "DELETE FROM versions WHERE name = ?1 AND term = ?2",
         [&claim.name, term],
     )?;
-    conn.execute(
-        "DELETE FROM edges WHERE name = ?1 AND term = ?2",
-        [&claim.name, term],
-    )?;
+    for table in ["edges", "paths", "bindings"] {
+        conn.execute(
+            &format!("DELETE FROM {table} WHERE name = ?1 AND term = ?2"),
+            [&claim.name, term],
+        )?;
+    }
     conn.execute(
         "INSERT OR REPLACE INTO claims (name, term, kind, standing) VALUES (?1, ?2, ?3, ?4)",
         params![claim.name, term, claim.kind.as_str(), claim.standing],
@@ -1097,8 +1125,8 @@ fn write_claim(conn: &Connection, claim: &Claim) -> Result<(), Failure> {
         conn.execute(
             "INSERT INTO versions (name, term, version, base, statement, scenarios, body, \
              proposer, proposed_in, status, decided_by, decided_in, reason, repositories, \
-             imported, proposal) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+             contexts, imported, proposal) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 claim.name,
                 term,
@@ -1114,13 +1142,132 @@ fn write_claim(conn: &Connection, claim: &Claim) -> Result<(), Failure> {
                 version.decided_in.map(sql_int),
                 version.reason,
                 to_json(&version.repositories),
+                to_json(&version.contexts),
                 version.imported.as_ref().map(to_json),
                 to_json(&version.proposal),
             ],
         )?;
         write_edges(conn, &claim.name, term, &version.proposal)?;
+        write_scope(conn, &claim.name, term, version)?;
     }
     Ok(())
+}
+
+/// A row for each glob of a context version, with its repository and its
+/// pattern, and a row for each context a version binds, with the version
+/// of the context that the binding meant (context-claims).
+fn write_scope(
+    conn: &Connection,
+    name: &str,
+    term: &str,
+    version: &Version,
+) -> Result<(), Failure> {
+    let mut path = conn.prepare_cached(
+        "INSERT INTO paths (name, term, version, position, repository, pattern) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )?;
+    for (position, glob) in version.proposal.paths.iter().enumerate() {
+        let (repository, pattern) = glob.split_once(':').unwrap_or(("", glob));
+        path.execute(params![
+            name,
+            term,
+            version.proposal.version,
+            sql_int(position as u64),
+            repository,
+            pattern,
+        ])?;
+    }
+    let mut binding = conn.prepare_cached(
+        "INSERT INTO bindings (name, term, version, context, context_version) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )?;
+    for stored in &version.contexts {
+        let (context, meant) = stored.split_once('@').unwrap_or((stored, ""));
+        binding.execute(params![
+            name,
+            term,
+            version.proposal.version,
+            context,
+            meant
+        ])?;
+    }
+    Ok(())
+}
+
+/// The contexts the version `name@version` binds, each
+/// `<name>@<version>`; none where the views hold no such version.
+pub fn contexts_of(conn: &Connection, name: &str, version: &str) -> Result<Vec<String>, Failure> {
+    let contexts: Option<String> = conn
+        .query_row(
+            "SELECT contexts FROM versions WHERE name = ?1 AND version = ?2",
+            [name, version],
+            |row| row.get(0),
+        )
+        .optional()?;
+    contexts.as_deref().map_or(Ok(Vec::new()), from_json)
+}
+
+/// The globs of the accepted version of each context that name
+/// `repository`, as `(name, version, pattern)`, in the order of the
+/// contexts' names and then their globs.
+pub fn accepted_globs(
+    conn: &Connection,
+    repository: &str,
+) -> Result<Vec<(String, String, String)>, Failure> {
+    let mut statement = conn.prepare_cached(
+        "SELECT p.name, p.version, p.pattern FROM paths p \
+         JOIN claims c ON c.name = p.name AND c.term = p.term AND c.standing = p.version \
+         WHERE p.repository = ?1 ORDER BY p.name, p.position",
+    )?;
+    let rows = statement
+        .query_map([repository], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// The names of the contexts whose accepted version has a glob in
+/// `repository`, sorted.
+pub fn contexts_in(conn: &Connection, repository: &str) -> Result<Vec<String>, Failure> {
+    let mut names: Vec<String> = accepted_globs(conn, repository)?
+        .into_iter()
+        .map(|(name, _, _)| name)
+        .collect();
+    names.dedup();
+    Ok(names)
+}
+
+/// A claim whose accepted version binds a context, as the views hold it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bound {
+    /// The claim.
+    pub name: String,
+    /// Its accepted version.
+    pub version: String,
+    /// The version of the context that the binding meant.
+    pub meant: String,
+}
+
+/// Each claim whose accepted version binds the context `context`, in the
+/// order of their names (context-claims, "boom show gives a context and a
+/// binding").
+pub fn bound_to(conn: &Connection, context: &str) -> Result<Vec<Bound>, Failure> {
+    let mut statement = conn.prepare(
+        "SELECT b.name, b.version, b.context_version FROM bindings b \
+         JOIN claims c ON c.name = b.name AND c.term = b.term AND c.standing = b.version \
+         WHERE b.context = ?1 ORDER BY b.name, b.term",
+    )?;
+    let rows = statement
+        .query_map([context], |row| {
+            Ok(Bound {
+                name: row.get(0)?,
+                version: row.get(1)?,
+                meant: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
 }
 
 /// A row for each edge of a version, in its order: each `source` and
@@ -1284,18 +1431,19 @@ pub fn load_state_for(conn: &Connection, scope: &Scope) -> Result<State, Failure
 }
 
 /// Each claim's accepted version, with the claim, for `Some(repository)`
-/// those that bind it or the whole system, in the order invariants,
-/// decisions, assumptions, each kind by name: no other version is read.
+/// those that bind it, a context named in `contexts` or the whole system,
+/// in the order of [`State::standing_for`]: no other version is read.
 pub fn accepted_for(
     conn: &Connection,
     repository: Option<&str>,
+    contexts: &[String],
 ) -> Result<Vec<(Claim, Version)>, Failure> {
     let mut state = State::default();
     load_claims(conn, &mut state, "WHERE standing IS NOT NULL", [])?;
     // Only each claim's accepted version is read: load_claims reads the
     // versions of the claims it loads, which a join narrows to those.
     Ok(state
-        .standing_for(repository)
+        .standing_for(repository, contexts)
         .into_iter()
         .map(|(claim, version)| {
             let mut claim = claim.clone();
@@ -1414,7 +1562,7 @@ fn read_versions<P: rusqlite::Params>(
 ) -> Result<Vec<Version>, Failure> {
     let mut versions = conn.prepare_cached(&format!(
         "SELECT proposer, proposed_in, status, decided_by, decided_in, reason, \
-         repositories, imported, proposal FROM versions {filter} ORDER BY proposed_in"
+         repositories, contexts, imported, proposal FROM versions {filter} ORDER BY proposed_in"
     ))?;
     let rows = versions
         .query_map(params, |row| {
@@ -1425,9 +1573,9 @@ fn read_versions<P: rusqlite::Params>(
                 row.get::<_, Option<String>>(3)?,
                 row.get::<_, Option<i64>>(4)?,
                 row.get::<_, Option<String>>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, Option<String>>(7)?,
-                row.get::<_, String>(8)?,
+                (row.get::<_, String>(6)?, row.get::<_, String>(7)?),
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, String>(9)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1441,13 +1589,14 @@ fn read_versions<P: rusqlite::Params>(
                 decided_by,
                 decided_in,
                 reason,
-                repositories,
+                (repositories, contexts),
                 imported,
                 proposal,
             )| {
                 Ok(Version {
                     proposal: from_json::<Proposal>(&proposal)?,
                     repositories: from_json(&repositories)?,
+                    contexts: from_json(&contexts)?,
                     proposer: from_json(&proposer)?,
                     proposed_in: u64::try_from(proposed_in).unwrap_or(0),
                     status: Status::from_name(&status).ok_or_else(|| {
@@ -1535,9 +1684,14 @@ pub struct VersionView {
     pub changes: Vec<String>,
     /// The files and commits it came from.
     pub origin: Vec<Origin>,
-    /// What it binds: the repositories its proposal names, or none for
-    /// the whole system.
+    /// The globs of a context version (context-claims).
+    pub paths: Vec<String>,
+    /// The repositories its proposal binds.
     pub repositories: Vec<String>,
+    /// The contexts its proposal binds, each `<name>@<version>` of the
+    /// version the binding meant. With no repository and no context, it
+    /// binds the whole system.
+    pub contexts: Vec<String>,
     /// Who proposed it.
     pub proposer: Actor,
     /// The entry that proposed it.
@@ -1588,7 +1742,7 @@ pub fn claim_views(conn: &Connection, name: &str) -> Result<Vec<ClaimView>, Fail
 fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<VersionView>, Failure> {
     let mut statement = conn.prepare(
         "SELECT version, base, statement, scenarios, body, proposer, proposed_in, status, \
-         decided_by, decided_in, reason, repositories, proposal FROM versions \
+         decided_by, decided_in, reason, repositories, contexts, proposal FROM versions \
          WHERE name = ?1 AND term = ?2 ORDER BY proposed_in",
     )?;
     let rows = statement
@@ -1608,8 +1762,8 @@ fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<Versio
                     row.get::<_, Option<String>>(8)?,
                     row.get::<_, Option<i64>>(9)?,
                     row.get::<_, Option<String>>(10)?,
-                    row.get::<_, String>(11)?,
-                    row.get::<_, String>(12)?,
+                    (row.get::<_, String>(11)?, row.get::<_, String>(12)?),
+                    row.get::<_, String>(13)?,
                 ),
             ))
         })?
@@ -1617,7 +1771,7 @@ fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<Versio
     let mut versions = Vec::with_capacity(rows.len());
     for (
         (version, base, words, scenarios, body, proposer),
-        (proposed_in, status, by, decided_in, reason, repositories, proposal),
+        (proposed_in, status, by, decided_in, reason, (repositories, contexts), proposal),
     ) in rows
     {
         let proposal = from_json::<Proposal>(&proposal)?;
@@ -1631,7 +1785,9 @@ fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<Versio
             source: proposal.source,
             changes: proposal.changes,
             origin: proposal.origin,
+            paths: proposal.paths,
             repositories: from_json(&repositories)?,
+            contexts: from_json(&contexts)?,
             proposer: from_json(&proposer)?,
             proposed_in: u64::try_from(proposed_in).unwrap_or(0),
             status,

@@ -19,7 +19,7 @@ use crate::import::{self, Read, Record};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
 use crate::store::{self, Append, Scope, Store, Written};
-use crate::{repository, Failure};
+use crate::{context, repository, Failure};
 
 /// What a command reads from its process: the folders a store's path
 /// is resolved under, the working folder a repository is declared from,
@@ -111,6 +111,10 @@ struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "a process parses one command one time, so the size of the largest does not matter"
+)]
 enum Command {
     /// Make a store, its first entry registering its first owner with
     /// their security key, signed by it.
@@ -157,11 +161,17 @@ enum Command {
         #[arg(long)]
         key: Option<PathBuf>,
         /// A repository the version binds; any number of times. Naming
-        /// none, an amendment binds what its base binds, and a first
-        /// version the repository the working folder declares, else the
-        /// whole system.
+        /// no repository and no context, an amendment binds what its base
+        /// binds, and a first version the repository of the session, else
+        /// the whole system.
         #[arg(long = "repository", value_name = "NAME", conflicts_with = "system")]
         repositories: Vec<String>,
+        /// A context the version binds, `<name>` or `<name>@<version>` of a
+        /// context of the store; any number of times. A name stores the
+        /// accepted version of the context, or its newest where none is
+        /// accepted.
+        #[arg(long = "context", value_name = "CONTEXT", conflicts_with = "system")]
+        contexts: Vec<String>,
         /// Bind the version to the whole system, every repository.
         #[arg(long)]
         system: bool,
@@ -184,6 +194,11 @@ enum Command {
         /// `git:<repository>@<commit>:<path>`; any number of times.
         #[arg(long = "origin", value_name = "FILE")]
         origin: Vec<String>,
+        /// For a context, a glob it owns, `<repository>:<pattern>`, the
+        /// pattern relative to the root of the repository; any number of
+        /// times. Only a context owns globs.
+        #[arg(long = "path", value_name = "GLOB")]
+        paths: Vec<String>,
     },
     /// Accept one or more versions, as a person, in one entry that their
     /// security key signs one time: every version, or none.
@@ -241,6 +256,12 @@ enum Command {
         /// harness's hook in every session asks.
         #[arg(long, conflicts_with = "repository")]
         if_declared: bool,
+        /// A file, `<repository>:<path>`, for the claims that bind it: the
+        /// whole system's, its repository's, and those of each context
+        /// whose accepted globs match it; any number of times, each of one
+        /// repository.
+        #[arg(long = "path", value_name = "PATH")]
+        paths: Vec<String>,
     },
     /// Find the claims that stand whose words hold every word searched,
     /// in a repository or every repository, the best matches first,
@@ -671,11 +692,13 @@ fn execute(
             provenance,
             key,
             repositories,
+            contexts,
             system,
             replaces,
             source,
             changes,
             origin,
+            paths,
         } => propose(
             &path?,
             Proposed {
@@ -686,11 +709,13 @@ fn execute(
                 body,
                 provenance,
                 repositories,
+                contexts,
                 system,
                 replaces,
                 source,
                 changes,
                 origin,
+                paths,
             },
             key.as_deref(),
             keys,
@@ -723,7 +748,8 @@ fn execute(
         Command::Query {
             repository,
             if_declared,
-        } => query(path, repository.as_deref(), if_declared, env),
+            paths,
+        } => query(path, repository.as_deref(), if_declared, &paths, env),
         Command::Search {
             words,
             repository,
@@ -962,11 +988,21 @@ struct Proposed {
     body: Option<PathBuf>,
     provenance: Option<String>,
     repositories: Vec<String>,
+    contexts: Vec<String>,
     system: bool,
     replaces: Vec<String>,
     source: Vec<String>,
     changes: Vec<String>,
     origin: Vec<String>,
+    paths: Vec<String>,
+}
+
+impl Proposed {
+    /// Whether it names what it binds: a repository, a context or the
+    /// whole system.
+    fn names_its_binding(&self) -> bool {
+        !self.repositories.is_empty() || !self.contexts.is_empty() || self.system
+    }
 }
 
 /// The edge to a claim that `--<flag> <given>` names, as an entry stores
@@ -1056,33 +1092,121 @@ fn origins(given: &[String]) -> Result<(Vec<Origin>, Vec<Vec<u8>>), Failure> {
     Ok((crate::claim::once(&kept), files))
 }
 
-/// What a proposal binds, in the order record 0008 (point 4) gives:
-/// the repositories it names, sorted and each once; else, with
-/// `--system`, the whole system; else, for an amendment, what its base
-/// binds in `state`; else the repository `declared`; else the whole
-/// system.
-fn attachment(proposed: &Proposed, declared: Option<&str>, state: &State) -> Option<Attach> {
-    let named = |repositories: Vec<String>| {
-        Some(repositories)
-            .filter(|repositories| !repositories.is_empty())
-            .map(|repositories| Attach { repositories })
+/// The binding that `--context <given>` names, as an entry stores it,
+/// `<name>@<version>`: for a name, the accepted version of the context, or
+/// its newest where none is accepted (context-claims, "A claim binds a
+/// context").
+fn resolve_context(state: &State, given: &str) -> Result<String, Failure> {
+    let (name, version) = match given.split_once('@') {
+        Some((name, version)) => (name, Some(version)),
+        None => (given, None),
     };
-    if !proposed.repositories.is_empty() {
+    if crate::claim::check_name(name).is_err() || version.is_some_and(str::is_empty) {
+        return Err(Failure::refused(format!(
+            "--context names a context of the store, <name> or <name>@<version>: {given} does not"
+        )));
+    }
+    let Some(claim) = state.named(name).first().copied() else {
+        return Err(Failure::refused(format!(
+            "no claim has the name {name}: --context {given} names a context of the store"
+        )));
+    };
+    if claim.kind != Kind::Context {
+        return Err(Failure::refused(format!(
+            "{name} is not a context: it is {} {}, and --context names a context",
+            crate::claim::article(claim.kind),
+            claim.kind.as_str()
+        )));
+    }
+    let meant = match version {
+        Some(version) if claim.version(version).is_some() => version.to_owned(),
+        Some(version) => {
+            return Err(Failure::refused(format!(
+                "the context {name} has no version {version}: --context {given}"
+            )))
+        }
+        None => claim
+            .standing
+            .clone()
+            .or_else(|| {
+                claim
+                    .versions
+                    .last()
+                    .map(|version| version.proposal.version.clone())
+            })
+            .ok_or_else(|| Failure::not_run(format!("the context {name} has no version")))?,
+    };
+    Ok(format!("{name}@{meant}"))
+}
+
+/// The bindings that `given` names, sorted by name, each name one time.
+fn resolve_contexts(state: &State, given: &[String]) -> Result<Vec<String>, Failure> {
+    let mut resolved = given
+        .iter()
+        .map(|context| resolve_context(state, context))
+        .collect::<Result<Vec<_>, _>>()?;
+    resolved.sort();
+    resolved.dedup();
+    let names = context::names(&resolved);
+    if let Some(pair) = names.windows(2).find(|pair| pair[0] == pair[1]) {
+        return Err(Failure::refused(format!(
+            "a version binds each context one time: --context names two versions of {}",
+            pair[0]
+        )));
+    }
+    Ok(resolved)
+}
+
+/// What a proposal binds (claim-attachments): for a context, the
+/// repositories of its globs; else the repositories and the contexts it
+/// names; else, with `--system`, the whole system; else, for an
+/// amendment, the repositories of its base and the contexts of its base
+/// by name, each at its accepted version now, else its newest; else the
+/// repository `declared`; else the whole system.
+fn attachment(
+    proposed: &Proposed,
+    declared: Option<&str>,
+    state: &State,
+) -> Result<Option<Attach>, Failure> {
+    let made = |repositories: Vec<String>, contexts: Vec<String>| {
+        (!repositories.is_empty() || !contexts.is_empty()).then_some(Attach {
+            repositories,
+            contexts,
+        })
+    };
+    if proposed.kind == Kind::Context {
+        return Ok(made(context::repositories(&proposed.paths), Vec::new()));
+    }
+    if !proposed.repositories.is_empty() || !proposed.contexts.is_empty() {
         let mut repositories = proposed.repositories.clone();
         repositories.sort();
         repositories.dedup();
-        return named(repositories);
+        return Ok(made(
+            repositories,
+            resolve_contexts(state, &proposed.contexts)?,
+        ));
     }
     if proposed.system {
-        return None;
+        return Ok(None);
     }
     if let Some(base) = &proposed.amends {
-        let base = state
+        let Some(base) = state
             .holding(&proposed.name, base)
-            .and_then(|claim| claim.version(base));
-        return base.and_then(|base| named(base.repositories.clone()));
+            .and_then(|claim| claim.version(base))
+        else {
+            // The judge refuses a base the claim does not have.
+            return Ok(None);
+        };
+        let names: Vec<String> = context::names(&base.contexts)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        return Ok(made(
+            base.repositories.clone(),
+            resolve_contexts(state, &names)?,
+        ));
     }
-    declared.and_then(|name| named(vec![name.to_owned()]))
+    Ok(declared.and_then(|name| made(vec![name.to_owned()], Vec::new())))
 }
 
 fn propose(
@@ -1121,45 +1245,83 @@ fn propose(
         }
         None => None,
     };
-    let declared =
-        if proposed.repositories.is_empty() && !proposed.system && proposed.amends.is_none() {
-            session_repository(path, None, env)?
-        } else {
-            None
-        };
+    match proposed.kind {
+        Kind::Context if proposed.names_its_binding() => {
+            return Err(Failure::refused(
+                "a context binds the repositories of its globs: boom propose context takes no --repository, --system or --context",
+            ))
+        }
+        Kind::Term if !proposed.contexts.is_empty() => {
+            return Err(Failure::refused(
+                "a term binds one repository, and never a context: boom propose term takes no --context",
+            ))
+        }
+        Kind::Context => {}
+        kind if !proposed.paths.is_empty() => {
+            return Err(Failure::refused(format!(
+                "only a context owns paths: {} is proposed as {} {}, with --path",
+                proposed.name,
+                crate::claim::article(kind),
+                kind.as_str()
+            )))
+        }
+        _ => {}
+    }
+    let declared = if !proposed.names_its_binding()
+        && proposed.amends.is_none()
+        && proposed.kind != Kind::Context
+    {
+        session_repository(path, None, env)?
+    } else {
+        None
+    };
     if !proposed.changes.is_empty() && proposed.kind != Kind::Decision {
         return Err(Failure::refused(format!(
             "only a decision changes claims: {} is proposed as {} {}, with --changes",
             proposed.name,
-            if proposed.kind == Kind::Invariant || proposed.kind == Kind::Assumption {
-                "an"
-            } else {
-                "a"
-            },
+            crate::claim::article(proposed.kind),
             proposed.kind.as_str()
         )));
     }
     let (origin, files) = origins(&proposed.origin)?;
     let signer = key.map(|key| keys.signer(key)).transpose()?;
-    // The claims the edges name are read with the claim, for the judge
-    // to find the versions they mean (claim-edges).
-    let scope = Scope::names(
+    // The claims the edges and the contexts name are read with the
+    // claim, for the judge to find the versions they mean (claim-edges;
+    // context-claims). An amendment that names nothing binds the contexts
+    // of its base, which are read first.
+    let mut scope = Scope::names(
         std::iter::once(proposed.name.as_str())
             .chain(
                 proposed
                     .source
                     .iter()
                     .chain(&proposed.changes)
+                    .chain(&proposed.contexts)
                     .map(|edge| edge.split_once('@').map_or(edge.as_str(), |(name, _)| name)),
             )
             .map(str::to_owned),
     );
+    if let (Some(base), false) = (&proposed.amends, proposed.names_its_binding()) {
+        let bound = store.read(|conn| store::contexts_of(conn, &proposed.name, base))?;
+        scope
+            .names
+            .extend(context::names(&bound).into_iter().map(str::to_owned));
+    }
     let mut blobs: Vec<&[u8]> = body.as_deref().into_iter().collect();
     blobs.extend(files.iter().map(Vec::as_slice));
     let body_fingerprint = body.as_deref().map(crate::sha256_hex);
     // The version is made with what it binds: a term's version is the
     // fingerprint of its repository too (term-claims).
     let version_without_edges = |attach: Option<&Attach>| {
+        if proposed.kind == Kind::Context {
+            return Proposal::context(
+                &proposed.name,
+                &proposed.statement,
+                body_fingerprint.clone(),
+                proposed.amends.clone(),
+                &proposed.paths,
+            );
+        }
         if proposed.kind == Kind::Term {
             return Proposal::term(
                 &proposed.name,
@@ -1213,7 +1375,7 @@ fn propose(
                 provenance: proposed.provenance.clone().unwrap_or_default(),
             },
         };
-        let attach = attachment(&proposed, declared.as_deref(), state);
+        let attach = attachment(&proposed, declared.as_deref(), state)?;
         let source = resolve_edges(state, "source", &proposed.source)?;
         let changes = resolve_edges(state, "changes", &proposed.changes)?;
         let proposal = version_of(attach.as_ref(), source, changes);
@@ -1250,8 +1412,11 @@ fn propose(
         proposal.name,
         proposal.version,
         written.seq(),
-        repository::words(&version.repositories)
+        context::binds_words(&version.repositories, &version.contexts)
     );
+    for glob in &proposal.paths {
+        words.push_str(&format!("path: {glob}\n"));
+    }
     words.push_str(&edges_words(
         &proposal.source,
         &proposal.changes,
@@ -1270,6 +1435,8 @@ fn propose(
             "status": status,
             "entry": written.seq(),
             "repositories": version.repositories,
+            "contexts": version.contexts,
+            "paths": proposal.paths,
             "source": proposal.source,
             "changes": proposal.changes,
             "origin": proposal.origin.iter().map(origin_json).collect::<Vec<_>>(),
@@ -1530,6 +1697,8 @@ fn version_json(view: &store::VersionView) -> serde_json::Map<String, Value> {
     object.insert("status".into(), json!(view.status));
     object.insert("base".into(), json!(view.base));
     object.insert("repositories".into(), json!(view.repositories));
+    object.insert("contexts".into(), json!(view.contexts));
+    object.insert("paths".into(), json!(view.paths));
     object.insert("proposer".into(), json!(view.proposer));
     object.insert("proposed_in".into(), json!(view.proposed_in));
     object.insert(
@@ -1658,6 +1827,8 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
         object.insert("history".into(), json!(history));
         let (edges, edge_words) = edges_shown(conn, view)?;
         object.extend(edges);
+        let (bindings, binding_words) = bindings_shown(conn, view)?;
+        object.insert("bindings".into(), bindings);
         let mut words = format!(
             "{} {}@{}\n{}\n",
             claim.kind,
@@ -1675,8 +1846,12 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
         }
         words.push_str(&format!(
             "binds: {}\n",
-            repository::words(&view.repositories)
+            context::binds_words(&view.repositories, &view.contexts)
         ));
+        words.push_str(&binding_words);
+        for glob in &view.paths {
+            words.push_str(&format!("path: {glob}\n"));
+        }
         if let Some(history) = &history {
             words.push_str(&format!("history: {}", history.status.as_str()));
             if let Some(by) = &history.by {
@@ -1772,6 +1947,79 @@ fn edges_shown(
     Ok((object, words))
 }
 
+/// The contexts a version binds, as `boom show <name>@<version>` gives
+/// them (context-claims, "boom show gives a context and a binding"): each
+/// with the version that the binding meant, marked out of date where
+/// another version of that context is accepted now.
+fn bindings_shown(
+    conn: &rusqlite::Connection,
+    view: &store::VersionView,
+) -> Result<(Value, String), Failure> {
+    let mut shown = Vec::with_capacity(view.contexts.len());
+    let mut words = String::new();
+    for stored in &view.contexts {
+        let (name, version) = stored.split_once('@').unwrap_or((stored, ""));
+        let (_, accepted) = store::meant(conn, name, version)?.ok_or_else(|| {
+            Failure::not_run(format!(
+                "the views hold no version {stored}, which a binding names"
+            ))
+        })?;
+        let out_of_date = accepted
+            .as_deref()
+            .is_some_and(|accepted| accepted != version);
+        words.push_str(&format!("context: {stored}"));
+        if let (true, Some(accepted)) = (out_of_date, &accepted) {
+            words.push_str(&format!(", out of date: {name}@{accepted} is accepted"));
+        }
+        words.push('\n');
+        shown.push(json!({
+            "context": name,
+            "version": version,
+            "accepted": accepted,
+            "out_of_date": out_of_date,
+        }));
+    }
+    Ok((Value::Array(shown), words))
+}
+
+/// The claims whose accepted version binds the context `claim`, as
+/// `boom show <context>` gives them under `bound:`, each with the version
+/// of the context that its binding meant.
+fn bound_shown(
+    conn: &rusqlite::Connection,
+    claim: &store::ClaimView,
+) -> Result<(Value, String), Failure> {
+    let bound = store::bound_to(conn, &claim.name)?;
+    let mut words = String::new();
+    if !bound.is_empty() {
+        words.push_str("\nbound:\n");
+    }
+    for found in &bound {
+        words.push_str(&format!(
+            "  {}@{}, on {}@{}",
+            found.name, found.version, claim.name, found.meant
+        ));
+        if let Some(accepted) = claim.standing.as_deref().filter(|a| *a != found.meant) {
+            words.push_str(&format!(
+                ", out of date: {}@{accepted} is accepted",
+                claim.name
+            ));
+        }
+        words.push('\n');
+    }
+    let listed = bound
+        .iter()
+        .map(|found| {
+            json!({
+                "claim": found.name,
+                "version": found.version,
+                "meant": found.meant,
+            })
+        })
+        .collect();
+    Ok((Value::Array(listed), words))
+}
+
 /// The other versions of a claim as a tree by base, each amendment under
 /// the version it amends and the versions of one base newest first, one
 /// line pair each, indented by its depth (claim-versions, "A claim shown
@@ -1791,7 +2039,7 @@ fn tree_words(others: &[&store::VersionView]) -> String {
                 "{indent}{}\n{indent}  {}\n{indent}  binds: {}\n",
                 version_words(view),
                 view.statement,
-                repository::words(&view.repositories)
+                context::binds_words(&view.repositories, &view.contexts)
             ));
             under(others, Some(&view.version), depth + 1, words);
         }
@@ -1881,8 +2129,11 @@ fn claim_shown(
             )),
         version_words(newest),
         newest.statement,
-        repository::words(&newest.repositories)
+        context::binds_words(&newest.repositories, &newest.contexts)
     );
+    for glob in &newest.paths {
+        words.push_str(&format!("path: {glob}\n"));
+    }
     if !newest.replaces.is_empty() {
         words.push_str(&format!("replaces: {}\n", newest.replaces.join(", ")));
     }
@@ -1900,6 +2151,13 @@ fn claim_shown(
     }
     let (resting, resting_words) = resting_shown(conn, claim)?;
     words.push_str(&resting_words);
+    let bound = if claim.kind == Kind::Context.as_str() {
+        let (bound, bound_words) = bound_shown(conn, claim)?;
+        words.push_str(&bound_words);
+        Some(bound)
+    } else {
+        None
+    };
     let mut newest_json = version_json(newest);
     newest_json.insert("statement".into(), json!(newest.statement));
     newest_json.insert("replaces".into(), json!(newest.replaces));
@@ -1920,6 +2178,9 @@ fn claim_shown(
     object.insert("newest".into(), Value::Object(newest_json));
     object.insert("versions".into(), Value::Array(versions));
     object.extend(resting);
+    if let Some(bound) = bound {
+        object.insert("bound".into(), bound);
+    }
     Ok((object, words))
 }
 
@@ -2098,6 +2359,7 @@ fn standing_json(
     object.insert("scenarios".into(), json!(proposal.scenarios));
     object.insert("body".into(), json!(proposal.body));
     object.insert("repositories".into(), json!(standing.repositories));
+    object.insert("contexts".into(), json!(standing.contexts));
     object.insert(
         "accepted".into(),
         json!({"by": standing.decided_by, "entry": standing.decided_in}),
@@ -2271,13 +2533,37 @@ fn repo_show(path: &Path, name: Option<&str>) -> Result<Answer, Failure> {
 /// views, once they are at the log's last entry (record 0008, point 2, as
 /// amended on 2026-11-20), and appending nothing. With `if_declared`,
 /// where none is named or declared, nothing: no store opened, no words,
-/// and `boom-query/1` with no repository (design 10).
+/// and `boom-query/1` with no repository (design 10). With `paths`, the
+/// claims for those files of one repository, and the contexts each falls
+/// in (context-claims, "The claims for a path").
 fn query(
     path: Result<PathBuf, Failure>,
     named: Option<&str>,
     if_declared: bool,
+    paths: &[String],
     env: &Env,
 ) -> Result<Answer, Failure> {
+    let files = paths
+        .iter()
+        .map(|given| context::path(given).map_err(Failure::Refused))
+        .collect::<Result<Vec<_>, _>>()?;
+    if let Some((first, _)) = files.first() {
+        if named.is_some() {
+            return Err(Failure::refused(
+                "a path names its repository: boom query takes --path or --repository, and not both",
+            ));
+        }
+        if if_declared {
+            return Err(Failure::refused(
+                "boom query takes --path or --if-declared: the two flags cannot be given together",
+            ));
+        }
+        if let Some((other, _)) = files.iter().find(|(name, _)| name != first) {
+            return Err(Failure::refused(format!(
+                "the paths of one query name one repository: they name {first} and {other}"
+            )));
+        }
+    }
     let nothing = || Answer {
         json: json!({
             "format": "boom-query/2",
@@ -2306,12 +2592,15 @@ fn query(
     // One read of the views: the repositories, then the claims.
     store.read(|conn| {
         let registered = store::repositories(conn)?;
-        let found = repository::find(
-            named,
-            env.boom_repository.as_deref(),
-            env.cwd.as_deref(),
-            &registered,
-        )?;
+        let found = match files.first() {
+            Some((name, _)) => Some((*name).to_owned()),
+            None => repository::find(
+                named,
+                env.boom_repository.as_deref(),
+                env.cwd.as_deref(),
+                &registered,
+            )?,
+        };
         let Some(repository) = found else {
             if if_declared {
                 return Ok(nothing());
@@ -2327,10 +2616,24 @@ fn query(
         if if_declared && !delivered {
             return Ok(nothing());
         }
-        let accepted = store::accepted_for(conn, Some(&repository))?;
+        // The contexts each path falls in, and the claims of each.
+        let mut fallen = Vec::with_capacity(files.len());
+        let mut lines = String::new();
+        let mut names: Vec<String> = Vec::new();
+        for (given, (_, file)) in paths.iter().zip(&files) {
+            let contexts = context::falls_in(conn, &repository, file)?;
+            let words = if contexts.is_empty() {
+                "no context".to_owned()
+            } else {
+                contexts.join(", ")
+            };
+            lines.push_str(&format!("path {given}: {words}\n"));
+            names.extend(context::names(&contexts).into_iter().map(str::to_owned));
+            fallen.push(json!({"path": given, "contexts": contexts}));
+        }
+        let accepted = store::accepted_for(conn, Some(&repository), &names)?;
         let (number, hash) = store::head_entry(conn)?;
         let mut claims = Vec::new();
-        let mut lines = String::new();
         for (claim, standing) in &accepted {
             let proposal = &standing.proposal;
             claims.push(Value::Object(standing_json(claim, standing)));
@@ -2355,13 +2658,17 @@ fn query(
             1 => "1 claim".to_owned(),
             n => format!("{n} claims"),
         };
+        let mut json = json!({
+            "format": "boom-query/2",
+            "repository": repository,
+            "head": {"number": number, "hash": hash},
+            "claims": claims,
+        });
+        if !files.is_empty() {
+            json["paths"] = Value::Array(fallen);
+        }
         Ok(Answer {
-            json: json!({
-                "format": "boom-query/2",
-                "repository": repository,
-                "head": {"number": number, "hash": hash},
-                "claims": claims,
-            }),
+            json,
             words: format!("Boom: {count} for {repository}, at entry {number}\n{lines}"),
         })
     })
@@ -2408,7 +2715,13 @@ fn search(
                 })?,
             )
         };
-        let accepted = store::accepted_for(conn, repository.as_deref())?;
+        // A search of a repository finds the claims of its contexts too
+        // (context-claims).
+        let contexts = match repository.as_deref() {
+            Some(repository) => store::contexts_in(conn, repository)?,
+            None => Vec::new(),
+        };
+        let accepted = store::accepted_for(conn, repository.as_deref(), &contexts)?;
         let (number, hash) = store::head_entry(conn)?;
         let standing: Vec<(&judge::Claim, &judge::Version)> = accepted
             .iter()
@@ -2451,11 +2764,7 @@ fn search(
             object.insert("excerpt".into(), json!(found.excerpt));
             object.insert("legacy".into(), json!(legacy));
             claims.push(Value::Object(object));
-            let binds = if version.repositories.is_empty() {
-                "the whole system".to_owned()
-            } else {
-                version.repositories.join(", ")
-            };
+            let binds = context::binds_words(&version.repositories, &version.contexts);
             lines.push_str(&format!(
                 "{} {}@{}, for {binds}: {}\n",
                 claim.kind.as_str(),
@@ -2577,6 +2886,7 @@ fn import(
                 // alone (design 7).
                 attach: Some(Attach {
                     repositories: vec![repository.clone()],
+                    contexts: Vec::new(),
                 }),
             },
         };
