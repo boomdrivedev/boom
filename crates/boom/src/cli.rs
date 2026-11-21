@@ -32,6 +32,9 @@ pub struct Env {
     pub home: Option<PathBuf>,
     /// The working folder, where it can be read.
     pub cwd: Option<PathBuf>,
+    /// `BOOM_REPOSITORY`, the repository a launcher names for the
+    /// session, where it is set.
+    pub boom_repository: Option<String>,
     /// The clock.
     pub clock: Clock,
 }
@@ -67,6 +70,7 @@ impl Env {
             xdg_data_home: var("XDG_DATA_HOME").map(PathBuf::from),
             home: var("HOME").map(PathBuf::from),
             cwd: std::env::current_dir().ok(),
+            boom_repository: var(repository::LAUNCHER).and_then(|value| value.into_string().ok()),
             clock: Clock::System,
         }
     }
@@ -195,12 +199,14 @@ enum Command {
     /// accepted it: words an agent's harness can put in its context as
     /// they are.
     Query {
-        /// The repository; by default the one the working folder's
-        /// `.config/boom.toml` declares.
+        /// The repository; by default the repository of the session:
+        /// the one `BOOM_REPOSITORY` names, else the registered one whose
+        /// remote matches the working folder's git remote.
         #[arg(long, value_name = "NAME")]
         repository: Option<String>,
-        /// Answer nothing, and exit 0, where the working folder declares
-        /// no repository, as a harness's hook in every session asks.
+        /// Answer nothing, and exit 0, where boom finds no repository of
+        /// the session or its delivery at session start is off, as a
+        /// harness's hook in every session asks.
         #[arg(long, conflicts_with = "repository")]
         if_declared: bool,
     },
@@ -234,10 +240,65 @@ enum Command {
         #[command(subcommand)]
         what: ImportCommand,
     },
+    /// Register a repository, change its settings, or show them: the
+    /// settings an owner signs in the log.
+    Repo {
+        #[command(subcommand)]
+        what: RepoCommand,
+    },
     /// Serve boom's commands to an agent's program as tools, over the
     /// Model Context Protocol on standard input and output; none of them
     /// is a person's act.
     Mcp,
+}
+
+/// On or off.
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+enum OnOff {
+    /// On.
+    On,
+    /// Off.
+    Off,
+}
+
+#[derive(Subcommand, Debug)]
+enum RepoCommand {
+    /// Register a repository and its remote, as an owner, signed with
+    /// their security key; a session there gets its context when it
+    /// starts, unless `--session off`.
+    Add {
+        /// The repository's name, kebab case.
+        name: String,
+        /// Its remote, as git names it.
+        #[arg(long, value_name = "URL")]
+        remote: String,
+        /// Whether a session in it gets its context when it starts.
+        #[arg(long, value_enum, default_value = "on")]
+        session: OnOff,
+        /// The owner's security key, a private key file.
+        #[arg(long, value_name = "KEY")]
+        key: Option<PathBuf>,
+    },
+    /// Change a registered repository's remote or its delivery at session
+    /// start, as an owner, signed with their security key.
+    Set {
+        /// The repository's name.
+        name: String,
+        /// Its new remote.
+        #[arg(long, value_name = "URL")]
+        remote: Option<String>,
+        /// Whether a session in it gets its context when it starts.
+        #[arg(long, value_enum)]
+        session: Option<OnOff>,
+        /// The owner's security key, a private key file.
+        #[arg(long, value_name = "KEY")]
+        key: Option<PathBuf>,
+    },
+    /// Show the repositories the store registers, or one.
+    Show {
+        /// The repository's name; every one where none is given.
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -457,6 +518,37 @@ fn execute(
             limit,
         } => search(&path?, &words, repository.as_deref(), all, limit, env),
         Command::Mcp => unreachable!("boom mcp is served before a store's path is resolved"),
+        Command::Repo { what } => match what {
+            RepoCommand::Add {
+                name,
+                remote,
+                session,
+                key,
+            } => repo_add(
+                &path?,
+                &name,
+                &remote,
+                matches!(session, OnOff::On),
+                key.as_deref(),
+                keys,
+                env,
+            ),
+            RepoCommand::Set {
+                name,
+                remote,
+                session,
+                key,
+            } => repo_set(
+                &path?,
+                &name,
+                remote.as_deref(),
+                session.map(|session| matches!(session, OnOff::On)),
+                key.as_deref(),
+                keys,
+                env,
+            ),
+            RepoCommand::Show { name } => repo_show(&path?, name.as_deref()),
+        },
         Command::Import { what } => match what {
             ImportCommand::Adr { dir, options } => import(&path?, Form::Madr, &dir, options, env),
             ImportCommand::Rules { page, options } => {
@@ -730,7 +822,7 @@ fn propose(
     };
     let declared =
         if proposed.repositories.is_empty() && !proposed.system && proposed.amends.is_none() {
-            repository::find(None, env.cwd.as_deref())?
+            session_repository(path, None, env)?
         } else {
             None
         };
@@ -1384,6 +1476,167 @@ fn standing_json(
     object
 }
 
+/// The repository of the session (repository-rules): the one `named`
+/// names, else the one `BOOM_REPOSITORY` names, else the registered one
+/// whose remote matches a remote of the working folder's repository.
+fn session_repository(
+    path: &Path,
+    named: Option<&str>,
+    env: &Env,
+) -> Result<Option<String>, Failure> {
+    if named.is_some() {
+        return repository::find(named, None, None, &[]);
+    }
+    let mut store = Store::open(path)?;
+    let registered = store.read(store::repositories)?;
+    repository::find(
+        None,
+        env.boom_repository.as_deref(),
+        env.cwd.as_deref(),
+        &registered,
+    )
+}
+
+/// `boom repo add`: an owner registers a repository and its remote
+/// (repository-settings).
+fn repo_add(
+    path: &Path,
+    name: &str,
+    remote: &str,
+    session: bool,
+    key: Option<&Path>,
+    keys: &dyn Keys,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    repository::check_name(name).map_err(Failure::Refused)?;
+    let remote = remote_form(remote)?;
+    let mut store = Store::open(path)?;
+    let registered = store.read(store::repositories)?;
+    if registered.iter().any(|found| found.name == name) {
+        return Err(Failure::refused(format!(
+            "{name} is registered already: change it with boom repo set"
+        )));
+    }
+    repo_write(&mut store, path, name, &remote, session, key, keys, env)
+}
+
+/// `boom repo set`: an owner changes a registered repository's remote or
+/// its delivery at session start.
+fn repo_set(
+    path: &Path,
+    name: &str,
+    remote: Option<&str>,
+    session: Option<bool>,
+    key: Option<&Path>,
+    keys: &dyn Keys,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    if remote.is_none() && session.is_none() {
+        return Err(Failure::refused(
+            "boom repo set changes --remote, --session, or both",
+        ));
+    }
+    let mut store = Store::open(path)?;
+    let registered = store.read(store::repositories)?;
+    let Some(found) = registered.into_iter().find(|found| found.name == name) else {
+        return Err(Failure::refused(format!(
+            "this store registers no repository {name}: register it with boom repo add"
+        )));
+    };
+    let remote = match remote {
+        Some(remote) => remote_form(remote)?,
+        None => found.remote,
+    };
+    let session = session.unwrap_or(found.session);
+    repo_write(&mut store, path, name, &remote, session, key, keys, env)
+}
+
+/// A remote in its one form, or a refusal that names it.
+fn remote_form(remote: &str) -> Result<String, Failure> {
+    repository::remote_form(remote).ok_or_else(|| {
+        Failure::refused(format!(
+            "a remote is an https://, ssh:// or git@<host>: address of a repository: {remote} is not"
+        ))
+    })
+}
+
+/// Writes a `repository` entry an owner signs, and answers as
+/// `boom repo show` for it.
+#[allow(clippy::too_many_arguments)]
+fn repo_write(
+    store: &mut Store,
+    path: &Path,
+    name: &str,
+    remote: &str,
+    session: bool,
+    key: Option<&Path>,
+    keys: &dyn Keys,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    let Some(key) = key else {
+        return Err(Failure::refused(
+            "only an owner sets a repository: boom repo takes the owner's --key",
+        ));
+    };
+    let signer = keys.signer(key)?;
+    write(
+        store,
+        &Scope::default(),
+        Some(signer.as_ref()),
+        None,
+        |state| {
+            Ok(Entry {
+                at: env.clock.now(),
+                actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
+                act: Act::Repository {
+                    name: name.to_owned(),
+                    remote: remote.to_owned(),
+                    session,
+                },
+            })
+        },
+    )?;
+    repo_show(path, Some(name))
+}
+
+/// `boom repo show`: the repositories the store registers, or one, with
+/// their settings and the entry and owner that set them.
+fn repo_show(path: &Path, name: Option<&str>) -> Result<Answer, Failure> {
+    let mut store = Store::open(path)?;
+    let mut registered = store.read(store::repositories)?;
+    if let Some(name) = name {
+        registered.retain(|found| found.name == name);
+        if registered.is_empty() {
+            return Err(Failure::refused(format!(
+                "this store registers no repository {name}"
+            )));
+        }
+    }
+    let mut words = String::new();
+    let mut listed = Vec::with_capacity(registered.len());
+    for found in &registered {
+        let session = if found.session { "on" } else { "off" };
+        words.push_str(&format!(
+            "{}  {}\n  at session start: {session}\n  set by {} in entry {}\n",
+            found.name, found.remote, found.set_by, found.set_in
+        ));
+        listed.push(json!({
+            "name": found.name,
+            "remote": found.remote,
+            "session": found.session,
+            "set_by": found.set_by,
+            "set_in": found.set_in,
+        }));
+    }
+    if registered.is_empty() {
+        words.push_str("This store registers no repository: register one with boom repo add.\n");
+    }
+    Ok(Answer {
+        json: json!({"format": "boom-repo/1", "repositories": listed}),
+        words,
+    })
+}
+
 /// The claims that stand for the repository `named`, or else the one the
 /// working folder declares (repository-rules; design 5): taken from the
 /// views, once they are at the log's last entry (record 0008, point 2, as
@@ -1396,25 +1649,55 @@ fn query(
     if_declared: bool,
     env: &Env,
 ) -> Result<Answer, Failure> {
-    let Some(repository) = repository::find(named, env.cwd.as_deref())? else {
-        if if_declared {
-            return Ok(Answer {
-                json: json!({
-                    "format": "boom-query/2",
-                    "repository": null,
-                    "head": null,
-                    "claims": [],
-                }),
-                words: String::new(),
-            });
-        }
-        return Err(Failure::refused(format!(
-            "boom query answers for a repository: name it with --repository, or in {}",
-            repository::DECLARATION
-        )));
+    let nothing = || Answer {
+        json: json!({
+            "format": "boom-query/2",
+            "repository": null,
+            "head": null,
+            "claims": [],
+        }),
+        words: String::new(),
     };
-    let mut store = Store::open(&path?)?;
+    let path = path?;
+    if let Some(launched) = env.boom_repository.as_deref() {
+        // A launcher's name boom cannot read is refused before any store
+        // is opened, so the person sees what to fix.
+        repository::check_name(launched).map_err(|why| {
+            Failure::refused(format!(
+                "{} names {launched:?}: {why}",
+                repository::LAUNCHER
+            ))
+        })?;
+    }
+    if if_declared && !path.exists() {
+        // No store where it would open one: no store made, nothing said.
+        return Ok(nothing());
+    }
+    let mut store = Store::open(&path)?;
+    // One read of the views: the repositories, then the claims.
     store.read(|conn| {
+        let registered = store::repositories(conn)?;
+        let found = repository::find(
+            named,
+            env.boom_repository.as_deref(),
+            env.cwd.as_deref(),
+            &registered,
+        )?;
+        let Some(repository) = found else {
+            if if_declared {
+                return Ok(nothing());
+            }
+            return Err(Failure::refused(
+                "boom query answers for a repository: name it with --repository, or register its remote with boom repo add",
+            ));
+        };
+        let delivered = registered
+            .iter()
+            .find(|registered| registered.name == repository)
+            .is_none_or(|registered| registered.session);
+        if if_declared && !delivered {
+            return Ok(nothing());
+        }
         let accepted = store::accepted_for(conn, Some(&repository))?;
         let (number, hash) = store::head_entry(conn)?;
         let mut claims = Vec::new();
@@ -1439,10 +1722,9 @@ fn query(
                 ));
             }
         }
-        let stand = match claims.len() {
-            0 => "No claim stands".to_owned(),
-            1 => "1 claim stands".to_owned(),
-            n => format!("{n} claims stand"),
+        let count = match claims.len() {
+            1 => "1 claim".to_owned(),
+            n => format!("{n} claims"),
         };
         Ok(Answer {
             json: json!({
@@ -1451,9 +1733,7 @@ fn query(
                 "head": {"number": number, "hash": hash},
                 "claims": claims,
             }),
-            words: format!(
-                "{stand} for {repository}, at entry {number} of the store's log.\n{lines}"
-            ),
+            words: format!("Boom: {count} for {repository}, at entry {number}\n{lines}"),
         })
     })
 }
@@ -1477,18 +1757,28 @@ fn search(
             "boom search needs a word holding a letter or a digit",
         ));
     }
-    let repository = if all {
-        None
-    } else {
-        Some(repository::find(named, env.cwd.as_deref())?.ok_or_else(|| {
-            Failure::refused(format!(
-                "boom search searches a repository: name it with --repository, or in {}, or search every repository with --all",
-                repository::DECLARATION
-            ))
-        })?)
-    };
     let mut store = Store::open(path)?;
+    // One read of the views: the repository of the session, then the
+    // claims.
     store.read(|conn| {
+        let repository = if all {
+            None
+        } else {
+            let registered = store::repositories(conn)?;
+            Some(
+                repository::find(
+                    named,
+                    env.boom_repository.as_deref(),
+                    env.cwd.as_deref(),
+                    &registered,
+                )?
+                .ok_or_else(|| {
+                    Failure::refused(
+                        "boom search searches a repository: name it with --repository, register its remote with boom repo add, or search every repository with --all",
+                    )
+                })?,
+            )
+        };
         let accepted = store::accepted_for(conn, repository.as_deref())?;
         let (number, hash) = store::head_entry(conn)?;
         let standing: Vec<(&judge::Claim, &judge::Version)> = accepted

@@ -77,6 +77,13 @@ CREATE TABLE versions (
     proposal TEXT NOT NULL,
     PRIMARY KEY (name, version)
 );
+CREATE TABLE repositories (
+    name TEXT PRIMARY KEY,
+    remote TEXT NOT NULL,
+    session INTEGER NOT NULL,
+    set_by TEXT NOT NULL,
+    set_in INTEGER NOT NULL
+);
 CREATE TABLE judgments (
     seq INTEGER PRIMARY KEY,
     counted INTEGER NOT NULL,
@@ -85,11 +92,18 @@ CREATE TABLE judgments (
 ";
 
 /// The views' tables, each dropped and made again by a rebuild.
-const VIEW_TABLES: [&str; 5] = ["views_head", "persons", "claims", "versions", "judgments"];
+const VIEW_TABLES: [&str; 6] = [
+    "views_head",
+    "persons",
+    "claims",
+    "versions",
+    "repositories",
+    "judgments",
+];
 
 /// The views' form, kept in `views_head`. Views of another form are
 /// built again from the whole log.
-const VIEWS_FORM: i64 = 3;
+const VIEWS_FORM: i64 = 4;
 
 thread_local! {
     static ENTRIES_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -475,6 +489,7 @@ impl Scope {
                 Act::Rejected { name, .. } => {
                     scope.names.insert(name.clone());
                 }
+                Act::Repository { .. } => {}
             }
         }
         scope
@@ -752,6 +767,7 @@ fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), 
             Ok(())
         }
         Act::Rejected { name, .. } => write_claim(conn, &state.claims[name]),
+        Act::Repository { name, .. } => write_repository(conn, &state.repositories[name]),
     }
 }
 
@@ -836,6 +852,9 @@ fn write_views(
     for claim in state.claims.values() {
         write_claim(conn, claim)?;
     }
+    for repository in state.repositories.values() {
+        write_repository(conn, repository)?;
+    }
     for (seq, judgment) in judgments {
         write_judgment(conn, *seq, judgment)?;
     }
@@ -860,6 +879,38 @@ fn write_judgment(conn: &Connection, seq: u64, judgment: &Judgment) -> Result<()
         params![sql_int(seq), judgment.counted, judgment.reason],
     )?;
     Ok(())
+}
+
+fn write_repository(conn: &Connection, repository: &judge::Repository) -> Result<(), Failure> {
+    conn.execute(
+        "INSERT OR REPLACE INTO repositories (name, remote, session, set_by, set_in) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            repository.name,
+            repository.remote,
+            repository.session,
+            repository.set_by,
+            sql_int(repository.set_in)
+        ],
+    )?;
+    Ok(())
+}
+
+/// The repositories the views hold, by name (repository-settings).
+pub fn repositories(conn: &Connection) -> Result<Vec<judge::Repository>, Failure> {
+    let mut rows = conn
+        .prepare("SELECT name, remote, session, set_by, set_in FROM repositories ORDER BY name")?;
+    let found = rows
+        .query_map([], |row| {
+            Ok(judge::Repository {
+                name: row.get(0)?,
+                remote: row.get(1)?,
+                session: row.get(2)?,
+                set_by: row.get(3)?,
+                set_in: u64::try_from(row.get::<_, i64>(4)?).unwrap_or(0),
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(found)
 }
 
 fn write_person(conn: &Connection, person: &Person) -> Result<(), Failure> {
@@ -1001,6 +1052,11 @@ fn load_persons(conn: &Connection) -> Result<State, Failure> {
         );
     }
     state.first_owner = first.map(|(_, name)| name);
+    for repository in repositories(conn)? {
+        state
+            .repositories
+            .insert(repository.name.clone(), repository);
+    }
     Ok(state)
 }
 

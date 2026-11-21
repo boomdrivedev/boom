@@ -1,5 +1,5 @@
 {
-  "description": "Give a session the claims that stand for the repository its folder declares, by boom query --if-declared; nothing where none is declared.",
+  "description": "Give a session the claims that stand for the repository of the session, by boom query --if-declared; nothing where boom finds none, or where its delivery at session start is off.",
   "hooks": {
     "SessionStart": [
       {

@@ -54,13 +54,20 @@ claims that hold.
   names the repositories its version binds with `--repository`, or the
   whole system with `--system`, and the version binds them once a
   person accepts it. Naming neither, an amendment binds what its base
-  binds, and a first version binds the repository its working folder
-  declares, else the whole system. The attachment is no part of the
+  binds, and a first version binds the repository of the session, else
+  the whole system. The attachment is no part of the
   version's fingerprint, and `boom show` gives it before anyone accepts.
-- **A repository declares itself.** Its `.config/boom.toml` holds one
-  key, `repository`, a kebab-case name. boom reads the nearest one from
-  the working folder up to the folder holding `.git`, and outside a
-  repository reads none.
+- **The repository of a session.** boom takes the one `--repository`
+  names. Else it takes the one `BOOM_REPOSITORY` names, which a launcher
+  such as flume sets. Else it takes the registered repository whose
+  remote matches a remote of the git repository that holds the working
+  folder. No file in a repository names it: boom reads no
+  `.config/boom.toml`.
+- **An owner registers each repository.** `boom repo add <name> --remote
+  <url> --key <key>` registers a repository and its remote, as an act
+  that the owner signs in the log. `boom repo set` changes its remote or
+  its delivery at session start, on or off. `boom repo show` gives each
+  one, with the entry that set it.
 - **An agent asks boom for its rules.** `boom query` gives every claim
   that stands for a repository, as the person accepted it: its kind,
   name, version and statement, and who accepted it. boom
@@ -70,8 +77,8 @@ claims that hold.
   claims that stand whose words hold every word searched. A word may
   fall in a claim's name, statement, scenarios, body, legacy id or
   section, and its other forms are found with it: `currencies` finds
-  `currency`. It searches the repository `--repository` names or
-  `.config/boom.toml` declares, or every repository with `--all`. It
+  `currency`. It searches the repository of the session, or every
+  repository with `--all`. It
   ranks the claims, a word in a name above one in a body, and gives the
   first ten, or the number `--limit` names. Each comes with the passage
   of its body where the words fall and a pointer to the whole text.
@@ -111,17 +118,17 @@ boom log
 `boom query` writes its words to standard output alone, so a harness
 can put them in an agent's context as they are. boom's Claude Code
 plugin does it: its `SessionStart` hook runs `boom query --if-declared`,
-so every session in a repository whose `.config/boom.toml` declares it
-starts with the claims that stand for that repository, and a session
-anywhere else hears nothing. A repository writes no hook into its own
-`.claude/settings.json`. With `--if-declared`, where no repository is
-declared, boom answers nothing and exits 0; a declaration it cannot read
-it still refuses, naming the file.
+so every session in a registered repository starts with the claims that
+stand for it. Its first line names the repository, the number of claims
+and the entry. A session anywhere else, or in a repository whose
+delivery at session start is off, hears nothing. A repository writes no
+hook into its own `.claude/settings.json`. With `--if-declared`, where
+boom finds no repository of the session, it answers nothing and exits
+0. A name from `BOOM_REPOSITORY` that it cannot read, it still refuses.
 
 A repository's `.mcp.json` names `boom mcp`, and the harness starts it
-in the repository, so `query` answers for the repository its
-`.config/boom.toml` declares and `propose` attaches a first version to
-it:
+in the repository, so `query` answers for the repository of the
+session and `propose` attaches a first version to it:
 
 ```json
 { "mcpServers": { "boom": { "command": "boom", "args": ["mcp"] } } }

@@ -447,8 +447,9 @@ fn words_beginning_with_a_hyphen() {
 #[test]
 fn the_working_folders_repository() {
     let place = Place::new();
-    place.made();
-    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let ada = place.made();
+    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
+    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
     let result = place.call_in(&repo, "query", json!({}));
     assert_eq!(result["isError"], false, "{result}");
     let answer = text(&result);

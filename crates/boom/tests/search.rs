@@ -419,7 +419,8 @@ fn in_the_repository_it_works_in() {
 fn declared_by_the_repository() {
     let place = Place::new();
     refunds(&place);
-    place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    place.repository("shop-repo", Some(support::SHOP_REMOTE));
+    place.repo_added(&place.key("ada", 1), "shop", support::SHOP_REMOTE);
     let inside = place.empty_folder("shop-repo/src/refunds");
     let answer = place.json_in(&inside, &["search", "refund"]);
     assert_eq!(answer["repository"], "shop");
@@ -475,7 +476,7 @@ fn neither_named_declared_nor_all_is_refused() {
     let repo = place.repository("undeclared", None);
     let words = refused_in(&place, &repo, &["search", "refund"]);
     assert!(words.contains("--repository"), "{words}");
-    assert!(words.contains(".config/boom.toml"), "{words}");
+    assert!(words.contains("boom repo add"), "{words}");
     assert!(words.contains("--all"), "{words}");
 }
 
@@ -483,7 +484,7 @@ fn neither_named_declared_nor_all_is_refused() {
 fn a_repository_and_every_repository_are_refused() {
     let place = Place::new();
     refunds(&place);
-    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
     let words = refused_in(
         &place,
         &repo,

@@ -55,6 +55,18 @@ pub(crate) const ABSENT: &[(&str, &str)] = &[
         "verify",
         "it checks the whole log and builds the views again, a check a person or a host's schedule runs",
     ),
+    (
+        "repo add",
+        "registering a repository is an owner's act, signed with their security key",
+    ),
+    (
+        "repo set",
+        "changing a repository's settings is an owner's act, signed with their security key",
+    ),
+    (
+        "repo show",
+        "a person reads a store's repositories from the command line in this release",
+    ),
     ("mcp", "it is the server itself"),
 ];
 
