@@ -142,7 +142,7 @@ fn a_repository_named_twice_by_hand_counts_for_nothing() {
             provenance: "another-program".to_owned(),
         },
         act: boom::entry::Act::Proposed {
-            claim: boom::claim::Proposal::new(
+            claim: Box::new(boom::claim::Proposal::new(
                 boom::claim::Kind::Invariant,
                 "money-has-currency",
                 MONEY,
@@ -150,7 +150,7 @@ fn a_repository_named_twice_by_hand_counts_for_nothing() {
                 None,
                 None,
                 None,
-            ),
+            )),
             imported: None,
             attach: Some(boom::entry::Attach {
                 repositories: vec!["shop".to_owned(), "shop".to_owned()],
@@ -234,7 +234,7 @@ fn the_same_words_for_another_repository_are_refused() {
             provenance: "another-program".to_owned(),
         },
         act: boom::entry::Act::Proposed {
-            claim: boom::claim::Proposal::new(
+            claim: Box::new(boom::claim::Proposal::new(
                 boom::claim::Kind::Invariant,
                 "money-has-currency",
                 MONEY,
@@ -242,7 +242,7 @@ fn the_same_words_for_another_repository_are_refused() {
                 None,
                 None,
                 None,
-            ),
+            )),
             imported: None,
             attach: Some(boom::entry::Attach {
                 repositories: vec!["ledger".to_owned()],

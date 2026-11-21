@@ -692,6 +692,13 @@ fn check_proposal(
         }
         (None, _) => {}
     }
+    // Each edge to a claim names a version the store holds (claim-edges).
+    for (flag, edges) in [("source", &proposal.source), ("changes", &proposal.changes)] {
+        for stored in edges {
+            let (target, version) = claim::edge(stored)?;
+            find(state, target, version).map_err(|why| format!("--{flag} {stored}: {why}"))?;
+        }
+    }
     Ok(Verdict::Counts)
 }
 
@@ -881,7 +888,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                     versions: Vec::new(),
                 });
             entry_claim.versions.push(Version {
-                proposal: claim.clone(),
+                proposal: (**claim).clone(),
                 repositories: repositories(attach.as_ref()).to_vec(),
                 proposer: entry.actor.clone(),
                 proposed_in: seq,
@@ -1105,6 +1112,61 @@ mod tests {
                 "beta-kept",
                 "alpha-assumed"
             ]
+        );
+    }
+
+    #[test]
+    fn an_edge_names_a_version_the_state_holds() {
+        let state = state(&[(Kind::Invariant, "money-has-currency", &[])]);
+        let held = state.named("money-has-currency")[0].versions[0]
+            .proposal
+            .version
+            .clone();
+        let entry = |source: &str| {
+            let mut proposal = Proposal::new(
+                Kind::Invariant,
+                "amounts-in-cents",
+                "Amounts are in cents.",
+                Vec::new(),
+                None,
+                None,
+                None,
+            );
+            proposal.source = vec![source.to_owned()];
+            proposal.version = proposal.fingerprint(None);
+            Entry {
+                at: 1,
+                actor: Actor::Agent {
+                    provenance: "run-1".to_owned(),
+                },
+                act: Act::Proposed {
+                    claim: Box::new(proposal),
+                    imported: None,
+                    attach: None,
+                },
+            }
+        };
+        let judged = |source: &str| {
+            let entry = entry(source);
+            judge(&state, &entry, &entry.signed_part(), Proof::Unsigned)
+        };
+        assert_eq!(
+            judged(&format!("money-has-currency@{held}")),
+            Verdict::Counts
+        );
+        assert_eq!(
+            judged("money-has-currency@000000000000"),
+            Verdict::Refused(
+                "--source money-has-currency@000000000000: the claim money-has-currency has no version 000000000000"
+                    .to_owned()
+            )
+        );
+        assert_eq!(
+            judged("no-such-claim@000000000000"),
+            Verdict::Refused(
+                "--source no-such-claim@000000000000: no claim has the name no-such-claim"
+                    .to_owned()
+            )
         );
     }
 }

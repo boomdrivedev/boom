@@ -110,8 +110,9 @@ pub enum Act {
     },
     /// A version of a claim proposed.
     Proposed {
-        /// The claim's version.
-        claim: Proposal,
+        /// The claim's version, boxed so a proposal with its edges is no
+        /// larger than the other acts by much.
+        claim: Box<Proposal>,
         /// Where it came in from, for a version an import proposes,
         /// boxed so a proposal is no larger than the other acts by it.
         imported: Option<Box<Imported>>,
@@ -236,7 +237,7 @@ struct ProposedPart {
     act: String,
     at: u64,
     actor: Actor,
-    claim: Proposal,
+    claim: Box<Proposal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     imported: Option<Box<Imported>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -500,7 +501,7 @@ mod tests {
                 provenance: "run-1".to_owned(),
             },
             act: Act::Proposed {
-                claim: Proposal::new(
+                claim: Box::new(Proposal::new(
                     Kind::Invariant,
                     "refund-within-payment",
                     "A refund never exceeds what the order was paid.",
@@ -508,7 +509,7 @@ mod tests {
                     None,
                     None,
                     None,
-                ),
+                )),
                 imported: None,
                 attach,
             },
