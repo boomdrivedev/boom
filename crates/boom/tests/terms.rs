@@ -974,7 +974,7 @@ fn a_change_that_adds_an_old_word() {
     let place = Place::new();
     owner_accepted(&place);
     let folder = change(&place, &[("README.md", "# boom\n\nThe keeper signs.\n")]); // boom: allow keeper
-    let ran = gate(&place, &folder, &["check", "--repository", "boom"]);
+    let ran = gate(&place, &folder, &["--repository", "boom"]);
     let stderr = text(&ran.stderr);
     assert!(!ran.status.success(), "{stderr}");
     assert!(stderr.contains("README.md:3"), "{stderr}");
@@ -987,7 +987,7 @@ fn an_old_word_that_the_change_does_not_touch() {
     let place = Place::new();
     owner_accepted(&place);
     let folder = change(&place, &[("notes.md", "The owner signs.\n")]);
-    let ran = gate(&place, &folder, &["check", "--repository", "boom"]);
+    let ran = gate(&place, &folder, &["--repository", "boom"]);
     assert!(ran.status.success(), "{}", text(&ran.stderr));
     assert!(
         text(&ran.stdout).contains("1 files of the change hold no old word"),
@@ -1013,7 +1013,7 @@ fn an_archived_change_and_a_marker() {
             ),
         ],
     );
-    let ran = gate(&place, &folder, &["check", "--repository", "boom"]);
+    let ran = gate(&place, &folder, &["--repository", "boom"]);
     assert!(ran.status.success(), "{}", text(&ran.stderr));
 }
 
@@ -1034,7 +1034,7 @@ fn a_change_that_deletes_a_file_that_holds_an_old_word() {
         .status()
         .unwrap();
     assert!(commit.success());
-    let ran = gate(&place, &folder, &["check", "--repository", "boom"]);
+    let ran = gate(&place, &folder, &["--repository", "boom"]);
     assert!(ran.status.success(), "{}", text(&ran.stderr));
     assert!(text(&ran.stdout).contains("adds or modifies no file"));
 }
@@ -1043,24 +1043,21 @@ fn a_change_that_deletes_a_file_that_holds_an_old_word() {
 fn the_gate_with_no_store() {
     let place = Place::new();
     let folder = change(&place, &[("README.md", "The keeper signs.\n")]); // boom: allow keeper
-    let ran = gate(&place, &folder, &["check", "--repository", "boom"]);
+    let ran = gate(&place, &folder, &["--repository", "boom"]);
     assert!(ran.status.success(), "{}", text(&ran.stderr));
     assert!(text(&ran.stdout).contains("no store"));
 }
 
 #[test]
-fn the_head_that_the_task_declares() {
+fn the_task_names_the_entry_it_read() {
     let place = Place::new();
     owner_accepted(&place);
-    let folder = change(&place, &[]);
-    let out = place.dir.path().join("head/head.json");
-    let ran = gate(
-        &place,
-        &folder,
-        &["head", &path_arg(&out), "--repository", "boom"],
-    );
+    let folder = change(&place, &[("notes.md", "The owner signs.\n")]);
+    let ran = gate(&place, &folder, &["--repository", "boom"]);
     assert!(ran.status.success(), "{}", text(&ran.stderr));
-    let head: Value = serde_json::from_slice(&std::fs::read(&out).unwrap()).unwrap();
-    assert_eq!(head["number"], 3);
-    assert_eq!(head["hash"].as_str().unwrap().len(), 64);
+    assert!(
+        text(&ran.stdout).ends_with("at entry 3 of the store's log\n"),
+        "{}",
+        text(&ran.stdout)
+    );
 }

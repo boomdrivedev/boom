@@ -33,8 +33,9 @@ old words from each source. That turn is not in this change.
   exits 2 when it finds an old word. It reads the store and writes
   nothing, not even the views. It does not use Vale.
 - **The gate runs the check too.** A gate task runs `boom terms check`
-  on the files that a change touches, with the last entry of the
-  store's log as an input. It is the check of the term tool
+  on the files that a change touches. It reads the store, so it never
+  replays, and it names the entry of the store's log that it read. It
+  is the check of the term tool
   of its own words, and not a check of what a page says. A new version
   of `no-task-reads-markdown`, `no-task-reads-markdown@a25dda6425d7`,
   names this check as allowed. The user accepts or rejects it.

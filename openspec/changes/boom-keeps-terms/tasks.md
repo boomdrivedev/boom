@@ -34,7 +34,7 @@
 ## 5. The gate task
 
 - [x] 5.1 Read the marker `boom: allow <old word>` in a file and in the text of a hook event
-- [x] 5.2 Add the task `root:terms` to `moon.yml`: it runs `boom terms check` on each file that the change adds or modifies, except under `openspec/changes/archive/`. Its input `.boom-terms/head.json` holds the last entry of the store's log, which `root:terms-head` writes
+- [x] 5.2 Add the task `root:terms` to `moon.yml`: it runs `boom terms check` on each file that the change adds or modifies, except under `openspec/changes/archive/`. It reads the store, outside the tree, so it never replays, and it names the entry of the store's log that it read
 - [x] 5.3 Test the marker, a change that adds an old word, a file that the change does not touch, and an archived change
 - [x] 5.4 Land this change only after the user accepts `no-task-reads-markdown@a25dda6425d7`
 

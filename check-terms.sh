@@ -8,51 +8,38 @@
 # words of the accepted terms and for nothing else: the check of the
 # term tool of its own words (no-task-reads-markdown). boom reads the
 # store and writes nothing, so it runs where the gate's sandbox lets
-# nothing write beside the store.
+# nothing write beside the store. The store is outside the tree, so the
+# task never replays, and its last line names the entry of the store's
+# log that it read.
 #
-#   sh check-terms.sh head <out> --repository <name>
-#     writes the store's last entry, as boom terms check reads it, to
-#     <out>: the input of the terms task that names the store, so a pass
-#     is replayed only for the entry it read
-#   sh check-terms.sh check --repository <name> [--base <branch>]
-#     checks the files of the change against <branch>, main where it is
-#     not given
+#   sh check-terms.sh --repository <name> [--base <branch>]
 #
-# BOOM names the boom to run; where it is not set, the script builds the
-# tree's. Where there is no store, boom checks nothing and says so.
+# It checks the files of the change against <branch>, main where it is
+# not given. BOOM names the boom to run; where it is not set, the script
+# builds the tree's. Where there is no store, boom checks nothing and
+# says so.
 set -u
 
 usage() {
-  echo "usage: check-terms.sh head <out> --repository <name> | check --repository <name> [--base <branch>]" >&2
+  echo "usage: check-terms.sh --repository <name> [--base <branch>]" >&2
   exit 2
 }
 
-[ $# -ge 1 ] || usage
-mode=$1
-shift
-out=
-if [ "$mode" = head ]; then
-  [ $# -ge 1 ] || usage
-  out=$1
-  shift
-elif [ "$mode" != check ]; then
-  usage
-fi
 repository=
 base=main
 while [ $# -gt 0 ]; do
   case $1 in
-  --repository)
-    [ $# -ge 2 ] || usage
-    repository=$2
-    shift 2
-    ;;
-  --base)
-    [ $# -ge 2 ] || usage
-    base=$2
-    shift 2
-    ;;
-  *) usage ;;
+    --repository)
+      [ $# -ge 2 ] || usage
+      repository=$2
+      shift 2
+      ;;
+    --base)
+      [ $# -ge 2 ] || usage
+      base=$2
+      shift 2
+      ;;
+    *) usage ;;
   esac
 done
 [ -n "$repository" ] || usage
@@ -72,22 +59,14 @@ if [ ! -x "$boom" ]; then
   exit 1
 fi
 
-if [ "$mode" = head ]; then
-  answer=$("$boom" terms check --repository "$repository" --if-declared --json) || {
-    echo "terms: boom could not read the store" >&2
-    exit 1
-  }
-  mkdir -p "$(dirname "$out")"
-  printf '%s\n' "$answer" | jq -c .head >"$out"
-  exit 0
-fi
-
-# Where there is no store, no term is accepted.
-answer=$("$boom" terms check --repository "$repository" --if-declared --json) || {
-  echo "terms: boom could not read the store" >&2
+# The entry of the store's log that the check reads. Where there is no
+# store, no term is accepted.
+answer=$("$boom" terms check --repository "$repository" --if-declared --json 2>/dev/null) || {
+  echo "terms: boom could not read the store: $answer" >&2
   exit 1
 }
-if [ "$(printf '%s\n' "$answer" | jq -c .head)" = null ]; then
+entry=$(printf '%s\n' "$answer" | jq -r '.head.number // empty')
+if [ -z "$entry" ]; then
   echo "terms: no store, so no term of $repository is accepted, and nothing is checked"
   exit 0
 fi
@@ -107,16 +86,16 @@ trap 'rm -f "$list"' EXIT
 git diff --name-only --no-renames --diff-filter=AM -z "$fork" HEAD -- . \
   ':(exclude)openspec/changes/archive/**' >"$list"
 if [ ! -s "$list" ]; then
-  echo "terms: the change adds or modifies no file to check"
+  echo "terms: the change adds or modifies no file to check, at entry $entry of the store's log"
   exit 0
 fi
 count=$(tr -cd '\0' <"$list" | wc -c | tr -d ' ')
-xargs -0 "$boom" terms check --repository "$repository" --if-declared <"$list"
+xargs -0 "$boom" terms check --repository "$repository" --if-declared <"$list" >/dev/null
 status=$?
 case $status in
-0) echo "terms: $count files of the change hold no old word of an accepted term of $repository" ;;
-# xargs exits 123 where boom exits 1 to 125: boom names each old word.
-123) echo "terms: the change writes an old word of an accepted term of $repository; write the term in its place, or mark a line that names it on purpose with boom: allow <old word>" >&2 ;;
-*) echo "terms: boom terms check did not run, exit $status" >&2 ;;
+  0) echo "terms: $count files of the change hold no old word of an accepted term of $repository, at entry $entry of the store's log" ;;
+  # xargs exits 123 where boom exits 1 to 125: boom names each old word.
+  123) echo "terms: the change writes an old word of an accepted term of $repository, at entry $entry of the store's log; write the term in its place, or mark a line that names it on purpose with boom: allow <old word>" >&2 ;;
+  *) echo "terms: boom terms check did not run, exit $status" >&2 ;;
 esac
 [ "$status" -eq 0 ]

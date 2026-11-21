@@ -190,14 +190,13 @@ names this check under "Does not break it", with a Before and Now. The
 user accepts or rejects it, and this change lands only after the user
 accepts it.
 
-The gate task names the repository, `--repository boom`, and declares
-the last entry of the log of the store as an input, as the user
-approved. A task `root:terms-head` runs each time. It writes the entry
-that `boom terms check` reads, its number and hash, to
-`.boom-terms/head.json`, which git ignores. `root:terms` depends on it
-and names that file among its inputs. So moon replays a pass only for
-the same files and the same entry. Where there is no store, no term is
-accepted: the task says so and passes.
+The gate task names the repository, `--repository boom`. It reads the
+store, which is outside the tree. sluice signs a pass to replay only for
+inputs that the tree holds, so the task never replays: moon runs it
+each time, as it runs the check of the toolchain, which also reads
+outside the tree. Its last line names the entry of the store's log that
+it read. So no pass stands for an entry that it did not read. Where
+there is no store, no term is accepted: the task says so and passes.
 
 Alternative: the hook alone. The user reviewed that design on
 2026-11-21 and asked for the gate.
