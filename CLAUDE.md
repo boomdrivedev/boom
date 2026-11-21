@@ -18,6 +18,13 @@ step with the log, which `boom verify` checks against a full replay; its
 Claude Code plugin's session hook runs `boom query --if-declared`, so a
 session in a registered repository starts with those claims, and `boom search` finds the claims
 that stand by their words, in a repository or every repository.
+A version links to the claims that it rests on with `--source`, to
+the claims that a decision changes with `--changes`, and to the file or
+commit that it came from with `--origin`, a file that boom keeps by its
+fingerprint or `git:<repository>@<commit>:<path>`. Each edge to a claim
+stores the version that it meant, and `boom show` marks it out of date,
+gives the versions by base and the claims that rest on a claim, and
+writes a kept file with `--artifact`.
 A term is a word and its meaning in one repository, with the old words
 that it replaces, which only the log keeps: `boom query` gives the term
 and never its old words. `boom terms check` names each old word of an
