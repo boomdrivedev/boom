@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use clap::{CommandFactory, Parser, Subcommand};
 use serde_json::{json, Value};
 
-use crate::claim::{History, Kind, Proposal};
+use crate::claim::{History, Kind, Origin, Proposal};
 use crate::entry::{Act, Actor, Attach, Entry, Form, Imported, Named};
 use crate::import::{self, Read, Record};
 use crate::judge::{self, Proof, State, Verdict};
@@ -85,6 +85,10 @@ pub struct Outcome {
     pub stdout: String,
     /// Standard error.
     pub stderr: String,
+    /// Standard output as bytes, in place of `stdout`: an artifact whose
+    /// bytes are not text, which `boom show --artifact` writes as they
+    /// are (claim-edges).
+    pub bytes: Option<Vec<u8>>,
 }
 
 #[derive(Parser, Debug)]
@@ -165,6 +169,21 @@ enum Command {
         /// term replaces words.
         #[arg(long = "replaces", value_name = "WORD")]
         replaces: Vec<String>,
+        /// A claim this version rests on, `<name>` or `<name>@<version>`
+        /// of a claim of the store; any number of times. A name stores
+        /// its accepted version, or its newest where none is accepted.
+        #[arg(long = "source", value_name = "CLAIM")]
+        source: Vec<String>,
+        /// For a decision, a claim it changes, `<name>` or
+        /// `<name>@<version>` of a claim of the store; any number of
+        /// times.
+        #[arg(long = "changes", value_name = "CLAIM")]
+        changes: Vec<String>,
+        /// Where this version came from: a file, which boom keeps by the
+        /// fingerprint of its bytes, or a file in a commit,
+        /// `git:<repository>@<commit>:<path>`; any number of times.
+        #[arg(long = "origin", value_name = "FILE")]
+        origin: Vec<String>,
     },
     /// Accept one or more versions, as a person, in one entry that their
     /// security key signs one time: every version, or none.
@@ -188,15 +207,20 @@ enum Command {
         #[arg(long)]
         key: Option<PathBuf>,
     },
-    /// Show a claim and its versions, or one version, `<name>@<version>`.
+    /// Show a claim and its versions, or one version, `<name>@<version>`,
+    /// or write the bytes of an artifact a version came from.
     Show {
         /// The claim's name, `<name>@<version>`, or the number of an
         /// entry of the log, for the version that the entry names.
-        target: String,
+        target: Option<String>,
         /// For a word with a term in several repositories, the term of
         /// this repository.
         #[arg(long, value_name = "NAME")]
         repository: Option<String>,
+        /// Write the bytes of the artifact boom keeps under this
+        /// fingerprint, which an `--origin` named, in place of a target.
+        #[arg(long, value_name = "FINGERPRINT")]
+        artifact: Option<String>,
     },
     /// Show the log's entries in order, each with whether it counts.
     Log,
@@ -421,6 +445,7 @@ where
             let text = error.render().to_string();
             return match error.kind() {
                 ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => Outcome {
+                    bytes: None,
                     code: 0,
                     stdout: text,
                     stderr: String::new(),
@@ -455,14 +480,24 @@ where
         };
         return terms_check(cli.json, path, &check, env, input);
     }
+    if let Command::Show {
+        target: None,
+        repository: None,
+        artifact: Some(fingerprint),
+    } = &cli.command
+    {
+        return artifact(cli.json, path, fingerprint);
+    }
     let answer = execute(cli.command, path, keys, env);
     match answer {
         Ok(answer) if cli.json => Outcome {
+            bytes: None,
             code: 0,
             stdout: format!("{}\n", answer.json),
             stderr: answer.words,
         },
         Ok(answer) => Outcome {
+            bytes: None,
             code: 0,
             stdout: answer.words,
             stderr: String::new(),
@@ -489,10 +524,91 @@ fn mcp(json: bool, store: Option<&Path>, env: &Env) -> Outcome {
         env,
     );
     Outcome {
+        bytes: None,
         code: 0,
         stdout: String::new(),
         stderr: String::new(),
     }
+}
+
+/// `boom show --artifact <fingerprint>` (claim-edges, "boom show writes
+/// an artifact"): the bytes of the artifact as they are; with `--json`,
+/// one object with its name and its bytes, as `text` where they are
+/// UTF-8 and as `base64` where they are not.
+fn artifact(json: bool, path: Result<PathBuf, Failure>, fingerprint: &str) -> Outcome {
+    let read = path.and_then(|path| {
+        let mut store = Store::open(&path)?;
+        store.read(|conn| {
+            let Some(name) = store::artifact_name(conn, fingerprint)? else {
+                return Err(Failure::refused(format!(
+                    "no artifact has the fingerprint {fingerprint}: boom keeps the files that an --origin names"
+                )));
+            };
+            Ok((name, store::blob(conn, fingerprint)?))
+        })
+    });
+    let (name, bytes) = match read {
+        Ok(read) => read,
+        Err(failure) => return failed(json, failure),
+    };
+    let size = bytes.len();
+    let words = format!("artifact {name}, sha256 {fingerprint}, {size} bytes\n");
+    let text = String::from_utf8(bytes);
+    if json {
+        let (text, base64) = match &text {
+            Ok(text) => (Some(text.clone()), None),
+            Err(raw) => (None, Some(base64(raw.as_bytes()))),
+        };
+        let object = json!({
+            "format": "boom-show/2",
+            "artifact": fingerprint,
+            "name": name,
+            "size": size,
+            "text": text,
+            "base64": base64,
+        });
+        return Outcome {
+            code: 0,
+            stdout: format!("{object}\n"),
+            stderr: words,
+            bytes: None,
+        };
+    }
+    match text {
+        Ok(text) => Outcome {
+            code: 0,
+            stdout: text,
+            stderr: String::new(),
+            bytes: None,
+        },
+        Err(raw) => Outcome {
+            code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            bytes: Some(raw.into_bytes()),
+        },
+    }
+}
+
+/// `bytes` in standard Base64, with padding.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut written = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let joined = chunk.iter().enumerate().fold(0u32, |joined, (at, byte)| {
+            joined | u32::from(*byte) << (16 - 8 * at)
+        });
+        for at in 0..4 {
+            if at <= chunk.len() {
+                written.push(char::from(
+                    ALPHABET[(joined >> (18 - 6 * at)) as usize & 63],
+                ));
+            } else {
+                written.push('=');
+            }
+        }
+    }
+    written
 }
 
 /// A failure's outcome: its words on standard error and, with `json`,
@@ -511,6 +627,7 @@ pub(crate) fn failed(json: bool, failure: Failure) -> Outcome {
         ),
     };
     Outcome {
+        bytes: None,
         code,
         stdout: if json {
             format!("{object}\n")
@@ -556,6 +673,9 @@ fn execute(
             repositories,
             system,
             replaces,
+            source,
+            changes,
+            origin,
         } => propose(
             &path?,
             Proposed {
@@ -568,6 +688,9 @@ fn execute(
                 repositories,
                 system,
                 replaces,
+                source,
+                changes,
+                origin,
             },
             key.as_deref(),
             keys,
@@ -579,7 +702,22 @@ fn execute(
             reason,
             key,
         } => reject(&path?, &target, reason, key.as_deref(), keys, env),
-        Command::Show { target, repository } => show(&path?, &target, repository.as_deref()),
+        Command::Show {
+            target,
+            repository,
+            artifact,
+        } => match (target, artifact) {
+            (Some(target), None) => show(&path?, &target, repository.as_deref()),
+            (Some(_), Some(_)) => Err(Failure::refused(
+                "boom show takes a target or an artifact, and not both",
+            )),
+            (None, Some(_)) => Err(Failure::refused(
+                "boom show --artifact takes no --repository: an artifact is named by its fingerprint alone",
+            )),
+            (None, None) => Err(Failure::refused(
+                "boom show takes a target, <name>, <name>@<version> or the number of an entry, or --artifact <fingerprint>",
+            )),
+        },
         Command::Log => log(&path?),
         Command::Verify => verify(&path?),
         Command::Query {
@@ -643,7 +781,7 @@ fn write(
     store: &mut Store,
     scope: &Scope,
     signer: Option<&dyn Signer>,
-    blob: Option<&[u8]>,
+    blobs: &[&[u8]],
     build: impl FnOnce(&State) -> Result<Entry, Failure>,
 ) -> Result<(Written, State), Failure> {
     let state = store.state_for(scope)?;
@@ -661,7 +799,7 @@ fn write(
         Some(signer) => Some(signer.sign(signed.as_bytes())?),
         None => None,
     };
-    store.append(&signed, signature.as_deref(), blob)
+    store.append(&signed, signature.as_deref(), blobs)
 }
 
 /// The person the store registers `signer`'s key to.
@@ -761,7 +899,7 @@ fn init(
         return Err(Failure::Refused(why));
     }
     let mut store = Store::create(path)?;
-    let (written, state) = store.append(&signed, Some(&signature), None)?;
+    let (written, state) = store.append(&signed, Some(&signature), &[])?;
     store.finish()?;
     Ok(registration_answer(
         "boom-init/1",
@@ -793,7 +931,7 @@ fn register(
         &mut store,
         &Scope::default(),
         Some(signer.as_ref()),
-        None,
+        &[],
         |state| {
             Ok(Entry {
                 at: env.clock.now(),
@@ -826,6 +964,96 @@ struct Proposed {
     repositories: Vec<String>,
     system: bool,
     replaces: Vec<String>,
+    source: Vec<String>,
+    changes: Vec<String>,
+    origin: Vec<String>,
+}
+
+/// The edge to a claim that `--<flag> <given>` names, as an entry stores
+/// it, `<name>@<version>`: for a name, its claim's accepted version, or
+/// its newest where none is accepted (claim-edges, "An edge to a claim
+/// names the version that it meant").
+fn resolve_edge(state: &State, flag: &str, given: &str) -> Result<String, Failure> {
+    let (name, version) = match given.split_once('@') {
+        Some((name, version)) => (name, Some(version)),
+        None => (given, None),
+    };
+    if crate::claim::check_name(name).is_err() || version.is_some_and(str::is_empty) {
+        return Err(Failure::refused(format!(
+            "an edge names a claim of the store, <name> or <name>@<version>: --{flag} {given} does not"
+        )));
+    }
+    let claims = state.named(name);
+    if claims.is_empty() {
+        return Err(Failure::refused(format!(
+            "no claim has the name {name}: --{flag} {given} names a claim of the store"
+        )));
+    }
+    if let Some(version) = version {
+        return match state.holding(name, version) {
+            Some(_) => Ok(format!("{name}@{version}")),
+            None => Err(Failure::refused(format!(
+                "the claim {name} has no version {version}: --{flag} {given}"
+            ))),
+        };
+    }
+    let [claim] = claims.as_slice() else {
+        return Err(Failure::refused(format!(
+            "the word {name} has a term in several repositories: name the version, --{flag} {name}@<version>"
+        )));
+    };
+    let meant = claim
+        .standing
+        .clone()
+        .or_else(|| {
+            claim
+                .versions
+                .last()
+                .map(|version| version.proposal.version.clone())
+        })
+        .ok_or_else(|| Failure::not_run(format!("the claim {name} has no version")))?;
+    Ok(format!("{name}@{meant}"))
+}
+
+/// Each edge of `given` resolved, each one time, in the order given.
+fn resolve_edges(state: &State, flag: &str, given: &[String]) -> Result<Vec<String>, Failure> {
+    let resolved = given
+        .iter()
+        .map(|edge| resolve_edge(state, flag, edge))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(crate::claim::once(&resolved))
+}
+
+/// The origins `--origin` names, each one time, in the order given,
+/// with the bytes of each file boom keeps (claim-edges, "The origin of a
+/// claim").
+fn origins(given: &[String]) -> Result<(Vec<Origin>, Vec<Vec<u8>>), Failure> {
+    let mut kept = Vec::new();
+    let mut files = Vec::new();
+    for origin in given {
+        if origin.starts_with(crate::claim::GIT) {
+            kept.push(Origin::git(origin).map_err(Failure::Refused)?);
+            continue;
+        }
+        let file = Path::new(origin);
+        let bytes = std::fs::read(file).map_err(|error| {
+            Failure::refused(format!(
+                "the origin {origin} cannot be read: {error}; an origin is a file, or git:<repository>@<commit>:<path>"
+            ))
+        })?;
+        let name = file
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| Failure::refused(format!("the origin {origin} names no file")))?;
+        let origin = Origin::File {
+            name: name.to_owned(),
+            fingerprint: crate::sha256_hex(&bytes),
+        };
+        origin.check().map_err(Failure::Refused)?;
+        kept.push(origin);
+        files.push(bytes);
+    }
+    Ok((crate::claim::once(&kept), files))
 }
 
 /// What a proposal binds, in the order record 0008 (point 4) gives:
@@ -899,12 +1127,39 @@ fn propose(
         } else {
             None
         };
+    if !proposed.changes.is_empty() && proposed.kind != Kind::Decision {
+        return Err(Failure::refused(format!(
+            "only a decision changes claims: {} is proposed as {} {}, with --changes",
+            proposed.name,
+            if proposed.kind == Kind::Invariant || proposed.kind == Kind::Assumption {
+                "an"
+            } else {
+                "a"
+            },
+            proposed.kind.as_str()
+        )));
+    }
+    let (origin, files) = origins(&proposed.origin)?;
     let signer = key.map(|key| keys.signer(key)).transpose()?;
-    let scope = Scope::names([proposed.name.clone()]);
+    // The claims the edges name are read with the claim, for the judge
+    // to find the versions they mean (claim-edges).
+    let scope = Scope::names(
+        std::iter::once(proposed.name.as_str())
+            .chain(
+                proposed
+                    .source
+                    .iter()
+                    .chain(&proposed.changes)
+                    .map(|edge| edge.split_once('@').map_or(edge.as_str(), |(name, _)| name)),
+            )
+            .map(str::to_owned),
+    );
+    let mut blobs: Vec<&[u8]> = body.as_deref().into_iter().collect();
+    blobs.extend(files.iter().map(Vec::as_slice));
     let body_fingerprint = body.as_deref().map(crate::sha256_hex);
     // The version is made with what it binds: a term's version is the
     // fingerprint of its repository too (term-claims).
-    let version_of = |attach: Option<&Attach>| {
+    let version_without_edges = |attach: Option<&Attach>| {
         if proposed.kind == Kind::Term {
             return Proposal::term(
                 &proposed.name,
@@ -932,33 +1187,47 @@ fn propose(
         proposal.version = proposal.fingerprint(None);
         proposal
     };
+    // The edges are part of its content, so a person signs them
+    // (claim-edges, "The edges are part of the content").
+    let version_of = |attach: Option<&Attach>, source: Vec<String>, changes: Vec<String>| {
+        let mut proposal = version_without_edges(attach);
+        if source.is_empty() && changes.is_empty() && origin.is_empty() {
+            return proposal;
+        }
+        proposal.source = source;
+        proposal.changes = changes;
+        proposal.origin = origin.clone();
+        let term = (proposed.kind == Kind::Term).then(|| {
+            judge::repositories(attach)
+                .first()
+                .map_or("", String::as_str)
+        });
+        proposal.version = proposal.fingerprint(term);
+        proposal
+    };
     let mut made = None;
-    let (written, state) = write(
-        &mut store,
-        &scope,
-        signer.as_deref(),
-        body.as_deref(),
-        |state| {
-            let actor = match (&signer, key) {
-                (Some(signer), Some(key)) => Actor::Person(person_of(state, signer.as_ref(), key)?),
-                _ => Actor::Agent {
-                    provenance: proposed.provenance.clone().unwrap_or_default(),
-                },
-            };
-            let attach = attachment(&proposed, declared.as_deref(), state);
-            let proposal = version_of(attach.as_ref());
-            made = Some(proposal.clone());
-            Ok(Entry {
-                at: env.clock.now(),
-                actor,
-                act: Act::Proposed {
-                    claim: proposal,
-                    imported: None,
-                    attach,
-                },
-            })
-        },
-    )?;
+    let (written, state) = write(&mut store, &scope, signer.as_deref(), &blobs, |state| {
+        let actor = match (&signer, key) {
+            (Some(signer), Some(key)) => Actor::Person(person_of(state, signer.as_ref(), key)?),
+            _ => Actor::Agent {
+                provenance: proposed.provenance.clone().unwrap_or_default(),
+            },
+        };
+        let attach = attachment(&proposed, declared.as_deref(), state);
+        let source = resolve_edges(state, "source", &proposed.source)?;
+        let changes = resolve_edges(state, "changes", &proposed.changes)?;
+        let proposal = version_of(attach.as_ref(), source, changes);
+        made = Some(proposal.clone());
+        Ok(Entry {
+            at: env.clock.now(),
+            actor,
+            act: Act::Proposed {
+                claim: Box::new(proposal),
+                imported: None,
+                attach,
+            },
+        })
+    })?;
     let proposal = made.expect("a proposal written was made");
     let claim = state
         .holding(&proposal.name, &proposal.version)
@@ -983,6 +1252,11 @@ fn propose(
         written.seq(),
         repository::words(&version.repositories)
     );
+    words.push_str(&edges_words(
+        &proposal.source,
+        &proposal.changes,
+        &proposal.origin,
+    ));
     if let Some(accept) = &accept {
         words.push_str(&format!("a person accepts it with: {accept}\n"));
     }
@@ -996,10 +1270,50 @@ fn propose(
             "status": status,
             "entry": written.seq(),
             "repositories": version.repositories,
+            "source": proposal.source,
+            "changes": proposal.changes,
+            "origin": proposal.origin.iter().map(origin_json).collect::<Vec<_>>(),
             "accept": accept,
         }),
         words,
     })
+}
+
+/// The edges of a version as `boom propose` names them, one line each.
+fn edges_words(source: &[String], changes: &[String], origin: &[Origin]) -> String {
+    let mut words = String::new();
+    for edge in source {
+        words.push_str(&format!("source: {edge}\n"));
+    }
+    for edge in changes {
+        words.push_str(&format!("changes: {edge}\n"));
+    }
+    for origin in origin {
+        words.push_str(&format!("origin: {}\n", origin.words()));
+    }
+    words
+}
+
+/// An origin as JSON: a file's `name` and `fingerprint`, or a commit's
+/// `repository`, `commit` and `path`, with its `reference` as a person
+/// writes it.
+fn origin_json(origin: &Origin) -> Value {
+    match origin {
+        Origin::File { name, fingerprint } => json!({
+            "file": name,
+            "fingerprint": fingerprint,
+        }),
+        Origin::Git {
+            repository,
+            commit,
+            path,
+        } => json!({
+            "repository": repository,
+            "commit": commit,
+            "path": path,
+            "reference": origin.words(),
+        }),
+    }
 }
 
 /// Splits `<name>@<version>`.
@@ -1089,7 +1403,7 @@ fn accept(
             .append_all(&[Append {
                 signed: &signed,
                 signature: Some(&signature),
-                blob: None,
+                blobs: &[],
             }])?
             .1
     };
@@ -1162,7 +1476,7 @@ fn reject(
         &mut store,
         &Scope::names([name]),
         Some(signer.as_ref()),
-        None,
+        &[],
         |state| {
             Ok(Entry {
                 at: env.clock.now(),
@@ -1342,6 +1656,8 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
         object.insert("body".into(), json!(body));
         object.insert("imported".into(), json!(imported));
         object.insert("history".into(), json!(history));
+        let (edges, edge_words) = edges_shown(conn, view)?;
+        object.extend(edges);
         let mut words = format!(
             "{} {}@{}\n{}\n",
             claim.kind,
@@ -1381,6 +1697,7 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
             }
             words.push('\n');
         }
+        words.push_str(&edge_words);
         if let Some(body) = &body {
             words.push('\n');
             words.push_str(body);
@@ -1395,14 +1712,156 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
     })
 }
 
+/// The edges of a version as `boom show <name>@<version>` gives them, in
+/// their order (claim-edges, "boom show gives the edges of a version"):
+/// for an edge to a claim, the version it meant and its statement,
+/// marked out of date where another version of that claim is accepted
+/// now; for a change, `Before:` and `Now:`; for an origin, its file and
+/// fingerprint, or its repository, commit and path.
+fn edges_shown(
+    conn: &rusqlite::Connection,
+    view: &store::VersionView,
+) -> Result<(serde_json::Map<String, Value>, String), Failure> {
+    let mut object = serde_json::Map::new();
+    let mut words = String::new();
+    for (flag, edges) in [("source", &view.source), ("changes", &view.changes)] {
+        let mut shown = Vec::with_capacity(edges.len());
+        for stored in edges.iter() {
+            let (name, version) = stored.split_once('@').unwrap_or((stored, ""));
+            let (statement, accepted) = store::meant(conn, name, version)?.ok_or_else(|| {
+                Failure::not_run(format!(
+                    "the views hold no version {stored}, which an edge names"
+                ))
+            })?;
+            let out_of_date = accepted
+                .as_deref()
+                .is_some_and(|accepted| accepted != version);
+            let mut edge = json!({
+                "claim": name,
+                "version": version,
+                "statement": statement,
+                "accepted": accepted,
+                "out_of_date": out_of_date,
+            });
+            words.push_str(&format!("{flag}: {stored}"));
+            if let (true, Some(accepted)) = (out_of_date, &accepted) {
+                words.push_str(&format!(", out of date: {name}@{accepted} is accepted"));
+            }
+            words.push('\n');
+            if flag == "changes" {
+                edge["before"] = json!(statement);
+                edge["now"] = json!(view.statement);
+                words.push_str(&format!(
+                    "  Before: {statement}\n  Now: {}\n",
+                    view.statement
+                ));
+            } else {
+                words.push_str(&format!("  {statement}\n"));
+            }
+            shown.push(edge);
+        }
+        object.insert(flag.into(), Value::Array(shown));
+    }
+    for origin in &view.origin {
+        words.push_str(&format!("origin: {}\n", origin.words()));
+    }
+    object.insert(
+        "origin".into(),
+        Value::Array(view.origin.iter().map(origin_json).collect()),
+    );
+    Ok((object, words))
+}
+
+/// The other versions of a claim as a tree by base, each amendment under
+/// the version it amends and the versions of one base newest first, one
+/// line pair each, indented by its depth (claim-versions, "A claim shown
+/// by its name").
+fn tree_words(others: &[&store::VersionView]) -> String {
+    fn under(others: &[&store::VersionView], base: Option<&str>, depth: usize, words: &mut String) {
+        let roots = |view: &&&store::VersionView| match base {
+            None => view
+                .base
+                .as_deref()
+                .is_none_or(|base| !others.iter().any(|other| other.version == base)),
+            Some(base) => view.base.as_deref() == Some(base),
+        };
+        for view in others.iter().filter(roots) {
+            let indent = "  ".repeat(depth + 1);
+            words.push_str(&format!(
+                "{indent}{}\n{indent}  {}\n{indent}  binds: {}\n",
+                version_words(view),
+                view.statement,
+                repository::words(&view.repositories)
+            ));
+            under(others, Some(&view.version), depth + 1, words);
+        }
+    }
+    let mut words = String::new();
+    under(others, None, 0, &mut words);
+    words
+}
+
+/// The claims that rest on `claim`, as `boom show <name>` gives them
+/// (claim-edges, "boom show gives the claims that rest on a claim"): each
+/// version that counts for its claim and names a version of `claim` as a
+/// source, then each that changes one.
+fn resting_shown(
+    conn: &rusqlite::Connection,
+    claim: &store::ClaimView,
+) -> Result<(serde_json::Map<String, Value>, String), Failure> {
+    let resting: Vec<store::Resting> = store::resting_on(conn, &claim.name)?
+        .into_iter()
+        .filter(|resting| {
+            claim
+                .versions
+                .iter()
+                .any(|view| view.version == resting.meant)
+        })
+        .collect();
+    let mut object = serde_json::Map::new();
+    let mut words = String::new();
+    for (edge, field, heading) in [
+        ("source", "source_of", "source of"),
+        ("changes", "changed_by", "changed by"),
+    ] {
+        let found: Vec<&store::Resting> = resting.iter().filter(|r| r.edge == edge).collect();
+        if !found.is_empty() {
+            words.push_str(&format!("\n{heading}:\n"));
+        }
+        for resting in &found {
+            words.push_str(&format!(
+                "  {}@{}, on {}@{}\n",
+                resting.name, resting.version, claim.name, resting.meant
+            ));
+        }
+        object.insert(
+            field.into(),
+            Value::Array(
+                found
+                    .iter()
+                    .map(|resting| {
+                        json!({
+                            "claim": resting.name,
+                            "version": resting.version,
+                            "meant": resting.meant,
+                        })
+                    })
+                    .collect(),
+            ),
+        );
+    }
+    Ok((object, words))
+}
+
 /// A claim as `boom show <name>` gives it: its kind, its accepted
-/// version, the newest version in full, then the others, newest first
-/// (claim-versions, "A claim shown by its name").
+/// version, the newest version in full, then the others as a tree by
+/// base, then the claims that rest on it (claim-versions, "A claim shown
+/// by its name"; claim-edges).
 fn claim_shown(
     conn: &rusqlite::Connection,
     claim: &store::ClaimView,
 ) -> Result<(serde_json::Map<String, Value>, String), Failure> {
-    // The newest version in full, then the others, newest first
+    // The newest version in full, then the others by base, newest first
     // (claim-versions, "A claim shown by its name").
     let newest = claim
         .versions
@@ -1427,6 +1886,8 @@ fn claim_shown(
     if !newest.replaces.is_empty() {
         words.push_str(&format!("replaces: {}\n", newest.replaces.join(", ")));
     }
+    let (newest_edges, newest_edge_words) = edges_shown(conn, newest)?;
+    words.push_str(&newest_edge_words);
     if let Some(body) = &newest_body {
         words.push_str(&format!("\n{}", body));
         if !body.ends_with('\n') {
@@ -1435,19 +1896,15 @@ fn claim_shown(
     }
     if !others.is_empty() {
         words.push_str("\nother versions:\n");
+        words.push_str(&tree_words(&others));
     }
-    for view in &others {
-        words.push_str(&format!(
-            "  {}\n    {}\n    binds: {}\n",
-            version_words(view),
-            view.statement,
-            repository::words(&view.repositories)
-        ));
-    }
+    let (resting, resting_words) = resting_shown(conn, claim)?;
+    words.push_str(&resting_words);
     let mut newest_json = version_json(newest);
     newest_json.insert("statement".into(), json!(newest.statement));
     newest_json.insert("replaces".into(), json!(newest.replaces));
     newest_json.insert("body".into(), json!(newest_body));
+    newest_json.extend(newest_edges);
     let versions: Vec<Value> = claim
         .versions
         .iter()
@@ -1462,6 +1919,7 @@ fn claim_shown(
     object.insert("accepted".into(), json!(claim.standing));
     object.insert("newest".into(), Value::Object(newest_json));
     object.insert("versions".into(), Value::Array(versions));
+    object.extend(resting);
     Ok((object, words))
 }
 
@@ -1754,7 +2212,7 @@ fn repo_write(
         store,
         &Scope::default(),
         Some(signer.as_ref()),
-        None,
+        &[],
         |state| {
             Ok(Entry {
                 at: env.clock.now(),
@@ -2113,7 +2571,7 @@ fn import(
                 provenance: provenance.clone(),
             },
             act: Act::Proposed {
-                claim: record.proposal(),
+                claim: Box::new(record.proposal()),
                 imported: Some(Box::new(record.imported.clone())),
                 // Imported for one repository, it stands for that one
                 // alone (design 7).
@@ -2134,12 +2592,17 @@ fn import(
             Verdict::Repeats(_) => {}
         }
     }
+    let blobs: Vec<Vec<&[u8]>> = entries
+        .iter()
+        .map(|(_, body)| body.map(str::as_bytes).into_iter().collect())
+        .collect();
     let appends: Vec<Append<'_>> = entries
         .iter()
-        .map(|(signed, body)| Append {
+        .zip(&blobs)
+        .map(|((signed, _), blobs)| Append {
             signed,
             signature: None,
-            blob: body.map(str::as_bytes),
+            blobs,
         })
         .collect();
     let state = if appends.is_empty() {
@@ -2269,6 +2732,7 @@ fn terms_check(
     input: &mut dyn std::io::Read,
 ) -> Outcome {
     let silent = Outcome {
+        bytes: None,
         code: 0,
         stdout: String::new(),
         stderr: String::new(),
@@ -2288,6 +2752,7 @@ fn terms_check(
                 "found": [],
             });
             Outcome {
+                bytes: None,
                 code: 0,
                 stdout: if json {
                     format!("{answer}\n")
@@ -2316,12 +2781,14 @@ fn terms_check(
             });
             if json {
                 Outcome {
+                    bytes: None,
                     code: 0,
                     stdout: format!("{answer}\n"),
                     stderr: words,
                 }
             } else {
                 Outcome {
+                    bytes: None,
                     code: 0,
                     stdout: words,
                     stderr: String::new(),
@@ -2343,6 +2810,7 @@ fn terms_check(
                 },
             });
             Outcome {
+                bytes: None,
                 code: 2,
                 stdout: if json {
                     format!("{object}\n")

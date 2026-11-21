@@ -181,7 +181,7 @@ fn generate(dir: &Path, entries: usize) {
                             provenance: format!("run-{round}"),
                         },
                         act: Act::Proposed {
-                            claim: proposal,
+                            claim: Box::new(proposal),
                             imported: None,
                             attach: Some(Attach {
                                 repositories: vec![format!("repo-{}", claim % REPOSITORIES)],
@@ -224,7 +224,7 @@ fn generate(dir: &Path, entries: usize) {
             .map(|(signed, signature)| Append {
                 signed,
                 signature: signature.as_deref(),
-                blob: None,
+                blobs: &[],
             })
             .collect();
         let (written, _) = store.append_all(&appends).unwrap();
@@ -251,7 +251,7 @@ fn behind(dir: &Path, count: usize) {
                 provenance: "another-program".to_owned(),
             },
             act: Act::Proposed {
-                claim: Proposal::new(
+                claim: Box::new(Proposal::new(
                     Kind::Invariant,
                     &format!("behind-{seq}-{at}"),
                     "A claim another program proposed.",
@@ -259,7 +259,7 @@ fn behind(dir: &Path, count: usize) {
                     None,
                     None,
                     None,
-                ),
+                )),
                 imported: None,
                 attach: None,
             },

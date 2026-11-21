@@ -11,7 +11,7 @@ nothing, so an agent or another tool can call boom and read its answer
 
 ### Requirement: The commands
 
-Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import adr`, `import rules`, `repo add`, `repo set` and `repo show`. Each command SHALL take `--store <path>` and `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line that calls the engine of the library. Thus a caller gets from the command what the engine does.
+Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import adr`, `import rules`, `repo add`, `repo set`, `repo show` and `terms check`. Each command SHALL take `--store <path>` and `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line that calls the engine of the library. Thus a caller gets from the command what the engine does.
 
 #### Scenario: The version
 
@@ -38,6 +38,11 @@ Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log
 - **WHEN** `boom repo show --store <path> --json` runs on a store that registers one repository
 - **THEN** standard output is one JSON object whose `format` is `boom-repo/1`, and boom exits 0
 
+#### Scenario: A check answered as JSON
+
+- **WHEN** `boom terms check <file> --store <path> --repository shop --json` runs on a file that holds no old word
+- **THEN** standard output is one JSON object whose `format` is `boom-terms-check/1`, and boom exits 0
+
 ### Requirement: Exit codes
 
 Each command SHALL exit 0 when it did what the caller asked. It SHALL exit 2 when it refuses. Examples are the accept of an agent, a name that a claim has, an amendment whose base is no longer accepted, an unknown name, and arguments that boom cannot read. It SHALL exit 3 when it cannot run. Examples are no store, an altered store, a blob that boom cannot read, and a signature that the program of the key did not make. On exit 2 and exit 3, boom SHALL write nothing.
@@ -54,7 +59,7 @@ Each command SHALL exit 0 when it did what the caller asked. It SHALL exit 2 whe
 
 #### Scenario: Arguments it cannot read
 
-- **WHEN** `boom propose` runs with a kind that is not `invariant`, `decision` or `assumption`
+- **WHEN** `boom propose` runs with a kind that is not `invariant`, `decision`, `assumption` or `term`
 - **THEN** boom exits 2 and names the kinds that it takes
 
 ### Requirement: One JSON object with its format

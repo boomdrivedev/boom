@@ -206,7 +206,7 @@ fn views_behind_the_log_are_rebuilt_before_an_answer() {
             provenance: "another-program".to_owned(),
         },
         act: boom::entry::Act::Proposed {
-            claim: proposal.clone(),
+            claim: Box::new(proposal.clone()),
             imported: None,
             attach: None,
         },
@@ -373,5 +373,5 @@ fn views_of_an_older_form_are_built_again() {
         .sqlite()
         .query_row("SELECT form FROM views_head", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(form, 5);
+    assert_eq!(form, 6);
 }

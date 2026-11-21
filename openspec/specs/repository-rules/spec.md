@@ -60,7 +60,7 @@ Boom SHALL NOT read `.config/boom.toml`. Boom SHALL refuse a name from `BOOM_REP
 
 ### Requirement: Every claim that stands for the repository
 
-`boom query` SHALL give each claim whose accepted version binds the repository or the whole system. It SHALL give each claim one time, with its kind, name, version, statement, scenarios, body fingerprint and `repositories`. It SHALL give the person who accepted the version and the number of that entry. It SHALL NOT give a version that is proposed, rejected, superseded or deprecated. It SHALL NOT give a claim whose accepted version binds only other repositories.
+`boom query` SHALL give each claim whose accepted version binds the repository or the whole system. It SHALL give each claim one time, with its kind, name, version, statement, scenarios, body fingerprint and `repositories`. It SHALL give the person who accepted the version and the number of that entry. It SHALL NOT give `replaces`. It SHALL NOT give a version that is proposed, rejected, superseded or deprecated. It SHALL NOT give a claim whose accepted version binds only other repositories.
 
 #### Scenario: What stands for a repository
 
@@ -92,6 +92,11 @@ Boom SHALL NOT read `.config/boom.toml`. Boom SHALL refuse a name from `BOOM_REP
 - **WHEN** `boom query --repository shop --json` runs on a store where no claim is accepted for `shop`
 - **THEN** boom exits 0, and `claims` is empty
 
+#### Scenario: A term of the repository
+
+- **WHEN** a term `refund` that replaces `chargeback` is accepted for `shop`
+- **THEN** `boom query --repository shop --json` gives the term `refund` with its meaning as its statement, and no field that holds `chargeback`
+
 ### Requirement: As the person accepted it
 
 `boom query` SHALL answer from the views after the views are at the last entry of the log. It SHALL read the accepted version of each claim, and no other version. An entry that fails the checks of boom SHALL NOT change the answer. When a program edits a view, `boom verify` SHALL find the change and build the view again. After that, `boom query` SHALL give what the person accepted.
@@ -118,7 +123,7 @@ Boom SHALL NOT read `.config/boom.toml`. Boom SHALL refuse a name from `BOOM_REP
 
 ### Requirement: Answered in one JSON object, or in words an agent reads
 
-With `--json`, `boom query` SHALL answer `boom-query/2` with `repository`, `head` and `claims`. `head` SHALL hold the `number` and `hash` of the last entry of the log. `claims` SHALL hold the invariants, then the decisions, then the assumptions, each kind by name. In words, `boom query` SHALL write to standard output only: a first line that names the repository, the number of claims and the entry, then each claim. It SHALL append nothing. The same log SHALL give the same answer.
+With `--json`, `boom query` SHALL answer `boom-query/2` with `repository`, `head` and `claims`. `head` SHALL hold the `number` and `hash` of the last entry of the log. `claims` SHALL hold the invariants, the decisions, the assumptions and then the terms, each kind by name. In words, `boom query` SHALL write to standard output only: a first line that names the repository, the number of claims and the entry, then each claim. It SHALL append nothing. The same log SHALL give the same answer.
 
 #### Scenario: Answered as JSON
 
@@ -134,6 +139,11 @@ With `--json`, `boom query` SHALL answer `boom-query/2` with `repository`, `head
 
 - **WHEN** `boom query --repository shop --json` runs two times, and the views are dropped between the two runs
 - **THEN** both runs print the same bytes, and the log does not change
+
+#### Scenario: Terms after the other claims
+
+- **WHEN** `boom query --repository shop` runs where an invariant and the term `refund` are accepted for `shop`
+- **THEN** the line of the term comes after the line of the invariant, and gives `term`, `refund@<version>` and its meaning
 
 ### Requirement: Nothing where nothing is declared, when asked
 

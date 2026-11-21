@@ -28,6 +28,25 @@ claims that hold.
   version for each change, named by the fingerprint of its words. An
   amendment names the version it amends. boom keeps a long body once,
   under the fingerprint of its bytes.
+- **A version links to its source and its origin.** `--source <name>`
+  names a claim that a version rests on, the same word as the "Source:"
+  line of a rule. A decision names each claim that it changes with
+  `--changes <name>`. Each edge stores the version that it meant: the
+  accepted version of that claim, or its newest version where none is
+  accepted, or the version that `<name>@<version>` names. boom refuses
+  an edge to a claim that the store does not hold, and an edge in any
+  other form, such as a URL or the number of an old record. `--origin
+  <file>` names the file that a version came from, such as a mockup,
+  and boom keeps its bytes under their fingerprint. `--origin
+  git:<repository>@<commit>:<path>` names a file in a commit, and an
+  agent opens it with `git show <commit>:<path>`. The edges are part of
+  the version's fingerprint, so a person signs them. `boom show
+  <name>@<version>` gives each edge, marks an edge out of date where
+  another version of its claim is accepted now, and gives `Before:` and
+  `Now:` for a change. `boom show <name>` gives the versions as a tree by
+  base and the claims that rest on the claim. `boom show --artifact
+  <fingerprint>` writes the bytes of a file that boom keeps. boom builds
+  the graph from the edges when asked, and keeps no graph.
 - **A term is a word and its meaning in one repository.** `boom propose
   term <word> <meaning> --repository <name>` proposes one, and each
   `--replaces <old word>` names an old word that the term replaces. A
@@ -127,6 +146,8 @@ boom init --person ada --key ~/.ssh/id_ed25519_sk
 boom propose invariant money-has-currency "Every amount names its currency." \
   --repository shop --provenance run-1
 boom accept money-has-currency@<version> --key ~/.ssh/id_ed25519_sk
+boom propose decision amounts-in-cents "Amounts are kept in cents." --body cents.md \
+  --source money-has-currency --origin mockup.svg --repository shop --provenance run-2
 boom import adr docs/adr --repository shop --drafts drafts.json --provenance run-1
 boom show money-has-currency --json
 boom query --repository shop

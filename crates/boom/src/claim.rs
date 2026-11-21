@@ -1,7 +1,8 @@
 //! Claims: their kinds, their names, their statements and scenarios,
-//! a version as the fingerprint of its content, and the history a
-//! version that comes in from an import may carry (claim-versions;
-//! design 5).
+//! a version as the fingerprint of its content, the history a version
+//! that comes in from an import may carry (claim-versions; design 5),
+//! and the edges a version stores: its sources, the claims a decision
+//! changes, and its origins (claim-edges).
 
 use serde::{Deserialize, Serialize};
 
@@ -96,12 +97,173 @@ pub struct Proposal {
     /// present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history: Option<History>,
+    /// The claims it rests on, each `<name>@<version>`, in the order
+    /// given; written only where there is one (claim-edges).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source: Vec<String>,
+    /// For a decision, the claims it changes, each `<name>@<version>`, in
+    /// the order given; written only where there is one (claim-edges).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changes: Vec<String>,
+    /// The files and the commits it came from, in the order given;
+    /// written only where there is one (claim-edges).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub origin: Vec<Origin>,
+}
+
+/// Where a version came from: a file boom keeps by the fingerprint of
+/// its bytes, or a file in a commit of a repository (claim-edges, "The
+/// origin of a claim").
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
+pub enum Origin {
+    /// A file boom keeps as a blob.
+    File {
+        /// The file's name, with no folder.
+        name: String,
+        /// The SHA-256 of its bytes, 64 hexadecimal characters.
+        fingerprint: String,
+    },
+    /// A file in a commit, `git:<repository>@<commit>:<path>`.
+    Git {
+        /// The repository, as boom names repositories.
+        repository: String,
+        /// The commit's full name, 40 hexadecimal characters.
+        commit: String,
+        /// The file's path in the commit, relative.
+        path: String,
+    },
+}
+
+/// The prefix of an origin that names a file in a commit.
+pub const GIT: &str = "git:";
+
+impl Origin {
+    /// A file in a commit, read from `git:<repository>@<commit>:<path>`.
+    pub fn git(reference: &str) -> Result<Origin, String> {
+        let rest = reference.strip_prefix(GIT).ok_or_else(|| {
+            format!(
+                "a reference to a commit is git:<repository>@<commit>:<path>: {reference} is not"
+            )
+        })?;
+        let (repository, rest) = rest.split_once('@').ok_or_else(|| {
+            format!("a reference to a commit is git:<repository>@<commit>:<path>: {reference} names no commit")
+        })?;
+        let (commit, path) = rest.split_once(':').ok_or_else(|| {
+            format!(
+                "a reference to a commit names the path of a file in it, git:<repository>@<commit>:<path>: {reference} names no path"
+            )
+        })?;
+        let origin = Origin::Git {
+            repository: repository.to_owned(),
+            commit: commit.to_owned(),
+            path: path.to_owned(),
+        };
+        origin.check()?;
+        Ok(origin)
+    }
+
+    /// The origin as a person reads it: `<name>, sha256 <fingerprint>`,
+    /// or `git:<repository>@<commit>:<path>`.
+    pub fn words(&self) -> String {
+        match self {
+            Origin::File { name, fingerprint } => format!("{name}, sha256 {fingerprint}"),
+            Origin::Git {
+                repository,
+                commit,
+                path,
+            } => format!("{GIT}{repository}@{commit}:{path}"),
+        }
+    }
+
+    /// The form of an origin: a file's name with no folder and its
+    /// fingerprint; a commit's repository, its full name and a relative
+    /// path with no `..`.
+    pub fn check(&self) -> Result<(), String> {
+        match self {
+            Origin::File { name, fingerprint } => {
+                if name.is_empty()
+                    || name.contains(['/', '\\', '\n', '\r'])
+                    || name == "."
+                    || name == ".."
+                {
+                    return Err(format!(
+                        "an origin file is named by its name alone, one line with no folder: {name:?} is not"
+                    ));
+                }
+                if !hexadecimal(fingerprint, 64) {
+                    return Err(format!(
+                        "an origin file is kept by its fingerprint, 64 hexadecimal characters: {fingerprint} is not"
+                    ));
+                }
+                Ok(())
+            }
+            Origin::Git {
+                repository,
+                commit,
+                path,
+            } => {
+                crate::repository::check_name(repository)?;
+                if !hexadecimal(commit, 40) {
+                    return Err(format!(
+                        "a commit has 40 hexadecimal characters: {commit} has {}",
+                        commit.chars().count()
+                    ));
+                }
+                if path.is_empty() {
+                    return Err(format!(
+                        "a reference to a commit names the path of a file in it: {GIT}{repository}@{commit} names none"
+                    ));
+                }
+                if path.starts_with('/')
+                    || path.contains(['\\', '\n', '\r'])
+                    || path
+                        .split('/')
+                        .any(|part| part.is_empty() || part == "." || part == "..")
+                {
+                    return Err(format!(
+                        "the path of a file in a commit is relative, with no `..`: {path} is not"
+                    ));
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Whether `text` is `length` lowercase hexadecimal characters.
+fn hexadecimal(text: &str, length: usize) -> bool {
+    text.len() == length
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// An edge to a claim as an entry stores it, `<name>@<version>`, split.
+pub fn edge(stored: &str) -> Result<(&str, &str), String> {
+    stored
+        .split_once('@')
+        .filter(|(name, version)| check_name(name).is_ok() && hexadecimal(version, 12))
+        .ok_or_else(|| {
+            format!("an edge names a claim of the store, <name>@<version>: {stored} does not")
+        })
+}
+
+/// Each edge of `edges` one time, in the order first given.
+pub fn once<T: PartialEq + Clone>(edges: &[T]) -> Vec<T> {
+    let mut kept: Vec<T> = Vec::with_capacity(edges.len());
+    for edge in edges {
+        if !kept.contains(edge) {
+            kept.push(edge.clone());
+        }
+    }
+    kept
 }
 
 /// The content a version is the fingerprint of, in the order it is
-/// written: its history, a term's repository and a term's old words
-/// last, and each only where present, so a version with none keeps the
-/// fingerprint it had before they were.
+/// written: its history, a term's repository, a term's old words and its
+/// edges last, and each only where present, so a version with none keeps
+/// the fingerprint it had before they were.
 #[derive(Serialize)]
 struct Content<'a> {
     kind: Kind,
@@ -116,6 +278,12 @@ struct Content<'a> {
     repository: Option<&'a str>,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     replaces: &'a [String],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    source: &'a [String],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    changes: &'a [String],
+    #[serde(skip_serializing_if = "<[Origin]>::is_empty")]
+    origin: &'a [Origin],
 }
 
 impl Proposal {
@@ -139,6 +307,9 @@ impl Proposal {
             body,
             replaces: Vec::new(),
             history,
+            source: Vec::new(),
+            changes: Vec::new(),
+            origin: Vec::new(),
         };
         proposal.version = proposal.fingerprint(None);
         proposal
@@ -164,7 +335,8 @@ impl Proposal {
     /// The first 12 hexadecimal characters of the SHA-256 of its kind,
     /// name, statement, scenarios, body's fingerprint, base and, where
     /// it has them, its history, the repository of a term, given as
-    /// `repository`, and the old words of a term.
+    /// `repository`, the old words of a term, and its edges `source`,
+    /// `changes` and `origin` (claim-versions; claim-edges).
     pub fn fingerprint(&self, repository: Option<&str>) -> String {
         let content = serde_json::to_string(&Content {
             kind: self.kind,
@@ -176,6 +348,9 @@ impl Proposal {
             history: self.history.as_ref(),
             repository,
             replaces: &self.replaces,
+            source: &self.source,
+            changes: &self.changes,
+            origin: &self.origin,
         })
         .expect("a version's content is JSON");
         crate::sha256_hex(content.as_bytes())[..12].to_owned()
@@ -221,12 +396,54 @@ impl Proposal {
                 self.kind.as_str()
             ));
         }
+        self.check_edges()?;
         let fingerprint = self.fingerprint(repository);
         if self.version != fingerprint {
             return Err(format!(
                 "its version {} is not the fingerprint of its content, {fingerprint}",
                 self.version
             ));
+        }
+        Ok(())
+    }
+}
+
+impl Proposal {
+    /// The form of its edges: each edge to a claim `<name>@<version>` of
+    /// another claim, each one time; `changes` only on a decision; each
+    /// origin in its form, each one time (claim-edges).
+    fn check_edges(&self) -> Result<(), String> {
+        if !self.changes.is_empty() && self.kind != Kind::Decision {
+            return Err(format!(
+                "only a decision changes claims: {} is {} {}",
+                self.name,
+                article(self.kind),
+                self.kind.as_str()
+            ));
+        }
+        for (flag, edges) in [("source", &self.source), ("changes", &self.changes)] {
+            for (at, stored) in edges.iter().enumerate() {
+                let (name, _) = edge(stored)?;
+                if name == self.name {
+                    return Err(format!(
+                        "a version names a version of its own claim with --amends, not with --{flag}: {stored}"
+                    ));
+                }
+                if edges[..at].contains(stored) {
+                    return Err(format!(
+                        "a version keeps each edge one time: --{flag} {stored} is twice"
+                    ));
+                }
+            }
+        }
+        for (at, origin) in self.origin.iter().enumerate() {
+            origin.check()?;
+            if self.origin[..at].contains(origin) {
+                return Err(format!(
+                    "a version keeps each edge one time: --origin {} is twice",
+                    origin.words()
+                ));
+            }
         }
         Ok(())
     }
@@ -564,6 +781,128 @@ mod tests {
                 .unwrap_err();
             assert!(refused.contains(by), "{refused}");
         }
+    }
+
+    fn with_edges(source: &[&str], changes: &[&str], origin: Vec<Origin>) -> Proposal {
+        let mut decision = floats(Vec::new(), None);
+        decision.body = Some("a".repeat(64));
+        decision.source = source.iter().map(|edge| (*edge).to_owned()).collect();
+        decision.changes = changes.iter().map(|edge| (*edge).to_owned()).collect();
+        decision.origin = origin;
+        decision.version = decision.fingerprint(None);
+        decision
+    }
+
+    fn git(path: &str) -> Origin {
+        Origin::Git {
+            repository: "sluice".to_owned(),
+            commit: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            path: path.to_owned(),
+        }
+    }
+
+    #[test]
+    fn the_edges_are_part_of_a_versions_content() {
+        let none = with_edges(&[], &[], Vec::new());
+        let source = with_edges(&["money-has-currency@aaaaaaaaaaaa"], &[], Vec::new());
+        let changes = with_edges(&[], &["money-has-currency@aaaaaaaaaaaa"], Vec::new());
+        let origin = with_edges(&[], &[], vec![git("design/overview.svg")]);
+        let versions = [&none, &source, &changes, &origin].map(|v| v.version.clone());
+        for (at, version) in versions.iter().enumerate() {
+            assert!(!versions[..at].contains(version), "{versions:?}");
+        }
+        for version in [&none, &source, &changes, &origin] {
+            assert_eq!(version.check(&[]), Ok(()), "{version:?}");
+        }
+        // A version with no edge writes none, and keeps its content.
+        let written = serde_json::to_string(&none).unwrap();
+        for edge in ["source", "changes", "origin"] {
+            assert!(!written.contains(edge), "{written}");
+        }
+        let written = serde_json::to_string(&origin).unwrap();
+        assert!(
+            written.ends_with(r#""origin":[{"git":{"repository":"sluice","commit":"0123456789abcdef0123456789abcdef01234567","path":"design/overview.svg"}}]}"#),
+            "{written}"
+        );
+        assert_eq!(serde_json::from_str::<Proposal>(&written).unwrap(), origin);
+    }
+
+    #[test]
+    fn an_edge_to_a_claim_in_its_form() {
+        for edge in [
+            "money-has-currency",
+            "Money@aaaaaaaaaaaa",
+            "money@AAAAAAAAAAAA",
+            "money@aaa",
+            "https://example.com/model",
+        ] {
+            let refused = with_edges(&[edge], &[], Vec::new()).check(&[]).unwrap_err();
+            assert!(
+                refused.starts_with("an edge names a claim of the store"),
+                "{edge}: {refused}"
+            );
+        }
+        let twice = with_edges(
+            &["money@aaaaaaaaaaaa", "money@aaaaaaaaaaaa"],
+            &[],
+            Vec::new(),
+        );
+        assert!(twice.check(&[]).unwrap_err().contains("each edge one time"));
+        let own = with_edges(&["amounts-as-floats@aaaaaaaaaaaa"], &[], Vec::new());
+        assert!(own.check(&[]).unwrap_err().contains("with --amends"));
+        let mut invariant = money("Every amount names its currency.", None);
+        invariant.changes = vec!["amounts-as-floats@aaaaaaaaaaaa".to_owned()];
+        invariant.version = invariant.fingerprint(None);
+        assert!(invariant
+            .check(&[])
+            .unwrap_err()
+            .starts_with("only a decision changes claims"));
+    }
+
+    #[test]
+    fn an_origin_in_its_form() {
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(
+            Origin::git(&format!("git:sluice@{commit}:design/overview.svg")),
+            Ok(git("design/overview.svg"))
+        );
+        for (reference, words) in [
+            ("sluice@x:y", "a reference to a commit is"),
+            ("git:sluice", "names no commit"),
+            (&format!("git:sluice@{commit}") as &str, "names no path"),
+            (
+                "git:sluice@1a2b3c:a.svg",
+                "a commit has 40 hexadecimal characters",
+            ),
+            (&format!("git:Sluice@{commit}:a.svg"), "kebab case"),
+            (&format!("git:sluice@{commit}:"), "names the path of a file"),
+            (
+                &format!("git:sluice@{commit}:../a.svg"),
+                "relative, with no `..`",
+            ),
+            (
+                &format!("git:sluice@{commit}:/a.svg"),
+                "relative, with no `..`",
+            ),
+            (
+                &format!("git:sluice@{commit}:a//b.svg"),
+                "relative, with no `..`",
+            ),
+        ] {
+            let refused = Origin::git(reference).unwrap_err();
+            assert!(refused.contains(words), "{reference}: {refused}");
+        }
+        let file = |name: &str, fingerprint: &str| Origin::File {
+            name: name.to_owned(),
+            fingerprint: fingerprint.to_owned(),
+        };
+        let fingerprint = crate::sha256_hex(b"<svg/>");
+        assert_eq!(file("mockup.svg", &fingerprint).check(), Ok(()));
+        assert!(file("a/mockup.svg", &fingerprint).check().is_err());
+        assert!(file("", &fingerprint).check().is_err());
+        assert!(file("mockup.svg", &fingerprint[..12]).check().is_err());
+        let twice = with_edges(&[], &[], vec![git("a.svg"), git("a.svg")]);
+        assert!(twice.check(&[]).unwrap_err().contains("each edge one time"));
     }
 
     #[test]

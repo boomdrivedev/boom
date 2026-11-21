@@ -164,6 +164,10 @@ fn arguments(tool: &Value) -> (Vec<String>, Vec<String>) {
     (taken, required)
 }
 
+fn properties_of(tool: &Value) -> &Value {
+    &tool["inputSchema"]["properties"]
+}
+
 fn names(names: &[&str]) -> Vec<String> {
     let mut names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
     names.sort();
@@ -215,11 +219,22 @@ fn a_tools_arguments_are_its_commands() {
                 "provenance",
                 "repositories",
                 "system",
-                "replaces"
+                "replaces",
+                "source",
+                "changes",
+                "origin"
             ]),
             names(&["kind", "name", "statement"])
         )
     );
+    for edge in ["source", "changes", "origin"] {
+        assert_eq!(properties_of(propose)[edge]["type"], "array", "{edge}");
+        assert_eq!(
+            properties_of(propose)[edge]["items"]["type"],
+            "string",
+            "{edge}"
+        );
+    }
     let properties = &propose["inputSchema"]["properties"];
     assert_eq!(
         properties["kind"]["enum"],
@@ -238,7 +253,7 @@ fn a_tools_arguments_are_its_commands() {
     assert_eq!(properties["statement"]["type"], "string");
     assert_eq!(
         arguments(tool(&tools, "show")),
-        (names(&["target", "repository"]), names(&["target"]))
+        (names(&["target", "repository", "artifact"]), vec![])
     );
     assert_eq!(arguments(tool(&tools, "log")), (vec![], vec![]));
     let query = tool(&tools, "query");
@@ -649,5 +664,78 @@ fn a_version_that_stands() {
     assert!(
         !outcome.stdout.contains("a person accepts it with"),
         "{outcome:?}"
+    );
+}
+
+#[test]
+fn a_claim_proposed_with_its_edges_through_its_tool() {
+    let place = Place::new();
+    let ada = place.made();
+    let resident = place.proposed(
+        "flume-has-a-resident",
+        "flume has one resident on each host.",
+    );
+    place.accepted("flume-has-a-resident", &resident, &ada);
+    let commit = "0123456789abcdef0123456789abcdef01234567";
+    let reference = format!("git:sluice@{commit}:design/overview.svg");
+    let result = place.call(
+        "propose",
+        json!({
+            "kind": "invariant",
+            "name": "the-runner-serves-a-socket",
+            "statement": "The runner serves a socket.",
+            "source": ["flume-has-a-resident"],
+            "origin": [reference],
+            "provenance": "run-1",
+        }),
+    );
+    assert_eq!(result["isError"], false, "{result}");
+    let answer = text(&result);
+    assert_eq!(
+        answer["source"],
+        json!([format!("flume-has-a-resident@{resident}")])
+    );
+    assert_eq!(answer["origin"][0]["reference"], reference);
+    let signed: Value =
+        serde_json::from_str(place.log().last().unwrap()["signed"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        signed["claim"]["source"],
+        json!([format!("flume-has-a-resident@{resident}")])
+    );
+    assert_eq!(signed["claim"]["origin"][0]["git"]["commit"], commit);
+}
+
+#[test]
+fn an_artifact_read_through_its_tool() {
+    let place = Place::new();
+    place.made();
+    let mockup = place.file("mockup.svg", "<svg/>\n");
+    let answer = place.json(&[
+        "propose",
+        "invariant",
+        "status-on-a-socket",
+        "Status is read from a socket.",
+        "--origin",
+        &mockup,
+        "--provenance",
+        "run-1",
+    ]);
+    let fingerprint = answer["origin"][0]["fingerprint"].as_str().unwrap();
+    let result = place.call("show", json!({"artifact": fingerprint}));
+    assert_eq!(result["isError"], false, "{result}");
+    let shown = text(&result);
+    assert_eq!(shown["name"], "mockup.svg");
+    assert_eq!(shown["text"], "<svg/>\n");
+    let result = place.call(
+        "show",
+        json!({"target": "status-on-a-socket", "artifact": fingerprint}),
+    );
+    assert_eq!(result["isError"], true, "{result}");
+    assert!(
+        text(&result)["refused"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("boom show takes a target or an artifact, and not both"),
+        "{result}"
     );
 }

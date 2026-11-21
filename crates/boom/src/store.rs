@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 
-use crate::claim::{Kind, Proposal};
+use crate::claim::{Kind, Origin, Proposal};
 use crate::entry::{self, Act, Actor, Entry, GENESIS};
 use crate::judge::{self, Claim, Judgment, Person, Proof, State, Status, Verdict, Version};
 use crate::Failure;
@@ -92,21 +92,36 @@ CREATE TABLE judgments (
     counted INTEGER NOT NULL,
     reason TEXT
 );
+CREATE TABLE edges (
+    name TEXT NOT NULL,
+    term TEXT NOT NULL,
+    version TEXT NOT NULL,
+    edge TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    target_name TEXT,
+    target_version TEXT,
+    artifact TEXT,
+    origin TEXT,
+    PRIMARY KEY (name, version, edge, position)
+);
+CREATE INDEX edges_target ON edges (target_name);
+CREATE INDEX edges_artifact ON edges (artifact);
 ";
 
 /// The views' tables, each dropped and made again by a rebuild.
-const VIEW_TABLES: [&str; 6] = [
+const VIEW_TABLES: [&str; 7] = [
     "views_head",
     "persons",
     "claims",
     "versions",
     "repositories",
     "judgments",
+    "edges",
 ];
 
 /// The views' form, kept in `views_head`. Views of another form are
 /// built again from the whole log.
-const VIEWS_FORM: i64 = 5;
+const VIEWS_FORM: i64 = 6;
 
 thread_local! {
     static ENTRIES_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -352,18 +367,19 @@ impl Store {
     }
 
     /// Appends the entry whose signed part is `signed`, with its
-    /// signature, and `blob`, a body it names: [`Store::append_all`] of
-    /// one. Answers what it wrote and the state after it.
+    /// signature, and `blobs`, the body and the files it names:
+    /// [`Store::append_all`] of one. Answers what it wrote and the state
+    /// after it.
     pub fn append(
         &mut self,
         signed: &str,
         signature: Option<&str>,
-        blob: Option<&[u8]>,
+        blobs: &[&[u8]],
     ) -> Result<(Written, State), Failure> {
         let (written, state) = self.append_all(&[Append {
             signed,
             signature,
-            blob,
+            blobs,
         }])?;
         let written = *written.first().expect("one entry is one written");
         Ok((written, state))
@@ -403,7 +419,7 @@ impl Store {
                 "INSERT INTO log (seq, prev, hash, signed, signature) VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![sql_int(seq), prev, hash, append.signed, append.signature],
             )?;
-            if let Some(bytes) = append.blob {
+            for bytes in append.blobs {
                 tx.execute(
                     "INSERT OR IGNORE INTO blobs (fingerprint, bytes) VALUES (?1, ?2)",
                     params![crate::sha256_hex(bytes), bytes],
@@ -593,6 +609,16 @@ impl Scope {
                 } => {
                     scope.names.insert(claim.name.clone());
                     scope.imported |= imported.is_some();
+                    // The claims its edges name, for the judge to find
+                    // the versions they meant (claim-edges).
+                    scope.names.extend(
+                        claim
+                            .source
+                            .iter()
+                            .chain(&claim.changes)
+                            .filter_map(|edge| edge.split_once('@'))
+                            .map(|(name, _)| name.to_owned()),
+                    );
                 }
                 Act::Accepted { versions } => {
                     scope
@@ -627,15 +653,15 @@ pub struct Verified {
 }
 
 /// An entry to append: its signed part, its signature where it has
-/// one, and the blob it names where it carries one.
+/// one, and the blobs it names: its body and the files it came from.
 #[derive(Debug, Clone, Copy)]
 pub struct Append<'a> {
     /// Its signed part, as signed.
     pub signed: &'a str,
     /// Its armored signature.
     pub signature: Option<&'a str>,
-    /// A body it names.
-    pub blob: Option<&'a [u8]>,
+    /// The body and the files it names, each kept under its fingerprint.
+    pub blobs: &'a [&'a [u8]],
 }
 
 fn sql_int(value: u64) -> i64 {
@@ -1060,6 +1086,10 @@ fn write_claim(conn: &Connection, claim: &Claim) -> Result<(), Failure> {
         [&claim.name, term],
     )?;
     conn.execute(
+        "DELETE FROM edges WHERE name = ?1 AND term = ?2",
+        [&claim.name, term],
+    )?;
+    conn.execute(
         "INSERT OR REPLACE INTO claims (name, term, kind, standing) VALUES (?1, ?2, ?3, ?4)",
         params![claim.name, term, claim.kind.as_str(), claim.standing],
     )?;
@@ -1088,8 +1118,135 @@ fn write_claim(conn: &Connection, claim: &Claim) -> Result<(), Failure> {
                 to_json(&version.proposal),
             ],
         )?;
+        write_edges(conn, &claim.name, term, &version.proposal)?;
     }
     Ok(())
+}
+
+/// A row for each edge of a version, in its order: each `source` and
+/// `changes` with the claim and the version it meant, each `origin` with
+/// its form and, for a file, its fingerprint (claim-edges). Its base is
+/// the `base` of its row in `versions`.
+fn write_edges(
+    conn: &Connection,
+    name: &str,
+    term: &str,
+    proposal: &Proposal,
+) -> Result<(), Failure> {
+    let mut insert = conn.prepare_cached(
+        "INSERT INTO edges (name, term, version, edge, position, target_name, target_version, \
+         artifact, origin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+    )?;
+    for (edge, edges) in [("source", &proposal.source), ("changes", &proposal.changes)] {
+        for (position, stored) in edges.iter().enumerate() {
+            let (target_name, target_version) = stored.split_once('@').unwrap_or((stored, ""));
+            insert.execute(params![
+                name,
+                term,
+                proposal.version,
+                edge,
+                sql_int(position as u64),
+                target_name,
+                target_version,
+                None::<String>,
+                None::<String>,
+            ])?;
+        }
+    }
+    for (position, origin) in proposal.origin.iter().enumerate() {
+        let artifact = match origin {
+            Origin::File { fingerprint, .. } => Some(fingerprint.as_str()),
+            Origin::Git { .. } => None,
+        };
+        insert.execute(params![
+            name,
+            term,
+            proposal.version,
+            "origin",
+            sql_int(position as u64),
+            None::<String>,
+            None::<String>,
+            artifact,
+            to_json(origin),
+        ])?;
+    }
+    Ok(())
+}
+
+/// A version whose `source` or `changes` names a claim, as the views
+/// hold it (claim-edges, "boom show gives the claims that rest on a
+/// claim").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resting {
+    /// The edge: `source` or `changes`.
+    pub edge: String,
+    /// The claim whose version holds the edge.
+    pub name: String,
+    /// That version.
+    pub version: String,
+    /// The version of the named claim that the edge meant.
+    pub meant: String,
+}
+
+/// Each edge `source` or `changes` to the claim `name` held by a version
+/// that counts for its claim: its accepted version, or its newest where
+/// none is accepted. In the order of the claims' names, then their
+/// versions, then the edges.
+pub fn resting_on(conn: &Connection, name: &str) -> Result<Vec<Resting>, Failure> {
+    let mut statement = conn.prepare(
+        "SELECT e.edge, e.name, e.version, e.target_version FROM edges e \
+         JOIN claims c ON c.name = e.name AND c.term = e.term \
+         WHERE e.target_name = ?1 AND e.version = COALESCE(c.standing, \
+           (SELECT v.version FROM versions v WHERE v.name = c.name AND v.term = c.term \
+            ORDER BY v.proposed_in DESC LIMIT 1)) \
+         ORDER BY e.name, e.term, e.edge DESC, e.position",
+    )?;
+    let rows = statement
+        .query_map([name], |row| {
+            Ok(Resting {
+                edge: row.get(0)?,
+                name: row.get(1)?,
+                version: row.get(2)?,
+                meant: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// A version as an edge meant it: its statement, and the accepted version
+/// of its claim now, where one is; none where the views hold no such
+/// version.
+pub fn meant(
+    conn: &Connection,
+    name: &str,
+    version: &str,
+) -> Result<Option<(String, Option<String>)>, Failure> {
+    Ok(conn
+        .query_row(
+            "SELECT v.statement, c.standing FROM versions v \
+             JOIN claims c ON c.name = v.name AND c.term = v.term \
+             WHERE v.name = ?1 AND v.version = ?2",
+            [name, version],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?)
+}
+
+/// The name of the file an origin edge keeps under `fingerprint`, where
+/// one does.
+pub fn artifact_name(conn: &Connection, fingerprint: &str) -> Result<Option<String>, Failure> {
+    let origin: Option<String> = conn
+        .query_row(
+            "SELECT origin FROM edges WHERE artifact = ?1 ORDER BY name, version, position LIMIT 1",
+            [fingerprint],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match origin.as_deref().map(from_json::<Origin>).transpose()? {
+        Some(Origin::File { name, .. }) => Ok(Some(name)),
+        _ => Ok(None),
+    }
 }
 
 /// The entry the views were built at, `(number, hash)`: the log's last
@@ -1372,6 +1529,12 @@ pub struct VersionView {
     pub body: Option<String>,
     /// The old words a term's version replaces.
     pub replaces: Vec<String>,
+    /// The claims it rests on, each `<name>@<version>` (claim-edges).
+    pub source: Vec<String>,
+    /// The claims a decision changes, each `<name>@<version>`.
+    pub changes: Vec<String>,
+    /// The files and commits it came from.
+    pub origin: Vec<Origin>,
     /// What it binds: the repositories its proposal names, or none for
     /// the whole system.
     pub repositories: Vec<String>,
@@ -1457,13 +1620,17 @@ fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<Versio
         (proposed_in, status, by, decided_in, reason, repositories, proposal),
     ) in rows
     {
+        let proposal = from_json::<Proposal>(&proposal)?;
         versions.push(VersionView {
             version,
             base,
             statement: words,
             scenarios: from_json(&scenarios)?,
             body,
-            replaces: from_json::<Proposal>(&proposal)?.replaces,
+            replaces: proposal.replaces,
+            source: proposal.source,
+            changes: proposal.changes,
+            origin: proposal.origin,
             repositories: from_json(&repositories)?,
             proposer: from_json(&proposer)?,
             proposed_in: u64::try_from(proposed_in).unwrap_or(0),

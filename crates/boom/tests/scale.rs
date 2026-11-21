@@ -28,7 +28,7 @@ fn proposals_for_other(place: &Place, from: usize, count: usize) {
                         provenance: "a-large-log".to_owned(),
                     },
                     act: Act::Proposed {
-                        claim: Proposal::new(
+                        claim: Box::new(Proposal::new(
                             Kind::Invariant,
                             &format!("other-claim-{at}"),
                             &format!("Other claim number {at} holds."),
@@ -36,7 +36,7 @@ fn proposals_for_other(place: &Place, from: usize, count: usize) {
                             None,
                             None,
                             None,
-                        ),
+                        )),
                         imported: None,
                         attach: Some(Attach {
                             repositories: vec!["other".to_owned()],
@@ -51,7 +51,7 @@ fn proposals_for_other(place: &Place, from: usize, count: usize) {
             .map(|signed| Append {
                 signed,
                 signature: None,
-                blob: None,
+                blobs: &[],
             })
             .collect();
         store.append_all(&appends).unwrap();
@@ -104,7 +104,7 @@ fn three_by_hand(place: &Place, from: usize) {
                 provenance: "another-program".to_owned(),
             },
             act: Act::Proposed {
-                claim: Proposal::new(
+                claim: Box::new(Proposal::new(
                     Kind::Invariant,
                     &format!("by-hand-{at}"),
                     "A claim another program proposed.",
@@ -112,7 +112,7 @@ fn three_by_hand(place: &Place, from: usize) {
                     None,
                     None,
                     None,
-                ),
+                )),
                 imported: None,
                 attach: None,
             },

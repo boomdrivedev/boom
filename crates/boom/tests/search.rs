@@ -163,7 +163,7 @@ fn found_by_an_old_versions_scenarios() {
                 provenance: "an-old-boom".to_owned(),
             },
             act: boom::entry::Act::Proposed {
-                claim: old.clone(),
+                claim: Box::new(old.clone()),
                 imported: None,
                 attach: Some(boom::entry::Attach {
                     repositories: vec!["shop".to_owned()],
