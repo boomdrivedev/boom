@@ -28,6 +28,15 @@ const TABLE: &str = "CREATE VIRTUAL TABLE lines USING fts5(
 const OPEN: char = '\u{1}';
 const CLOSE: char = '\u{2}';
 
+/// The mark that `split_names` writes between the two words of a name
+/// in code that a change of case joins, as in `KeeperStore`. FTS5 reads // boom: allow keeper
+/// it as a mark between two words.
+const CASE_JOIN: char = '\u{3}';
+
+/// The marks that join the words of an old word that holds a hyphen:
+/// a hyphen, an underscore and a change of case.
+const JOINS: [char; 3] = ['-', '_', CASE_JOIN];
+
 /// The marker that allows an old word on its line.
 pub const MARKER: &str = "boom: allow ";
 
@@ -78,15 +87,16 @@ pub fn accepted(state: &State, repository: &str) -> Vec<Term> {
         .collect()
 }
 
-/// `line` with a space at each change from a lowercase letter or a digit
-/// to an uppercase letter, so a name in code splits into its words:
-/// `KeeperStore` is `Keeper Store`. FTS5 splits at `_`, `-` and `.`. // boom: allow keeper
+/// `line` with `CASE_JOIN` at each change from a lowercase letter or a
+/// digit to an uppercase letter, so a name in code splits into its
+/// words: `KeeperStore` is `Keeper` and `Store`. FTS5 splits at `_`, `-` // boom: allow keeper
+/// and `.`.
 fn split_names(line: &str) -> String {
     let mut split = String::with_capacity(line.len() + 8);
     let mut before: Option<char> = None;
     for c in line.chars() {
         if c.is_uppercase() && before.is_some_and(|b| b.is_lowercase() || b.is_ascii_digit()) {
-            split.push(' ');
+            split.push(CASE_JOIN);
         }
         split.push(c);
         before = Some(c);
@@ -97,8 +107,9 @@ fn split_names(line: &str) -> String {
 /// Each old word of `terms` in `text`, by line and then by the order of
 /// the terms: a word in another form, case or accent, an old word of
 /// several words in their order on one line, and never an old word
-/// inside a longer word. A line that holds `boom: allow <old word>`
-/// gives that old word as found nowhere on it.
+/// inside a longer word. An old word that holds a hyphen matches only
+/// its words joined as one name (`joined`). A line that holds
+/// `boom: allow <old word>` gives that old word as found nowhere on it.
 pub fn find(text: &str, terms: &[Term]) -> Result<Vec<Found>, Failure> {
     let olds: Vec<(usize, &str)> = terms
         .iter()
@@ -144,11 +155,15 @@ pub fn find(text: &str, terms: &[Term]) -> Result<Vec<Found>, Failure> {
             if lines[line - 1].contains(&format!("{MARKER}{old}")) {
                 continue;
             }
-            for written in marked_spans(&marked) {
+            let hyphenated = old.contains('-');
+            for span in marked_spans(&marked) {
+                if hyphenated && !joined(&span) {
+                    continue;
+                }
                 found.push(Found {
                     line,
                     word: old.to_owned(),
-                    written,
+                    written: span.replace(CASE_JOIN, ""),
                     term,
                 });
             }
@@ -156,6 +171,24 @@ pub fn find(text: &str, terms: &[Term]) -> Result<Vec<Found>, Failure> {
     }
     found.sort_by(|a, b| (a.line, a.term, &a.word).cmp(&(b.line, b.term, &b.word)));
     Ok(found)
+}
+
+/// True when one mark of `JOINS` joins each two words of `span`, and no
+/// other mark is between them: `came-from`, `came_from` and `cameFrom`
+/// are joined, and `came from` and `came.from` are not.
+fn joined(span: &str) -> bool {
+    let mut gap = String::new();
+    for c in span.chars() {
+        if c.is_alphanumeric() {
+            if !gap.is_empty() && !(gap.chars().count() == 1 && gap.starts_with(JOINS)) {
+                return false;
+            }
+            gap.clear();
+        } else {
+            gap.push(c);
+        }
+    }
+    true
 }
 
 /// The text between each pair of marks in `marked`.
@@ -314,6 +347,13 @@ mod tests {
                 repository: "boom".to_owned(),
                 replaces: vec!["drive log".to_owned()],
             },
+            Term {
+                name: "origin".to_owned(),
+                version: "cccccccccccc".to_owned(),
+                meaning: "The file or the commit that a claim came from.".to_owned(),
+                repository: "boom".to_owned(),
+                replaces: vec!["came-from".to_owned()], // boom: allow came-from
+            },
         ]
     }
 
@@ -359,6 +399,41 @@ mod tests {
         assert_eq!(
             words("the Drive Log\nlog drive\ndrive\nlog"),
             [(1, "drive log".to_owned(), "Drive Log".to_owned())]
+        );
+    }
+
+    #[test]
+    fn a_hyphenated_old_word_matches_its_joined_names() {
+        assert_eq!(
+            words("came-from came_from cameFrom CameFrom CAME_FROM Came-From x.came_from_id") // boom: allow came-from
+                .iter()
+                .map(|(_, word, written)| (word.as_str(), written.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("came-from", "came-from"), // boom: allow came-from
+                ("came-from", "came_from"), // boom: allow came-from
+                ("came-from", "cameFrom"),  // boom: allow came-from
+                ("came-from", "CameFrom"),  // boom: allow came-from
+                ("came-from", "CAME_FROM"), // boom: allow came-from
+                ("came-from", "Came-From"), // boom: allow came-from
+                ("came-from", "came_from"), // boom: allow came-from
+            ]
+        );
+    }
+
+    #[test]
+    fn a_hyphenated_old_word_never_matches_the_plain_words() {
+        assert!(words(
+            "It came from main.\nCame From\ncame.from\ncame - from\ncame--from\nbecame-from"
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn a_name_in_code_is_written_as_the_line_writes_it() {
+        assert_eq!(
+            words("let DriveLog = 1;"),
+            [(1, "drive log".to_owned(), "DriveLog".to_owned())]
         );
     }
 
