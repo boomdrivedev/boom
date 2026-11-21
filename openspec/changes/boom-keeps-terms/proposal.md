@@ -5,11 +5,11 @@ today, the correction goes into a chat or a memory note. The note
 cleans no source, and it names the old word again. So each correction
 adds one more source of the old word.
 
-The user approved terms as turn 2 of Boom on 2026-11-20. Turn 1 is the
-constitution: invariants, decisions and assumptions. Turn 2 makes a
-word a claim that a person accepts. Then each correction becomes a term
-proposal, not a memory note. Turn 3, `boom reconcile terms`, removes the
-old words from each source. Turn 3 is not in this change.
+The user approved terms on 2026-11-20. Turn 1 is the constitution:
+invariants, decisions and assumptions. This turn makes a word a claim
+that a person accepts. Then each correction becomes a term proposal,
+not a memory note. A later turn, `boom reconcile terms`, removes the
+old words from each source. That turn is not in this change.
 
 ## What Changes
 
@@ -30,9 +30,11 @@ old words from each source. Turn 3 is not in this change.
 - A new command, `boom terms check <file>...`. It reads the accepted
   terms of the repository of each file from the log. It names each old
   word in the file, with its line and the term that replaces it. It
-  exits 2 when it finds an old word. It does not use Vale.
+  exits 2 when it finds an old word. It reads the store and writes
+  nothing, not even the views. It does not use Vale.
 - **The gate runs the check too.** A gate task runs `boom terms check`
-  on the files that a change touches. It is the check of the term tool
+  on the files that a change touches, with the last entry of the
+  store's log as an input. It is the check of the term tool
   of its own words, and not a check of what a page says. A new version
   of `no-task-reads-markdown`, `no-task-reads-markdown@a25dda6425d7`,
   names this check as allowed. The user accepts or rejects it.

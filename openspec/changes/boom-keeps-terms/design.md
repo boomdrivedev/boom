@@ -1,7 +1,7 @@
 ## Context
 
 Boom has three kinds of claim: invariant, decision and assumption
-(`claim.rs`). The user approved terms as turn 2 on 2026-11-20. These
+(`claim.rs`). The user approved terms on 2026-11-20. These
 are the sources of the design:
 
 - the page "Terms by Context"
@@ -13,7 +13,7 @@ are the sources of the design:
 
 This change covers four of the places in the design where a term
 works. They are the kind itself, load (`boom query`), write (the hook),
-and the gate (the files that a change touches). The purge (turn 3) and
+and the gate (the files that a change touches). The purge (a later turn) and
 `boom sync` are not in this change.
 
 ## Goals / Non-Goals
@@ -31,9 +31,9 @@ and the gate (the files that a change touches). The purge (turn 3) and
 - Contexts. A term binds one repository, as each repository is one
   context until the map comes.
 - The purge of old words from existing sources (`boom reconcile
-  terms`, turn 3).
+  terms`, a later turn).
 - A check of the words of a claim when an agent proposes it.
-- A check of a file that no change touches. The purge of turn 3 finds
+- A check of a file that no change touches. The purge finds
   old words in those.
 - A check of a right word with a wrong meaning. That needs a judge.
 
@@ -108,15 +108,27 @@ An agent loads its words from `boom query`, the session hook and a
 brief. None of them gives an old word. An agent that calls `show` reads
 the old word as an old word, beside the term that replaces it.
 
-### 6. `boom terms check` reads the terms from the views
+### 6. `boom terms check` reads the store and writes nothing
 
-The check opens the store and brings the views to the head of the log.
-Then it reads the accepted terms of each repository that it needs, as
-`boom query` reads the accepted versions. It reads each file as text,
-or the text of a hook event. It writes nothing.
+The check opens the store to read, and writes nothing, not even the
+views. The gate runs in a sandbox that lets nothing write beside the
+store, and a write hook must not change the store of a session.
 
-It finds a repository for each file as `boom query` finds one from the
-working folder, from the folder of the file (`repository.rs`).
+- Where the views are at the last entry of the log, the check reads the
+  accepted terms from them, as `boom query` reads the accepted versions.
+- Where the views are of another form or behind the log, the check
+  replays the log in memory.
+- Where SQLite cannot share the memory file of the store, as in the
+  sandbox, the check reads the store as a file that does not change.
+  That holds only while no write waits in the write-ahead log of the
+  store. Where a write waits, the check does not run, and exits 3.
+
+The check reads each file as text, or the text of a hook event. A file
+that is not text holds no word.
+
+It finds the repository of each file as `boom query` finds the
+repository of a session, with the folder of the file as the working
+folder (`repository.rs`).
 
 ### 7. The matcher
 
@@ -139,7 +151,7 @@ no script of its own.
 
 ### 9. The hook checks what the agent writes, not the whole file
 
-A file can hold old words that are older than the term. Turn 3 removes
+A file can hold old words that are older than the term. The purge removes
 them. If the hook checked the whole file, each edit of such a file
 would stop. So `--hook` checks only the text that the tool writes:
 `content` of `Write`, `new_string` of `Edit` and each `new_string` of
@@ -157,7 +169,7 @@ old word is in the file until the agent edits it again.
 ### 11. The hook checks `Write`, `Edit` and `MultiEdit`, and not `Bash`
 
 A `Bash` call can write a file, for example by a heredoc. The hook does
-not read a command to find the text that it writes. The purge of turn 3
+not read a command to find the text that it writes. The purge
 finds an old word that a `Bash` call wrote.
 
 ### 12. The gate checks the files that a change touches
@@ -177,6 +189,15 @@ version of `no-task-reads-markdown`, `no-task-reads-markdown@a25dda6425d7`,
 names this check under "Does not break it", with a Before and Now. The
 user accepts or rejects it, and this change lands only after the user
 accepts it.
+
+The gate task names the repository, `--repository boom`, and declares
+the last entry of the log of the store as an input, as the user
+approved. A task `root:terms-head` runs each time. It writes the entry
+that `boom terms check` reads, its number and hash, to
+`.boom-terms/head.json`, which git ignores. `root:terms` depends on it
+and names that file among its inputs. So moon replays a pass only for
+the same files and the same entry. Where there is no store, no term is
+accepted: the task says so and passes.
 
 Alternative: the hook alone. The user reviewed that design on
 2026-11-21 and asked for the gate.
@@ -215,8 +236,17 @@ test reads a Markdown file of the tree.
   allows it on its line. A term can also explain its old word in its
   body. That body is in the log, not in a file, so no check sees it. A
   file that must quote an old word, such as a record of history, gets
-  no exception in this change. Turn 3 decides how a record of history
+  no exception in this change. The purge decides how a record of history
   keeps its words.
 - [MCP agents] → An agent that writes through MCP and not through
   Claude Code gets no hook. `terms check` is absent from MCP, because
   its writer runs it, and not the agent.
+- [An older boom] → A boom from before terms reads a term proposal as
+  an entry that fails its checks, and counts it for nothing. Each host
+  that opens the store needs this release or later. The views change
+  their form for terms. When an older boom and this boom take turns on
+  one store, each builds the views again in its own form, one full
+  replay each time.
+- [A write that waits] → In the sandbox of the gate, the check does not
+  run while a write waits in the write-ahead log of the store. A boom
+  command checkpoints the log when it closes, so the gate runs again.
