@@ -94,7 +94,12 @@ A call SHALL run the command of its tool with the arguments given. It SHALL use 
 
 #### Scenario: The working folder's repository
 
-- **WHEN** an agent calls `query` with no `repository`, on a server whose working folder is in a repository whose `.config/boom.toml` declares `shop`
+- **WHEN** an agent calls `query` with no `repository`, on a server whose working folder is in a worktree whose remote the store registers for `shop`
+- **THEN** boom answers for `shop`
+
+#### Scenario: The launcher's repository
+
+- **WHEN** an agent calls `query` with no `repository`, on a server whose environment holds `BOOM_REPOSITORY=shop`
 - **THEN** boom answers for `shop`
 
 ### Requirement: An argument a tool does not take is refused

@@ -12,11 +12,16 @@ record 0005, point 5; record 0008).
 
 ### Requirement: A proposal names what its version binds
 
-A proposal's entry SHALL hold its attachment after its claim, `attach` with `repositories`, each a kebab-case name, sorted and each once, or SHALL hold no `attach` and bind the whole system. `boom propose` SHALL attach a version to the repositories `--repository` names, any number of times; else with `--system` to the whole system; else to what an amended base is attached to; else to the repository the working folder declares; else to the whole system.
+The entry of a proposal SHALL hold its attachment after its claim: `attach`, with `repositories` in kebab case, sorted, each one time. An entry with no `attach` SHALL bind the whole system. `boom propose` SHALL attach a version to the first of these:
+- the repositories that `--repository` names
+- the whole system, with `--system`
+- what an amended base is attached to
+- the repository of the session, as `boom query` finds it
+- the whole system
 
 #### Scenario: Bound to one repository
 
-- **WHEN** an agent runs `boom propose invariant money-has-currency "Every amount names its currency." --scenario "Given an amount, then it names its currency." --repository shop --provenance run-1`
+- **WHEN** an agent runs `boom propose invariant money-has-currency "Every amount names its currency." --repository shop --provenance run-1`
 - **THEN** it exits 0 giving the version attached to `shop`, and the entry's signed part holds `attach` with `repositories` `["shop"]` after its `claim`
 
 #### Scenario: Several repositories named
@@ -26,12 +31,12 @@ A proposal's entry SHALL hold its attachment after its claim, `attach` with `rep
 
 #### Scenario: Bound to the whole system
 
-- **WHEN** a proposal runs with `--system`, or with no `--repository` in a folder that declares no repository
+- **WHEN** a proposal runs with `--system`, or with no `--repository` in a folder where boom finds no repository of the session
 - **THEN** its entry holds no `attach`, and the answer gives the version as the whole system's
 
 #### Scenario: The repository the working folder declares
 
-- **WHEN** an agent proposes a first version with no `--repository` and no `--system`, in a folder whose `.config/boom.toml` declares `shop`
+- **WHEN** an agent proposes a first version with no `--repository` and no `--system`, in a worktree whose remote the store registers for `shop`
 - **THEN** the version is attached to `shop`
 
 #### Scenario: A repository name not in kebab case
@@ -65,11 +70,11 @@ A version's fingerprint SHALL be taken from its content alone and never from its
 
 ### Requirement: An amendment keeps its base's attachment
 
-A proposal that amends a version and names neither `--repository` nor `--system` SHALL be attached to what its base is attached to, whatever the working folder declares; one that names either SHALL be attached as it names.
+A proposal that amends a version, and names neither `--repository` nor `--system`, SHALL be attached to what its base is attached to. The repository of the session SHALL NOT change that. A proposal that names either SHALL be attached as it names.
 
 #### Scenario: Amended with nothing named
 
-- **WHEN** a version attached to `shop` stands and an agent proposes an amendment of it naming no repository, in a folder that declares `ledger`
+- **WHEN** a version attached to `shop` stands and an agent proposes an amendment of it naming no repository, in a worktree of `ledger`
 - **THEN** the amendment is attached to `shop`
 
 #### Scenario: Amended for another repository
