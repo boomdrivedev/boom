@@ -158,8 +158,8 @@ enum Command {
         #[arg(long)]
         system: bool,
     },
-    /// Accept one or more versions, as a person signing each with their
-    /// security key, all appended together or none.
+    /// Accept one or more versions, as a person, in one entry that their
+    /// security key signs one time: every version, or none.
     Accept {
         /// The versions, each `<name>@<version>`.
         #[arg(required = true, value_name = "TARGET")]
