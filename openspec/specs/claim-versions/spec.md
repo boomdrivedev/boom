@@ -54,7 +54,7 @@ A claim SHALL have one kind: `invariant`, `decision`, `assumption` or `term`. Th
 
 ### Requirement: A version is the fingerprint of its content
 
-Boom SHALL name a version by the first 12 hexadecimal characters of the SHA-256 of its content. The content SHALL be the kind, the name, the statement, the scenarios, the body's fingerprint and the version that it amends. For a version that comes in as history, the content SHALL also include its history. For a term version, it SHALL also include its repository and any `replaces`. When a proposal gives the same content again, boom SHALL give the same version and append nothing.
+Boom SHALL name a version by the first 12 hexadecimal characters of the SHA-256 of its content. The content SHALL be the kind, the name, the statement, the scenarios, the body's fingerprint and the version that it amends. It SHALL also include the history of a version that comes in as history, the repository and any `replaces` of a term, and any edge `source`, `changes` and `origin`. When a proposal gives the same content again, boom SHALL give the same version and append nothing.
 
 #### Scenario: The same proposal twice
 
@@ -81,9 +81,19 @@ Boom SHALL name a version by the first 12 hexadecimal characters of the SHA-256 
 - **WHEN** an agent proposes the term `owner` with one meaning for `boom`, and then for `sluice`
 - **THEN** boom gives two versions, with two fingerprints
 
+#### Scenario: One more edge
+
+- **WHEN** an agent proposes a claim again with the same words and one more `--source`
+- **THEN** boom gives a second version, with a different fingerprint
+
 #### Scenario: A version from before terms
 
 - **WHEN** a store holds versions that boom proposed before the kind `term` came, and this boom builds its views again
+- **THEN** each version has the fingerprint that its entry names
+
+#### Scenario: A version from before the edges
+
+- **WHEN** a store holds versions that boom proposed before the edges `source`, `changes` and `origin` came, and this boom builds its views again
 - **THEN** each version has the fingerprint that its entry names
 
 ### Requirement: One name space
@@ -167,7 +177,7 @@ No act makes a version `deprecated` yet. The log SHALL keep each entry.
 
 ### Requirement: A claim shown by its name
 
-`boom show <name>` SHALL give the kind, the accepted version or none, and the newest version with its statement, what it binds and its body. It SHALL then give each other version, newest first, with its statement, status, base, proposer and decider. `boom show <name>@<version>` SHALL give its statement, scenarios, body and `replaces`. `boom show <number>` SHALL give the version that its entry names. It SHALL refuse an unknown name, version or entry. The JSON SHALL be `boom-show/2`.
+`boom show <name>` SHALL give the kind, the accepted version or none, and the newest version with its statement, what it binds and its body. It SHALL then give the other versions as a tree by base, each with its statement, status, base, proposer and decider. `boom show <name>@<version>` SHALL give its statement, scenarios, body and `replaces`. `boom show <number>` SHALL give the version that its entry names. It SHALL refuse an unknown name, version or entry. The JSON SHALL be `boom-show/2`.
 
 #### Scenario: A version shown
 
@@ -183,6 +193,11 @@ No act makes a version `deprecated` yet. The log SHALL keep each entry.
 
 - **WHEN** a version of `money-has-currency` is accepted, an agent proposes an amendment of it, and `boom show money-has-currency` runs
 - **THEN** the first line says `accepted: <accepted version>`. The statement of the amendment comes next, and the accepted version comes after `other versions:`
+
+#### Scenario: An amendment under its base
+
+- **WHEN** `money-has-currency@<v1>` is accepted, a person rejects its amendment `<v2>`, an agent proposes its amendment `<v3>`, and `boom show money-has-currency` runs
+- **THEN** after `other versions:`, boom gives `<v1>`, and `<v2>` under it, as the amendment of `<v1>`. With `--json`, each of `versions` names its `base`
 
 #### Scenario: A version shown by its entry
 

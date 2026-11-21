@@ -218,16 +218,18 @@ fn a_tools_arguments_are_its_commands() {
                 "body",
                 "provenance",
                 "repositories",
+                "contexts",
                 "system",
                 "replaces",
                 "source",
                 "changes",
-                "origin"
+                "origin",
+                "paths"
             ]),
             names(&["kind", "name", "statement"])
         )
     );
-    for edge in ["source", "changes", "origin"] {
+    for edge in ["source", "changes", "origin", "contexts", "paths"] {
         assert_eq!(properties_of(propose)[edge]["type"], "array", "{edge}");
         assert_eq!(
             properties_of(propose)[edge]["items"]["type"],
@@ -238,7 +240,7 @@ fn a_tools_arguments_are_its_commands() {
     let properties = &propose["inputSchema"]["properties"];
     assert_eq!(
         properties["kind"]["enum"],
-        json!(["invariant", "decision", "assumption", "term"])
+        json!(["invariant", "decision", "assumption", "term", "context"])
     );
     assert_eq!(properties["replaces"]["type"], "array");
     assert_eq!(properties["replaces"]["items"]["type"], "string");
@@ -259,7 +261,12 @@ fn a_tools_arguments_are_its_commands() {
     let query = tool(&tools, "query");
     assert_eq!(
         arguments(query),
-        (names(&["repository", "if_declared"]), vec![])
+        (names(&["repository", "if_declared", "paths"]), vec![])
+    );
+    assert_eq!(query["inputSchema"]["properties"]["paths"]["type"], "array");
+    assert_eq!(
+        query["inputSchema"]["properties"]["paths"]["items"]["type"],
+        "string"
     );
     assert_eq!(
         query["inputSchema"]["properties"]["if_declared"]["type"],

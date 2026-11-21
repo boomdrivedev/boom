@@ -40,6 +40,7 @@ fn proposals_for_other(place: &Place, from: usize, count: usize) {
                         imported: None,
                         attach: Some(Attach {
                             repositories: vec!["other".to_owned()],
+                            contexts: Vec::new(),
                         }),
                     },
                 }

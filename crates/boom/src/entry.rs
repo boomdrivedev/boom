@@ -116,8 +116,8 @@ pub enum Act {
         /// Where it came in from, for a version an import proposes,
         /// boxed so a proposal is no larger than the other acts by it.
         imported: Option<Box<Imported>>,
-        /// What it binds: the repositories it names, or, where it is
-        /// `None`, the whole system.
+        /// What it binds: the repositories and the contexts it names,
+        /// or, where it is `None`, the whole system.
         attach: Option<Attach>,
     },
     /// One or more versions accepted, by one act of a person that one
@@ -198,13 +198,20 @@ pub struct Named {
 }
 
 /// What a proposed version binds, written after its claim and no part
-/// of its fingerprint (claim-attachments; design 1): an object, so a
-/// context can join it later as one more field.
+/// of its fingerprint (claim-attachments; design 1): its repositories and
+/// its contexts, each field written only where it names one, so an entry
+/// written before contexts reads and writes as it did.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Attach {
     /// The repositories, each kebab case, sorted and each once.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repositories: Vec<String>,
+    /// The contexts, each `<name>@<version>` of the version of the
+    /// context that the binding meant, sorted by name and each name once
+    /// (context-claims).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contexts: Vec<String>,
 }
 
 /// An entry: its time, its actor and its act.
@@ -608,6 +615,7 @@ mod tests {
     fn an_attachment_follows_the_claim_in_the_signed_part() {
         let attach = Attach {
             repositories: vec!["ledger".to_owned(), "shop".to_owned()],
+            contexts: Vec::new(),
         };
         let entry = attached(Some(attach));
         let signed = entry.signed_part();
@@ -620,9 +628,35 @@ mod tests {
             "{signed}"
         );
         assert_eq!(Entry::parse(&signed), Ok(entry));
-        let unknown = signed.replace(r#"{"repositories":"#, r#"{"contexts":[],"repositories":"#);
+        let unknown = signed.replace(r#"{"repositories":"#, r#"{"paths":[],"repositories":"#);
         let refused = Entry::parse(&unknown).unwrap_err();
-        assert!(refused.contains("unknown field `contexts`"), "{refused}");
+        assert!(refused.contains("unknown field `paths`"), "{refused}");
+    }
+
+    #[test]
+    fn a_binding_to_a_context_follows_the_repositories() {
+        let both = attached(Some(Attach {
+            repositories: vec!["flume".to_owned()],
+            contexts: vec!["sluice-overview@aaaaaaaaaaaa".to_owned()],
+        }));
+        let signed = both.signed_part();
+        assert!(
+            signed.ends_with(
+                r#","attach":{"repositories":["flume"],"contexts":["sluice-overview@aaaaaaaaaaaa"]}}"#
+            ),
+            "{signed}"
+        );
+        assert_eq!(Entry::parse(&signed), Ok(both));
+        let only = attached(Some(Attach {
+            repositories: Vec::new(),
+            contexts: vec!["sluice-overview@aaaaaaaaaaaa".to_owned()],
+        }));
+        let signed = only.signed_part();
+        assert!(
+            signed.ends_with(r#","attach":{"contexts":["sluice-overview@aaaaaaaaaaaa"]}}"#),
+            "{signed}"
+        );
+        assert_eq!(Entry::parse(&signed), Ok(only));
     }
 
     #[test]
@@ -678,6 +712,7 @@ mod tests {
         if let Act::Proposed { attach, .. } = &mut entry.act {
             *attach = Some(Attach {
                 repositories: vec!["shop".to_owned()],
+                contexts: Vec::new(),
             });
         }
         let signed = entry.signed_part();

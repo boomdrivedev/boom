@@ -221,3 +221,26 @@ fn an_import_answered_as_json() {
     assert_eq!(answer["format"], "boom-import/2");
     assert!(!outcome.stderr.is_empty(), "the words go to standard error");
 }
+
+#[test]
+fn a_kind_it_does_not_take() {
+    let place = Place::new();
+    place.made();
+    let outcome = place.refused(
+        &[
+            "propose",
+            "widget",
+            "money-has-currency",
+            "Every amount names its currency.",
+            "--provenance",
+            "run-1",
+        ],
+        "invalid value 'widget'",
+    );
+    assert!(
+        outcome
+            .stderr
+            .contains("invariant, decision, assumption, term, context"),
+        "{outcome:?}"
+    );
+}

@@ -154,6 +154,7 @@ fn a_repository_named_twice_by_hand_counts_for_nothing() {
             imported: None,
             attach: Some(boom::entry::Attach {
                 repositories: vec!["shop".to_owned(), "shop".to_owned()],
+                contexts: Vec::new(),
             }),
         },
     };
@@ -246,6 +247,7 @@ fn the_same_words_for_another_repository_are_refused() {
             imported: None,
             attach: Some(boom::entry::Attach {
                 repositories: vec!["ledger".to_owned()],
+                contexts: Vec::new(),
             }),
         },
     };

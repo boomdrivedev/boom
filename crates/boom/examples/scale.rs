@@ -185,6 +185,7 @@ fn generate(dir: &Path, entries: usize) {
                             imported: None,
                             attach: Some(Attach {
                                 repositories: vec![format!("repo-{}", claim % REPOSITORIES)],
+                                contexts: Vec::new(),
                             }),
                         },
                     };

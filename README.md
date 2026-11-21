@@ -55,6 +55,15 @@ claims that hold.
   words with the term. boom keeps them in the log alone: `boom show`
   gives them to the person who accepts, and `boom query` and `boom
   search` never give them. No list of old words goes into a repository.
+- **A context owns paths.** `boom propose context <name> <statement>
+  --path <repository>:<pattern>` proposes a context, and `--path` can
+  come more than one time. Each glob names its repository, such as
+  `sluice:crates/sluice/src/overview*.rs`. The pattern has the form of
+  the `paths:` line of a Claude Code rules file: `*` stays in one part
+  of a path, `**` crosses any number of parts. The globs are part of the
+  version's fingerprint, so a person signs them. A context binds the
+  repositories that its globs name. Until someone draws a context, each
+  repository is one context, and drawing a context moves no claim.
 - **Each kind needs its own fields.** Every claim needs a statement of
   one line. A decision also needs a body: its context, options, outcome
   and consequences. An invariant's body is optional and says what it
@@ -77,13 +86,19 @@ claims that hold.
   views. It reads no older entry, so it does not slow down as the log
   grows. `boom verify` checks the whole chain, replays the whole log,
   and builds the views again, naming any view that differed.
-- **A version binds a repository, or the whole system.** A proposal
-  names the repositories its version binds with `--repository`, or the
-  whole system with `--system`, and the version binds them once a
-  person accepts it. Naming neither, an amendment binds what its base
-  binds, and a first version binds the repository of the session, else
-  the whole system. The attachment is no part of the
-  version's fingerprint, and `boom show` gives it before anyone accepts.
+- **A version binds repositories, contexts, or the whole system.** A
+  proposal names the repositories its version binds with
+  `--repository`, the contexts with `--context`, or the whole system
+  with `--system`, and the version binds them once a person accepts it.
+  A binding to a context stores the version of the context that it
+  meant: its accepted version, or its newest where none is accepted.
+  Naming none of these, an amendment binds what its base binds, each
+  context at its accepted version now, and a first version binds the
+  repository of the session, else the whole system. The attachment is
+  no part of the version's fingerprint, and `boom show` gives it before
+  anyone accepts. `boom show` marks a binding out of date where another
+  version of its context is accepted now, and `boom show <context>`
+  gives the claims bound to it.
 - **The repository of a session.** boom takes the one `--repository`
   names. Else it takes the one `BOOM_REPOSITORY` names, which a launcher
   such as flume sets. Else it takes the registered repository whose
@@ -99,7 +114,14 @@ claims that hold.
   that stands for a repository, as the person accepted it: its kind,
   name, version and statement, and who accepted it. boom
   answers from views it keeps in step with the log, and writes nothing
-  into the repository for anyone to edit (record 0008).
+  into the repository for anyone to edit (record 0008). `boom query
+  --path <repository>:<path>` gives the claims for a file: those of the
+  whole system, of its repository, and of each context whose accepted
+  globs match the path, with the contexts that the path falls in. It
+  matches the text of the path, so a file that does not exist yet
+  matches. A query with no `--path` gives no claim that binds only
+  contexts. `boom search --repository` also searches the claims of the
+  contexts of that repository.
 - **An agent finds claims by their words.** `boom search` gives the
   claims that stand whose words hold every word searched. A word may
   fall in a claim's name, statement, scenarios, body, legacy id or
@@ -150,7 +172,10 @@ boom propose decision amounts-in-cents "Amounts are kept in cents." --body cents
   --source money-has-currency --origin mockup.svg --repository shop --provenance run-2
 boom import adr docs/adr --repository shop --drafts drafts.json --provenance run-1
 boom show money-has-currency --json
+boom propose context shop-billing "The billing of the shop." \
+  --path 'shop:src/billing/**' --provenance run-3
 boom query --repository shop
+boom query --path shop:src/billing/refund.rs
 boom search amounts cents --repository shop
 boom log
 ```
