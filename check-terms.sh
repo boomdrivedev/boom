@@ -29,17 +29,17 @@ repository=
 base=main
 while [ $# -gt 0 ]; do
   case $1 in
-    --repository)
-      [ $# -ge 2 ] || usage
-      repository=$2
-      shift 2
-      ;;
-    --base)
-      [ $# -ge 2 ] || usage
-      base=$2
-      shift 2
-      ;;
-    *) usage ;;
+  --repository)
+    [ $# -ge 2 ] || usage
+    repository=$2
+    shift 2
+    ;;
+  --base)
+    [ $# -ge 2 ] || usage
+    base=$2
+    shift 2
+    ;;
+  *) usage ;;
   esac
 done
 [ -n "$repository" ] || usage
@@ -93,9 +93,9 @@ count=$(tr -cd '\0' <"$list" | wc -c | tr -d ' ')
 xargs -0 "$boom" terms check --repository "$repository" --if-declared <"$list" >/dev/null
 status=$?
 case $status in
-  0) echo "terms: $count files of the change hold no old word of an accepted term of $repository, at entry $entry of the store's log" ;;
-  # xargs exits 123 where boom exits 1 to 125: boom names each old word.
-  123) echo "terms: the change writes an old word of an accepted term of $repository, at entry $entry of the store's log; write the term in its place, or mark a line that names it on purpose with boom: allow <old word>" >&2 ;;
-  *) echo "terms: boom terms check did not run, exit $status" >&2 ;;
+0) echo "terms: $count files of the change hold no old word of an accepted term of $repository, at entry $entry of the store's log" ;;
+# xargs exits 123 where boom exits 1 to 125: boom names each old word.
+123) echo "terms: the change writes an old word of an accepted term of $repository, at entry $entry of the store's log; write the term in its place, or mark a line that names it on purpose with boom: allow <old word>" >&2 ;;
+*) echo "terms: boom terms check did not run, exit $status" >&2 ;;
 esac
 [ "$status" -eq 0 ]
