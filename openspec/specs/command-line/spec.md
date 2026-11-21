@@ -59,7 +59,7 @@ Each command SHALL exit 0 when it did what the caller asked. It SHALL exit 2 whe
 
 #### Scenario: Arguments it cannot read
 
-- **WHEN** `boom propose` runs with a kind that is not `invariant`, `decision`, `assumption` or `term`
+- **WHEN** `boom propose` runs with a kind that is not `invariant`, `decision`, `assumption`, `term` or `context`
 - **THEN** boom exits 2 and names the kinds that it takes
 
 ### Requirement: One JSON object with its format

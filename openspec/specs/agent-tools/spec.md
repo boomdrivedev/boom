@@ -51,7 +51,7 @@ record 0011).
 #### Scenario: A tool's arguments are its command's
 
 - **WHEN** a client sends `tools/list`
-- **THEN** `propose` takes `kind` (one of `invariant`, `decision`, `assumption` and `term`), `name`, `statement`, `amends`, `body`, `source`, `changes`, `origin`, `provenance`, `repositories`, `system` and `replaces`, and requires `kind`, `name` and `statement`. `source`, `changes`, `origin` and `replaces` are arrays of strings. `propose` takes no `scenarios`. `show` takes `target`, `repository` and `artifact`, and requires none of them. `log` takes nothing. `query` takes `repository` and `if_declared`. `search` takes `words`, an array of strings, required, and `repository`, `all` and `limit`. `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, and requires `dir`. `import_rules` takes the same, with `page` for `dir`
+- **THEN** `propose` takes `kind` (one of `invariant`, `decision`, `assumption`, `term` and `context`), `name`, `statement`, `amends`, `body`, `source`, `changes`, `origin`, `provenance`, `repositories`, `contexts`, `system`, `replaces` and `paths`, and requires `kind`, `name` and `statement`. `source`, `changes`, `origin`, `contexts`, `replaces` and `paths` are arrays of strings. `propose` takes no `scenarios`. `show` takes `target`, `repository` and `artifact`, and requires none of them. `log` takes nothing. `query` takes `repository`, `if_declared` and `paths`, an array of strings. `search` takes `words`, an array of strings, required, and `repository`, `all` and `limit`. `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, and requires `dir`. `import_rules` takes the same, with `page` for `dir`
 
 #### Scenario: Each command served or absent
 
@@ -77,6 +77,16 @@ record 0011).
 
 - **WHEN** an agent calls `show` with `target` `money-has-currency` and `artifact` `<fingerprint>`
 - **THEN** the result is an error that says `show` takes a target or an artifact, and not both
+
+#### Scenario: A context proposed through its tool
+
+- **WHEN** an agent calls `propose` with `kind` `context`, `name` `sluice-overview`, a statement, `paths` `["sluice:crates/sluice/src/overview*.rs"]` and `provenance` `run-1`
+- **THEN** the result is not an error, and the log gets one `proposed` entry for a context that binds `sluice`
+
+#### Scenario: The claims for a path through its tool
+
+- **WHEN** an agent calls `query` with `paths` `["sluice:crates/sluice/src/overview.rs"]`
+- **THEN** the result gives what `boom query --path sluice:crates/sluice/src/overview.rs --json` gives
 
 ### Requirement: A tool runs its command
 
