@@ -14,7 +14,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use serde_json::{json, Value};
 
 use crate::claim::{History, Kind, Proposal};
-use crate::entry::{Act, Actor, Attach, Entry, Form, Imported};
+use crate::entry::{Act, Actor, Attach, Entry, Form, Imported, Named};
 use crate::import::{self, Read, Record};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
@@ -158,8 +158,8 @@ enum Command {
         #[arg(long)]
         system: bool,
     },
-    /// Accept one or more versions, as a person signing each with their
-    /// security key, all appended together or none.
+    /// Accept one or more versions, as a person, in one entry that their
+    /// security key signs one time: every version, or none.
     Accept {
         /// The versions, each `<name>@<version>`.
         #[arg(required = true, value_name = "TARGET")]
@@ -841,51 +841,63 @@ fn accept(
     let scope = Scope::names(versions.iter().map(|&(name, _)| name));
     let state = store.state_for(&scope)?;
     let person = person_of(&state, signer.as_ref(), key)?;
-    // Every target is judged, each against the state the ones before it
-    // build, before the key signs any (design 9).
-    let mut judged = state;
-    let mut to_sign = Vec::new();
+    // One act of the person: each version that waits goes into one
+    // entry, which is judged whole before the key signs it one time.
+    // A version this person accepted already is left out of it.
+    let now = env.clock.now();
+    let one = |name: &str, version: &str| Entry {
+        at: now,
+        actor: Actor::Person(person.clone()),
+        act: Act::accepted(name, version),
+    };
+    let mut waiting = Vec::new();
     for &(name, version) in &versions {
-        let entry = Entry {
-            at: env.clock.now(),
-            actor: Actor::Person(person.clone()),
-            act: Act::Accepted {
-                name: name.to_owned(),
-                version: version.to_owned(),
-            },
-        };
+        if waiting.iter().any(|named: &Named| named.name == name) {
+            return Err(Failure::refused(format!(
+                "boom accept names each claim one time: it names {name} twice"
+            )));
+        }
+        let entry = one(name, version);
         let signed = entry.signed_part();
         match judge::judge(
-            &judged,
+            &state,
             &entry,
             &signed,
             Proof::ToBeSigned(signer.public_key()),
         ) {
-            Verdict::Counts => {
-                judge::apply(&mut judged, 0, &entry);
-                to_sign.push(signed);
-            }
+            Verdict::Counts => waiting.push(Named {
+                name: name.to_owned(),
+                version: version.to_owned(),
+            }),
             Verdict::Refused(why) => return Err(Failure::Refused(naming(name, version, why))),
             Verdict::Repeats(_) => {}
         }
     }
-    let mut signatures = Vec::with_capacity(to_sign.len());
-    for signed in &to_sign {
-        signatures.push(signer.sign(signed.as_bytes())?);
-    }
-    let appends: Vec<Append<'_>> = to_sign
-        .iter()
-        .zip(&signatures)
-        .map(|(signed, signature)| Append {
-            signed,
-            signature: Some(signature),
-            blob: None,
-        })
-        .collect();
-    let state = if appends.is_empty() {
+    let state = if waiting.is_empty() {
         store.state_for(&scope)?
     } else {
-        store.append_all(&appends)?.1
+        let entry = Entry {
+            at: now,
+            actor: Actor::Person(person.clone()),
+            act: Act::Accepted { versions: waiting },
+        };
+        let signed = entry.signed_part();
+        if let Verdict::Refused(why) = judge::judge(
+            &state,
+            &entry,
+            &signed,
+            Proof::ToBeSigned(signer.public_key()),
+        ) {
+            return Err(Failure::Refused(why));
+        }
+        let signature = signer.sign(signed.as_bytes())?;
+        store
+            .append_all(&[Append {
+                signed: &signed,
+                signature: Some(&signature),
+                blob: None,
+            }])?
+            .1
     };
     let mut accepted = Vec::with_capacity(versions.len());
     let mut words = String::new();
@@ -1225,8 +1237,9 @@ fn body_text(
 }
 
 /// The claim's name and the version that the entry numbered `number`
-/// names (record-log, "Each version named by its entry"): refused where
-/// the log has no such entry, or where the entry names no version.
+/// names (record-log, "Each line of the log names its version"): refused
+/// where the log has no such entry, where the entry names no version, or
+/// where it names several, which it lists.
 fn entry_target(conn: &rusqlite::Connection, number: &str) -> Result<(String, String), Failure> {
     let seq: u64 = number
         .parse()
@@ -1235,16 +1248,22 @@ fn entry_target(conn: &rusqlite::Connection, number: &str) -> Result<(String, St
         .ok_or_else(|| Failure::refused(format!("the log has no entry {number}")))?;
     let entry = Entry::parse(&row.signed)
         .map_err(|why| Failure::refused(format!("boom cannot read entry {number}: {why}")))?;
-    entry
-        .act
-        .target()
-        .map(|(name, version)| (name.to_owned(), version.to_owned()))
-        .ok_or_else(|| {
-            Failure::refused(format!(
-                "entry {number} names no version: it is a {} entry",
-                entry.act.name()
-            ))
-        })
+    match entry.act.targets().as_slice() {
+        [] => Err(Failure::refused(format!(
+            "entry {number} names no version: it is a {} entry",
+            entry.act.name()
+        ))),
+        [(name, version)] => Ok(((*name).to_owned(), (*version).to_owned())),
+        several => Err(Failure::refused(format!(
+            "entry {number} accepts {} versions; show one of them by <name>@<version>: {}",
+            several.len(),
+            several
+                .iter()
+                .map(|(name, version)| format!("{name}@{version}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))),
+    }
 }
 
 fn log(path: &Path) -> Result<Answer, Failure> {
@@ -1263,15 +1282,24 @@ fn log(path: &Path) -> Result<Answer, Failure> {
                     .cloned()
                     .unwrap_or(Value::Null)
             };
-            let target = Entry::parse(&row.signed).ok().and_then(|entry| {
-                entry
-                    .act
-                    .target()
-                    .map(|(name, version)| format!("{name}@{version}"))
-            });
+            let targets: Vec<String> = Entry::parse(&row.signed)
+                .map(|entry| {
+                    entry
+                        .act
+                        .targets()
+                        .iter()
+                        .map(|(name, version)| format!("{name}@{version}"))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let target = match targets.as_slice() {
+                [one] => Some(one.clone()),
+                _ => None,
+            };
             entries.push(json!({
                 "number": row.seq,
                 "target": target,
+                "targets": targets,
                 "hash": row.hash,
                 "prev": row.prev,
                 "format": field("format"),
@@ -1290,7 +1318,11 @@ fn log(path: &Path) -> Result<Answer, Failure> {
                 "{} {}{} by {}{}\n",
                 row.seq,
                 act.as_str().unwrap_or("(unreadable)"),
-                target.map_or(String::new(), |target| format!(" {target}")),
+                if targets.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {}", targets.join(", "))
+                },
                 actor,
                 found
                     .reason

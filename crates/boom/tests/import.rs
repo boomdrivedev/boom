@@ -1132,7 +1132,8 @@ fn an_import_accepted_together() {
     }
     assert_eq!(place.show("amounts-as-floats")["accepted"], Value::Null);
     let log = place.log();
-    assert_eq!(log.len(), before + 3);
+    assert_eq!(log.len(), before + 1, "one entry accepts the three");
+    assert_eq!(log[before]["targets"].as_array().unwrap().len(), 3);
     let ada_public = place.keys.public_key(std::path::Path::new(&ada));
     for entry in &log[before..] {
         assert_eq!(entry["act"], "accepted");

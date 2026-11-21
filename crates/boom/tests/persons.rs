@@ -365,6 +365,7 @@ fn three_accepted_together() {
     let ada = place.made();
     let targets = three_proposed(&place);
     let before = place.log().len();
+    let signed_before = place.keys.signatures();
     let mut args = vec!["accept"];
     args.extend(targets.iter().map(String::as_str));
     args.extend(["--key", &ada]);
@@ -372,10 +373,17 @@ fn three_accepted_together() {
     assert_eq!(answer["format"], "boom-accept/2");
     let accepted = answer["accepted"].as_array().unwrap();
     assert_eq!(accepted.len(), 3);
+    assert_eq!(
+        place.keys.signatures(),
+        signed_before + 1,
+        "the key signs one time"
+    );
     let ada_public = place.keys.public_key(std::path::Path::new(&ada));
     let log = place.log();
-    assert_eq!(log.len(), before + 3);
-    for (target, (listed, entry)) in targets.iter().zip(accepted.iter().zip(&log[before..])) {
+    assert_eq!(log.len(), before + 1, "one entry accepts the three");
+    let entry = &log[before];
+    assert_eq!(entry["targets"], serde_json::json!(targets));
+    for (target, listed) in targets.iter().zip(accepted.iter()) {
         let (name, version) = target.split_once('@').unwrap();
         assert_eq!(listed["claim"], name);
         assert_eq!(listed["version"], version);
@@ -426,4 +434,106 @@ fn one_of_them_refused_signs_and_appends_nothing() {
         let (name, version) = target.split_once('@').unwrap();
         assert_eq!(place.status(name, version), "proposed");
     }
+}
+
+/// Ada's accept of `targets` as one act, written by hand and signed by
+/// `key`, the way `boom accept` writes it.
+fn one_accept_of(targets: &[&str]) -> boom::entry::Entry {
+    boom::entry::Entry {
+        at: 1_763_424_500,
+        actor: boom::entry::Actor::Person("ada".to_owned()),
+        act: boom::entry::Act::Accepted {
+            versions: targets
+                .iter()
+                .map(|target| {
+                    let (name, version) = target.split_once('@').unwrap();
+                    boom::entry::Named {
+                        name: name.to_owned(),
+                        version: version.to_owned(),
+                    }
+                })
+                .collect(),
+        },
+    }
+}
+
+#[test]
+fn an_accept_again_appends_nothing() {
+    let place = Place::new();
+    let ada = place.made();
+    let targets = three_proposed(&place);
+    let mut args = vec!["accept"];
+    args.extend(targets.iter().map(String::as_str));
+    args.extend(["--key", &ada]);
+    place.json(&args);
+    let before = place.log().len();
+    let signed_before = place.keys.signatures();
+    let again = place.json(&args);
+    assert_eq!(again["accepted"].as_array().unwrap().len(), 3);
+    assert_eq!(place.log().len(), before);
+    assert_eq!(place.keys.signatures(), signed_before);
+}
+
+#[test]
+fn a_claim_named_twice_is_refused() {
+    let place = Place::new();
+    let ada = place.made();
+    let first = place.proposed("money-has-currency", MONEY);
+    let second = place.proposed("money-has-currency", "Each amount names one currency.");
+    let before = place.log().len();
+    place.refused(
+        &[
+            "accept",
+            &format!("money-has-currency@{first}"),
+            &format!("money-has-currency@{second}"),
+            "--key",
+            &ada,
+        ],
+        "names money-has-currency twice",
+    );
+    assert_eq!(place.log().len(), before);
+}
+
+#[test]
+fn one_accept_with_one_bad_version_counts_for_nothing() {
+    let place = Place::new();
+    let ada = place.made();
+    let targets = three_proposed(&place);
+    let mut named: Vec<&str> = targets.iter().map(String::as_str).collect();
+    named.push("no-such-claim@000000000000");
+    place.append_by_hand(&one_accept_of(&named), Some(std::path::Path::new(&ada)));
+    let entry = place.log().pop().unwrap();
+    assert_eq!(entry["counted"], false);
+    for target in &targets {
+        let (name, version) = target.split_once('@').unwrap();
+        assert_eq!(place.status(name, version), "proposed", "{target}");
+    }
+}
+
+#[test]
+fn one_accept_reads_as_an_accept_of_each_in_the_views_and_a_replay() {
+    let place = Place::new();
+    let ada = place.made();
+    let targets = three_proposed(&place);
+    let named: Vec<&str> = targets.iter().map(String::as_str).collect();
+    place.append_by_hand(&one_accept_of(&named), Some(std::path::Path::new(&ada)));
+    let entry = place.log().pop().unwrap();
+    assert_eq!(entry["counted"], true, "{entry}");
+    let shown: Vec<_> = targets.iter().map(|target| place.show(target)).collect();
+    for (target, shown) in targets.iter().zip(&shown) {
+        assert_eq!(shown["status"], "accepted", "{target}");
+        assert_eq!(shown["decided_in"], entry["number"], "{target}");
+    }
+    let verified = place.run(&["verify"]);
+    assert_eq!(verified.code, 0, "{verified:?}");
+    for (target, before) in targets.iter().zip(&shown) {
+        assert_eq!(&place.show(target), before, "{target}");
+    }
+    let words = place.run(&["log"]).stdout;
+    let line = format!("{} accepted {} by ada", entry["number"], targets.join(", "));
+    assert!(words.contains(&line), "{words}");
+    place.refused(
+        &["show", &entry["number"].to_string()],
+        "accepts 3 versions",
+    );
 }

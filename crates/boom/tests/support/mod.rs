@@ -466,10 +466,7 @@ pub fn accept_entry(person: &str, name: &str, version: &str) -> boom::entry::Ent
     boom::entry::Entry {
         at: 1_763_424_500,
         actor: boom::entry::Actor::Person(person.to_owned()),
-        act: boom::entry::Act::Accepted {
-            name: name.to_owned(),
-            version: version.to_owned(),
-        },
+        act: boom::entry::Act::accepted(name, version),
     }
 }
 

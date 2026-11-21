@@ -85,7 +85,7 @@ boom SHALL hold every entry it reads to the checks it holds a write to: its form
 
 ### Requirement: Each line of the log names its version
 
-`boom log` SHALL give, on each line that proposes, accepts or rejects a version, the name of the claim and the version as `<name>@<version>`, after the act. A line that registers a person SHALL name no version. With `--json`, each entry SHALL give `target`: that `<name>@<version>`, or `null`.
+`boom log` SHALL give, on each line that proposes, accepts or rejects, each version that the act names as `<name>@<version>`, after the act. A line that registers a person SHALL name no version. With `--json`, each entry SHALL give `targets`, the list of those versions, and `target`: the one version, or `null`. `boom show <number>` SHALL refuse an entry that accepts several versions, and list them.
 
 #### Scenario: A proposal and its accept
 
@@ -96,3 +96,13 @@ boom SHALL hold every entry it reads to the checks it holds a write to: its form
 
 - **WHEN** `boom log --json` runs on that store
 - **THEN** entry 1 gives `target` `null`, and entries 2 and 3 give `target` `money-has-currency@<version>`
+
+#### Scenario: One accept of three versions
+
+- **WHEN** one entry accepts `<a>@<version>`, `<b>@<version>` and `<c>@<version>`, and `boom log` runs
+- **THEN** its line gives `accepted`, then the three versions, separated by commas, then `by ada`. With `--json`, the entry gives `targets` with the three, and `target` `null`
+
+#### Scenario: Shown by its number
+
+- **WHEN** `boom show <number>` runs for that entry
+- **THEN** boom exits 2, says that the entry accepts 3 versions, and lists them

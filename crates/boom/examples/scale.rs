@@ -192,10 +192,7 @@ fn generate(dir: &Path, entries: usize) {
                 }
                 Some(version) => {
                     let act = match life.versions % 4 {
-                        0 | 1 => Act::Accepted {
-                            name: format!("claim-{claim}"),
-                            version: version.clone(),
-                        },
+                        0 | 1 => Act::accepted(&format!("claim-{claim}"), &version),
                         2 => Act::Rejected {
                             name: format!("claim-{claim}"),
                             version: version.clone(),
