@@ -174,7 +174,7 @@ pub fn find(text: &str, terms: &[Term]) -> Result<Vec<Found>, Failure> {
 }
 
 /// True when one mark of `JOINS` joins each two words of `span`, and no
-/// other mark is between them: `came-from`, `came_from` and `cameFrom`
+/// other mark is between them: `came-from`, `came_from` and `cameFrom` // boom: allow came-from
 /// are joined, and `came from` and `came.from` are not.
 fn joined(span: &str) -> bool {
     let mut gap = String::new();

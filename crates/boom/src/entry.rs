@@ -675,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn an_imported_proposal_keeps_where_it_came_from() {
+    fn an_imported_proposal_keeps_its_origin() {
         let entry = imported_proposal();
         let signed = entry.signed_part();
         assert_eq!(
