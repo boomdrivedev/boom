@@ -7,4 +7,4 @@
 ## 2. The pages and the gate
 
 - [x] 2.1 Write the match of an old word with a hyphen into `README.md`, in Plain
-- [ ] 2.2 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main`
+- [x] 2.2 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main`
