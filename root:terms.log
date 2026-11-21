@@ -1,0 +1,6 @@
+--- stdout ---
+No old word in 34 files, at entry 211 of the store's log.
+terms: 34 files of the change hold no old word of an accepted term of boom
+--- stderr ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+No old word in 0 files, at entry 211 of the store's log.
