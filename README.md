@@ -139,7 +139,9 @@ claims that hold.
   repository of a session. It matches an old word in another form, case
   or accent, an old word of two words in their order, and the words of
   a name in code, such as `RefundTotal`, but never an old word inside a
-  longer word. A line that holds `boom: allow <old word>` may name that
+  longer word. An old word with a hyphen, such as `refund-total`,
+  matches only a name: `refund-total`, `refund_total` or `RefundTotal`,
+  and never the plain words "refund total". A line that holds `boom: allow <old word>` may name that
   old word on purpose. The check reads the store and writes nothing,
   not even the views, so it runs where nothing may write beside the
   store.
