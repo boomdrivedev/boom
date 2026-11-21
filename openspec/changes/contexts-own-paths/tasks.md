@@ -31,4 +31,4 @@
 
 - [x] 5.1 Write contexts and `boom query --path` into `README.md` and `CLAUDE.md`, in Plain. Proved by `devenv shell -- moon run root:format root:terms`
 - [x] 5.2 Test on a store with the contexts of boom and of sluice: a file in a context, a file in no context, a glob that does not cross a folder, and a context with a new glob. Proved by `boom:test`
-- [ ] 5.3 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main -- moon run <task>`
+- [x] 5.3 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main -- moon run <task>`
