@@ -15,8 +15,8 @@ and for nothing else (`no-task-reads-markdown`).
 
 #### Scenario: An old word found
 
-- **WHEN** the term `owner` that replaces `keeper` is accepted for `boom`, and `boom terms check notes.txt` runs on a file of `boom` whose line 3 holds `The keeper signs.`
-- **THEN** boom exits 2, and standard error names `notes.txt`, line 3, `keeper` and `owner`
+- **WHEN** the term `owner` that replaces `keeper` is accepted for `boom`, and `boom terms check notes.txt` runs on a file of `boom` whose line 3 holds `The keeper signs.` <!-- boom: allow keeper -->
+- **THEN** boom exits 2, and standard error names `notes.txt`, line 3, `keeper` and `owner` <!-- boom: allow keeper -->
 
 #### Scenario: No old word
 
@@ -25,8 +25,8 @@ and for nothing else (`no-task-reads-markdown`).
 
 #### Scenario: Answered as JSON
 
-- **WHEN** `boom terms check notes.txt --json` runs on that file with `keeper` on line 3
-- **THEN** standard output is one `boom-refused/1` object. Its `refused.found` holds `file` `notes.txt`, `line` 3, `word` `keeper`, `term` `owner` and `repository` `boom`
+- **WHEN** `boom terms check notes.txt --json` runs on that file with `keeper` on line 3 <!-- boom: allow keeper -->
+- **THEN** standard output is one `boom-refused/1` object. Its `refused.found` holds `file` `notes.txt`, `line` 3, `word` `keeper`, `term` `owner` and `repository` `boom` <!-- boom: allow keeper -->
 
 #### Scenario: Nothing found, as JSON
 
@@ -35,7 +35,7 @@ and for nothing else (`no-task-reads-markdown`).
 
 #### Scenario: A term of another repository
 
-- **WHEN** the term `owner` that replaces `keeper` is accepted for `sluice` only, and `boom terms check notes.txt` runs on a file of `boom` that holds `keeper`
+- **WHEN** the term `owner` that replaces `keeper` is accepted for `sluice` only, and `boom terms check notes.txt` runs on a file of `boom` that holds `keeper` <!-- boom: allow keeper -->
 - **THEN** boom exits 0
 
 ### Requirement: The repository of a file
@@ -68,17 +68,17 @@ An old word SHALL match the same word in another form, case or accent, as `boom 
 
 #### Scenario: Another form
 
-- **WHEN** a file of `boom` holds `Keepers` and `KEEPER`
-- **THEN** the check names both, each as `keeper`, with `owner`
+- **WHEN** a file of `boom` holds `Keepers` and `KEEPER` <!-- boom: allow keeper -->
+- **THEN** the check names both, each as `keeper`, with `owner` <!-- boom: allow keeper -->
 
 #### Scenario: A name in code
 
-- **WHEN** a file of `boom` holds `keeper_id` and `KeeperStore`
+- **WHEN** a file of `boom` holds `keeper_id` and `KeeperStore` <!-- boom: allow keeper -->
 - **THEN** the check names both
 
 #### Scenario: Inside a longer word
 
-- **WHEN** a file of `boom` holds `gatekeeper` and no other form of `keeper`
+- **WHEN** a file of `boom` holds `gatekeeper` and no other form of `keeper` <!-- boom: allow keeper -->
 - **THEN** the check finds no old word
 
 #### Scenario: Two words
@@ -92,12 +92,12 @@ With `--hook`, `boom terms check` SHALL read one Claude Code `PreToolUse` event 
 
 #### Scenario: A write with an old word
 
-- **WHEN** the event is a `Write` of a file of `boom` whose `content` holds `keeper`
-- **THEN** boom exits 2, and standard error names `keeper` and `owner`
+- **WHEN** the event is a `Write` of a file of `boom` whose `content` holds `keeper` <!-- boom: allow keeper -->
+- **THEN** boom exits 2, and standard error names `keeper` and `owner` <!-- boom: allow keeper -->
 
 #### Scenario: An edit of a file that holds an old word
 
-- **WHEN** the event is an `Edit` whose `new_string` holds no old word, of a file that holds `keeper` on another line
+- **WHEN** the event is an `Edit` whose `new_string` holds no old word, of a file that holds `keeper` on another line <!-- boom: allow keeper -->
 - **THEN** boom exits 0
 
 #### Scenario: Another tool
@@ -116,8 +116,8 @@ A line that holds `boom: allow <old word>` SHALL NOT give that old word as found
 
 #### Scenario: The marker names another word
 
-- **WHEN** a line holds `boom: allow warden` and the word `keeper`
-- **THEN** the check names `keeper` with `owner`
+- **WHEN** a line holds `boom: allow warden` and the word `keeper` <!-- boom: allow keeper -->
+- **THEN** the check names `keeper` with `owner` <!-- boom: allow keeper -->
 
 #### Scenario: The marker in a write
 
@@ -130,16 +130,16 @@ A gate task SHALL run `boom terms check` on each file that a change adds or modi
 
 #### Scenario: A change that adds an old word
 
-- **WHEN** a change adds `The keeper signs.` to `README.md` of `boom`, and the gate runs
-- **THEN** the terms task fails, and names `README.md`, the line, `keeper` and `owner`
+- **WHEN** a change adds `The keeper signs.` to `README.md` of `boom`, and the gate runs <!-- boom: allow keeper -->
+- **THEN** the terms task fails, and names `README.md`, the line, `keeper` and `owner` <!-- boom: allow keeper -->
 
 #### Scenario: An old word that the change does not touch
 
-- **WHEN** `docs/old.md` of `boom` holds `keeper`, and a change does not touch `docs/old.md`
+- **WHEN** `docs/old.md` of `boom` holds `keeper`, and a change does not touch `docs/old.md` <!-- boom: allow keeper -->
 - **THEN** the terms task does not read `docs/old.md`, and passes
 
 #### Scenario: An archived change
 
-- **WHEN** a change archives an OpenSpec change whose words hold `keeper`
+- **WHEN** a change archives an OpenSpec change whose words hold `keeper` <!-- boom: allow keeper -->
 - **THEN** the terms task skips the files under `openspec/changes/archive/`, and passes
 

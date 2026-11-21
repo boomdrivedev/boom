@@ -302,13 +302,13 @@ person present.
   Not ruled out: verifying a signature with the format's own tools and
   no boom. Source: the user, 2026-11-01.
 
-**Is "keeper" the right word?** The user asked whether a better term was
+**Is "keeper" the right word?** The user asked whether a better term was <!-- boom: allow keeper -->
 needed, and took **owner**.
 
 - **`owner-is-the-word`** (requirement, vocabulary). The person or
   people who grant roles and register keys in a ledger are its
   **owners**; "operator" keeps the family's meaning, the person who runs
-  a host. The change's "keeper" becomes "owner" everywhere. Source: the
+  a host. The change's "keeper" becomes "owner" everywhere. Source: the <!-- boom: allow keeper -->
   user, 2026-11-01.
 
 **How do roles, grants and keys change, and who holds that power
@@ -884,7 +884,7 @@ items above it rests on.
   design limits what it does alone or leads its users to a paid
   product. Private sources are cited by date and words
   (`core.private-sources-by-words`), as the design already does.
-- "keeper" becomes "owner" in every file it writes (`owner-is-the-word`).
+- "keeper" becomes "owner" in every file it writes (`owner-is-the-word`). <!-- boom: allow keeper -->
 
 ### Names, not numbers, in this repository (its D1, D3, D4, D5 and both specs)
 
@@ -965,7 +965,7 @@ user on 2026-11-01:
 
 ### The statement
 
-- Vocabulary: **owner** for the change's keeper; **operator** as the
+- Vocabulary: **owner** for the change's keeper; **operator** as the <!-- boom: allow keeper -->
   family's word.
 - Part A gains a clause for each requirement above that is boom's own,
   citing its record by name.

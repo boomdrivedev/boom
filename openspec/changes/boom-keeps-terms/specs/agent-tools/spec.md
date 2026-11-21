@@ -21,5 +21,5 @@
 
 #### Scenario: A term proposed through its tool
 
-- **WHEN** an agent calls `propose` with `kind` `term`, `name` `owner`, `statement` `A person who grants roles and registers keys in a store.`, `replaces` `["keeper"]`, `repositories` `["boom"]` and `provenance` `run-1`
-- **THEN** the result is not an error, and the log gets one `proposed` entry for a term that replaces `keeper`
+- **WHEN** an agent calls `propose` with `kind` `term`, `name` `owner`, `statement` `A person who grants roles and registers keys in a store.`, `replaces` `["keeper"]`, `repositories` `["boom"]` and `provenance` `run-1` <!-- boom: allow keeper -->
+- **THEN** the result is not an error, and the log gets one `proposed` entry for a term that replaces `keeper` <!-- boom: allow keeper -->

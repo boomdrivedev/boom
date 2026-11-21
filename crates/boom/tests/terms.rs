@@ -29,7 +29,7 @@ fn proposed(place: &Place, word: &str, meaning: &str, extra: &[&str]) -> String 
 }
 
 /// A store whose owner ada accepted the term `owner` of `boom`, which
-/// replaces `keeper` and `warden`; gives ada's key and the version.
+/// replaces `keeper` and `warden`; gives ada's key and the version. // boom: allow keeper
 fn owner_accepted(place: &Place) -> (String, String) {
     let ada = place.made();
     let version = proposed(
@@ -40,7 +40,7 @@ fn owner_accepted(place: &Place) -> (String, String) {
             "--repository",
             "boom",
             "--replaces",
-            "keeper",
+            "keeper", // boom: allow keeper
             "--replaces",
             "Warden",
         ],
@@ -90,7 +90,7 @@ fn a_term_proposed() {
         &place,
         "owner",
         OWNER,
-        &["--repository", "boom", "--replaces", "keeper"],
+        &["--repository", "boom", "--replaces", "keeper"], // boom: allow keeper
     );
     assert_eq!(outcome.code, 0, "{outcome:?}");
     let shown = place.show("owner");
@@ -99,10 +99,10 @@ fn a_term_proposed() {
     assert_eq!(shown["versions"].as_array().unwrap().len(), 1);
     assert_eq!(shown["newest"]["status"], "proposed");
     assert_eq!(shown["newest"]["repositories"], json!(["boom"]));
-    assert_eq!(shown["newest"]["replaces"], json!(["keeper"]));
+    assert_eq!(shown["newest"]["replaces"], json!(["keeper"])); // boom: allow keeper
     let signed = place.last_signed();
     assert_eq!(signed["claim"]["kind"], "term");
-    assert_eq!(signed["claim"]["replaces"], json!(["keeper"]));
+    assert_eq!(signed["claim"]["replaces"], json!(["keeper"])); // boom: allow keeper
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn only_a_term_replaces_words() {
             "money-has-currency",
             "Every amount names its currency.",
             "--replaces",
-            "keeper",
+            "keeper", // boom: allow keeper
             "--provenance",
             "run-1",
         ],
@@ -225,7 +225,7 @@ fn the_same_words_in_another_order_give_one_version() {
             "--repository",
             "boom",
             "--replaces",
-            "keeper",
+            "keeper", // boom: allow keeper
             "--replaces",
             "Warden",
         ],
@@ -240,13 +240,13 @@ fn the_same_words_in_another_order_give_one_version() {
             "--replaces",
             "warden",
             "--replaces",
-            "keeper",
+            "keeper", // boom: allow keeper
         ],
     );
     assert_eq!(first, second);
     assert_eq!(
         place.show(&format!("owner@{first}"))["replaces"],
-        json!(["keeper", "warden"])
+        json!(["keeper", "warden"]) // boom: allow keeper
     );
     assert_eq!(place.acts(), ["registered", "proposed"]);
     // One more old word is another version.
@@ -258,7 +258,7 @@ fn the_same_words_in_another_order_give_one_version() {
             "--repository",
             "boom",
             "--replaces",
-            "keeper",
+            "keeper", // boom: allow keeper
             "--replaces",
             "warden",
             "--replaces",
@@ -277,7 +277,7 @@ fn one_word_in_two_repositories() {
         &place,
         "owner",
         OWNER,
-        &["--repository", "sluice", "--replaces", "keeper"],
+        &["--repository", "sluice", "--replaces", "keeper"], // boom: allow keeper
     );
     assert_ne!(in_boom, in_sluice);
     let other = proposed(
@@ -380,22 +380,22 @@ fn the_old_words_stay_in_the_log() {
     // Shown to the person who accepts.
     assert_eq!(
         place.show(&format!("owner@{version}"))["replaces"],
-        json!(["keeper", "warden"])
+        json!(["keeper", "warden"]) // boom: allow keeper
     );
     let words = place.run(&["show", &format!("owner@{version}")]);
     assert!(
-        words.stdout.contains("replaces: keeper, warden"),
+        words.stdout.contains("replaces: keeper, warden"), // boom: allow keeper
         "{words:?}"
     );
     // Given in the log.
     assert!(place
         .log()
         .iter()
-        .any(|entry| entry["signed"].as_str().unwrap().contains("keeper")));
-    // Not given to an agent, in JSON or in words.
+        .any(|entry| entry["signed"].as_str().unwrap().contains("keeper"))); // boom: allow keeper
+                                                                             // Not given to an agent, in JSON or in words.
     let query = place.run(&["query", "--repository", "boom", "--json"]);
     assert_eq!(query.code, 0, "{query:?}");
-    assert!(!query.stdout.contains("keeper"), "{query:?}");
+    assert!(!query.stdout.contains("keeper"), "{query:?}"); // boom: allow keeper
     let answer: Value = serde_json::from_str(&query.stdout).unwrap();
     let names: Vec<&str> = answer["claims"]
         .as_array()
@@ -407,17 +407,17 @@ fn the_old_words_stay_in_the_log() {
     assert_eq!(answer["claims"][1]["kind"], "term");
     assert_eq!(answer["claims"][1]["statement"], OWNER);
     let lines = place.run(&["query", "--repository", "boom"]);
-    assert!(!lines.stdout.contains("keeper"), "{lines:?}");
+    assert!(!lines.stdout.contains("keeper"), "{lines:?}"); // boom: allow keeper
     let order: Vec<&str> = lines.stdout.lines().collect();
     assert_eq!(order[0], format!("Boom: 2 claims for boom, at entry {}", 5));
     assert!(order[1].starts_with("invariant money-has-currency@"));
     assert_eq!(order[2], format!("term owner@{version}: {OWNER}"));
     // Not searched.
-    let found = place.json(&["search", "keeper", "--repository", "boom"]);
+    let found = place.json(&["search", "keeper", "--repository", "boom"]); // boom: allow keeper
     assert_eq!(found["total"], 0, "{found}");
     let found = place.json(&["search", "grants", "--repository", "boom"]);
     assert_eq!(found["total"], 1, "{found}");
-    assert!(!found.to_string().contains("keeper"));
+    assert!(!found.to_string().contains("keeper")); // boom: allow keeper
 }
 
 #[test]
@@ -454,13 +454,13 @@ fn a_version_from_before_terms_keeps_its_fingerprint() {
 fn an_old_word_found() {
     let place = Place::new();
     owner_accepted(&place);
-    let file = place.file("notes.txt", "one\ntwo\nThe keeper signs.\n");
+    let file = place.file("notes.txt", "one\ntwo\nThe keeper signs.\n"); // boom: allow keeper
     let before = written(&place);
     let outcome = check(&place, &[&file, "--repository", "boom"], "");
     assert_eq!(outcome.code, 2, "{outcome:?}");
     assert_eq!(outcome.stdout, "");
     assert!(outcome.stderr.contains(&format!("{file}:3")), "{outcome:?}");
-    assert!(outcome.stderr.contains("\"keeper\""), "{outcome:?}");
+    assert!(outcome.stderr.contains("\"keeper\""), "{outcome:?}"); // boom: allow keeper
     assert!(outcome.stderr.contains("owner in boom"), "{outcome:?}");
     assert_eq!(written(&place), before, "the check writes nothing");
 }
@@ -469,7 +469,7 @@ fn an_old_word_found() {
 fn an_old_word_found_as_json() {
     let place = Place::new();
     let (_, version) = owner_accepted(&place);
-    let file = place.file("notes.txt", "one\ntwo\nThe keeper signs.\n");
+    let file = place.file("notes.txt", "one\ntwo\nThe keeper signs.\n"); // boom: allow keeper
     let outcome = check(&place, &[&file, "--repository", "boom", "--json"], "");
     assert_eq!(outcome.code, 2, "{outcome:?}");
     let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
@@ -479,8 +479,8 @@ fn an_old_word_found_as_json() {
         json!([{
             "file": file,
             "line": 3,
-            "word": "keeper",
-            "written": "keeper",
+            "word": "keeper", // boom: allow keeper
+            "written": "keeper", // boom: allow keeper
             "term": "owner",
             "version": version,
             "meaning": OWNER,
@@ -493,7 +493,7 @@ fn an_old_word_found_as_json() {
 fn no_old_word() {
     let place = Place::new();
     owner_accepted(&place);
-    let file = place.file("notes.txt", "The owner signs.\nThe gatekeeper opens.\n");
+    let file = place.file("notes.txt", "The owner signs.\nThe gatekeeper opens.\n"); // boom: allow keeper
     let before = written(&place);
     let outcome = check(&place, &[&file, "--repository", "boom"], "");
     assert_eq!(outcome.code, 0, "{outcome:?}");
@@ -517,7 +517,7 @@ fn no_old_word() {
 fn a_term_of_another_repository_is_not_checked() {
     let place = Place::new();
     owner_accepted(&place);
-    let file = place.file("notes.txt", "The keeper signs.\n");
+    let file = place.file("notes.txt", "The keeper signs.\n"); // boom: allow keeper
     let outcome = check(&place, &[&file, "--repository", "sluice"], "");
     assert_eq!(outcome.code, 0, "{outcome:?}");
 }
@@ -547,11 +547,11 @@ fn the_words_that_the_check_matches() {
     assert_eq!(
         found,
         [
-            (1, "keeper", "Keepers"),
-            (1, "keeper", "KEEPER"),
-            (2, "keeper", "keeper"),
-            (2, "keeper", "Keeper"),
-            (5, "keeper", "keeper"),
+            (1, "keeper", "Keepers"), // boom: allow keeper
+            (1, "keeper", "KEEPER"),  // boom: allow keeper
+            (2, "keeper", "keeper"),  // boom: allow keeper
+            (2, "keeper", "Keeper"),  // boom: allow keeper
+            (5, "keeper", "keeper"),  // boom: allow keeper
         ]
     );
 }
@@ -572,9 +572,9 @@ fn two_files_of_two_repositories() {
     let a = place.repository("a", Some("https://github.com/boomdrivedev/boom"));
     let b = place.repository("b", Some("https://github.com/boomdrivedev/sluice"));
     // Each file holds the old word of the other's term too.
-    std::fs::write(a.join("x.md"), "A keeper. A sentry.\n").unwrap();
+    std::fs::write(a.join("x.md"), "A keeper. A sentry.\n").unwrap(); // boom: allow keeper
     std::fs::create_dir_all(b.join("docs")).unwrap();
-    std::fs::write(b.join("docs/y.md"), "A sentry. A keeper.\n").unwrap();
+    std::fs::write(b.join("docs/y.md"), "A sentry. A keeper.\n").unwrap(); // boom: allow keeper
     let x = path_arg(&a.join("x.md"));
     let y = path_arg(&b.join("docs/y.md"));
     let outcome = check(&place, &[&x, &y, "--json"], "");
@@ -594,7 +594,7 @@ fn two_files_of_two_repositories() {
     assert_eq!(
         found,
         [
-            (x.as_str(), "keeper", "boom"),
+            (x.as_str(), "keeper", "boom"), // boom: allow keeper
             (y.as_str(), "sentry", "sluice")
         ]
     );
@@ -621,7 +621,7 @@ fn no_repository_found() {
     let place = Place::new();
     owner_accepted(&place);
     let folder = place.repository("shop", Some("https://github.com/a/shop"));
-    std::fs::write(folder.join("x.md"), "A keeper.\n").unwrap();
+    std::fs::write(folder.join("x.md"), "A keeper.\n").unwrap(); // boom: allow keeper
     let x = path_arg(&folder.join("x.md"));
     let outcome = check(&place, &[&x], "");
     assert_eq!(outcome.code, 2, "{outcome:?}");
@@ -639,7 +639,7 @@ fn no_repository_found() {
 #[test]
 fn no_store_when_asked() {
     let place = Place::new();
-    let file = place.file("x.md", "A keeper.\n");
+    let file = place.file("x.md", "A keeper.\n"); // boom: allow keeper
     let outcome = check(
         &place,
         &[&file, "--if-declared", "--repository", "boom"],
@@ -663,8 +663,8 @@ fn no_store_when_asked() {
 fn the_views_behind_the_log_are_not_written() {
     let place = Place::new();
     owner_accepted(&place);
-    let file = place.file("x.md", "A keeper.\n");
-    // Views of an older form: the check replays the log in memory.
+    let file = place.file("x.md", "A keeper.\n"); // boom: allow keeper
+                                                  // Views of an older form: the check replays the log in memory.
     place
         .sqlite()
         .execute("UPDATE views_head SET form = 4", [])
@@ -699,7 +699,7 @@ fn a_store_in_a_folder_that_cannot_be_written() {
         "--repository",
         "boom",
         "--replaces",
-        "keeper",
+        "keeper", // boom: allow keeper
         "--provenance",
         "run-1",
         "--json",
@@ -710,7 +710,7 @@ fn a_store_in_a_folder_that_cannot_be_written() {
         run(&["accept", &format!("owner@{version}"), "--key", &ada]).code,
         0
     );
-    let file = place.file("x.md", "A keeper.\n");
+    let file = place.file("x.md", "A keeper.\n"); // boom: allow keeper
     std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o555)).unwrap();
     let outcome = run(&["terms", "check", &file, "--repository", "boom"]);
     std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -739,11 +739,11 @@ fn a_write_with_an_old_word() {
     let file = path_arg(&folder.join("README.md"));
     let outcome = hooked(
         &place,
-        &json!({"tool_name": "Write", "tool_input": {"file_path": file, "content": "# boom\n\nThe keeper signs.\n"}}),
+        &json!({"tool_name": "Write", "tool_input": {"file_path": file, "content": "# boom\n\nThe keeper signs.\n"}}), // boom: allow keeper
     );
     assert_eq!(outcome.code, 2, "{outcome:?}");
     assert_eq!(outcome.stdout, "");
-    assert!(outcome.stderr.contains("\"keeper\""), "{outcome:?}");
+    assert!(outcome.stderr.contains("\"keeper\""), "{outcome:?}"); // boom: allow keeper
     assert!(
         outcome
             .stderr
@@ -758,7 +758,7 @@ fn an_edit_of_a_file_that_holds_an_old_word() {
     let place = Place::new();
     let (ada, _) = owner_accepted(&place);
     let folder = boom_folder(&place, &ada);
-    std::fs::write(folder.join("notes.md"), "The keeper signs.\nOne.\n").unwrap();
+    std::fs::write(folder.join("notes.md"), "The keeper signs.\nOne.\n").unwrap(); // boom: allow keeper
     let file = path_arg(&folder.join("notes.md"));
     let clean = hooked(
         &place,
@@ -786,7 +786,7 @@ fn another_tool() {
     owner_accepted(&place);
     let outcome = hooked(
         &place,
-        &json!({"tool_name": "Bash", "tool_input": {"command": "echo keeper > notes.md"}}),
+        &json!({"tool_name": "Bash", "tool_input": {"command": "echo keeper > notes.md"}}), // boom: allow keeper
     );
     assert_eq!(outcome.code, 0, "{outcome:?}");
     assert_eq!((outcome.stdout.as_str(), outcome.stderr.as_str()), ("", ""));
@@ -813,13 +813,13 @@ fn a_write_in_no_registered_repository() {
     let file = path_arg(&folder.join("README.md"));
     let outcome = hooked(
         &place,
-        &json!({"tool_name": "Write", "tool_input": {"file_path": file, "content": "The keeper."}}),
+        &json!({"tool_name": "Write", "tool_input": {"file_path": file, "content": "The keeper."}}), // boom: allow keeper
     );
     assert_eq!(outcome.code, 0, "{outcome:?}");
     assert_eq!((outcome.stdout.as_str(), outcome.stderr.as_str()), ("", ""));
 }
 
-// The test that proves the turn: an agent writes "keeper" in a file of
+// The test that proves the turn: an agent writes "keeper" in a file of // boom: allow keeper
 // boom, through the plugin's hook as Claude Code runs it, and the boom
 // the tree builds stops the write and names "owner".
 
@@ -847,7 +847,7 @@ fn hook_command() -> (String, String) {
 }
 
 #[test]
-fn an_agent_writes_keeper_and_the_hook_names_owner() {
+fn an_agent_writes_the_old_word_and_the_hook_names_owner() {
     let (matcher, command) = hook_command();
     for tool in ["Write", "Edit", "MultiEdit"] {
         assert!(matcher.split('|').any(|name| name == tool), "{matcher}");
@@ -892,10 +892,10 @@ fn an_agent_writes_keeper_and_the_hook_names_owner() {
             .unwrap();
         child.wait_with_output().unwrap()
     };
-    let stopped = run("The keeper signs.\n");
+    let stopped = run("The keeper signs.\n"); // boom: allow keeper
     let stderr = String::from_utf8_lossy(&stopped.stderr);
     assert_eq!(stopped.status.code(), Some(2), "{stderr}");
-    assert!(stderr.contains("\"keeper\""), "{stderr}");
+    assert!(stderr.contains("\"keeper\""), "{stderr}"); // boom: allow keeper
     assert!(stderr.contains("owner in boom"), "{stderr}");
     let passed = run("The owner signs.\n");
     assert_eq!(passed.status.code(), Some(0));
@@ -905,7 +905,7 @@ fn an_agent_writes_keeper_and_the_hook_names_owner() {
 // The gate task, check-terms.sh
 
 /// A git repository of boom in the place: main holds `docs/old.md` with
-/// `keeper` and an archived change with `keeper`; the branch `change`
+/// `keeper` and an archived change with `keeper`; the branch `change` // boom: allow keeper
 /// adds `files`. Gives its folder.
 fn change(place: &Place, files: &[(&str, &str)]) -> PathBuf {
     let folder = place.dir.path().join("tree");
@@ -930,7 +930,7 @@ fn change(place: &Place, files: &[(&str, &str)]) -> PathBuf {
     };
     std::fs::create_dir_all(&folder).unwrap();
     git(&["init", "-q", "-b", "main"]);
-    write("docs/old.md", "The keeper signs.\n");
+    write("docs/old.md", "The keeper signs.\n"); // boom: allow keeper
     write("README.md", "# boom\n");
     git(&["add", "."]);
     git(&["commit", "-q", "-m", "main"]);
@@ -973,12 +973,12 @@ fn text(bytes: &[u8]) -> String {
 fn a_change_that_adds_an_old_word() {
     let place = Place::new();
     owner_accepted(&place);
-    let folder = change(&place, &[("README.md", "# boom\n\nThe keeper signs.\n")]);
+    let folder = change(&place, &[("README.md", "# boom\n\nThe keeper signs.\n")]); // boom: allow keeper
     let ran = gate(&place, &folder, &["check", "--repository", "boom"]);
     let stderr = text(&ran.stderr);
     assert!(!ran.status.success(), "{stderr}");
     assert!(stderr.contains("README.md:3"), "{stderr}");
-    assert!(stderr.contains("\"keeper\""), "{stderr}");
+    assert!(stderr.contains("\"keeper\""), "{stderr}"); // boom: allow keeper
     assert!(stderr.contains("owner in boom"), "{stderr}");
 }
 
@@ -1005,7 +1005,7 @@ fn an_archived_change_and_a_marker() {
         &[
             (
                 "openspec/changes/archive/2026-11-21-terms/proposal.md",
-                "The keeper signs.\n",
+                "The keeper signs.\n", // boom: allow keeper
             ),
             (
                 "docs/history.md",
@@ -1042,7 +1042,7 @@ fn a_change_that_deletes_a_file_that_holds_an_old_word() {
 #[test]
 fn the_gate_with_no_store() {
     let place = Place::new();
-    let folder = change(&place, &[("README.md", "The keeper signs.\n")]);
+    let folder = change(&place, &[("README.md", "The keeper signs.\n")]); // boom: allow keeper
     let ran = gate(&place, &folder, &["check", "--repository", "boom"]);
     assert!(ran.status.success(), "{}", text(&ran.stderr));
     assert!(text(&ran.stdout).contains("no store"));

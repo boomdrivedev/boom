@@ -17,7 +17,7 @@ A claim of the kind `term` SHALL have its word as its name, and the meaning of t
 
 #### Scenario: A term proposed
 
-- **WHEN** `boom propose term owner "A person who grants roles and registers keys in a store." --repository boom --replaces keeper --provenance run-1` runs
+- **WHEN** `boom propose term owner "A person who grants roles and registers keys in a store." --repository boom --replaces keeper --provenance run-1` runs <!-- boom: allow keeper -->
 - **THEN** boom exits 0, and `boom show owner --json` gives a term with one proposed version that binds `boom`
 
 #### Scenario: A term with no repository
@@ -46,7 +46,7 @@ Each word in `replaces` SHALL be one line, and SHALL NOT be empty. It SHALL NOT 
 
 #### Scenario: Replaces on an invariant
 
-- **WHEN** an agent proposes an invariant with `--replaces keeper`
+- **WHEN** an agent proposes an invariant with `--replaces keeper` <!-- boom: allow keeper -->
 - **THEN** boom exits 2 and says that only a term replaces words, and boom appends nothing
 
 #### Scenario: A term that replaces its own word
@@ -56,8 +56,8 @@ Each word in `replaces` SHALL be one line, and SHALL NOT be empty. It SHALL NOT 
 
 #### Scenario: The same words in another order
 
-- **WHEN** an agent proposes the term `owner` with `--replaces keeper --replaces Warden`, and then with `--replaces warden --replaces keeper`
-- **THEN** both runs give the same version, and its `replaces` is `["keeper", "warden"]`
+- **WHEN** an agent proposes the term `owner` with `--replaces keeper --replaces Warden`, and then with `--replaces warden --replaces keeper` <!-- boom: allow keeper -->
+- **THEN** both runs give the same version, and its `replaces` is `["keeper", "warden"]` <!-- boom: allow keeper -->
 
 ### Requirement: The old words stay in the log
 
@@ -65,15 +65,15 @@ Boom SHALL keep `replaces` in the entry of the proposal, and SHALL give it in `b
 
 #### Scenario: Shown to the person who accepts
 
-- **WHEN** `boom show owner@<version> --json` runs for a term version that replaces `keeper`
-- **THEN** it gives `replaces` `["keeper"]`
+- **WHEN** `boom show owner@<version> --json` runs for a term version that replaces `keeper` <!-- boom: allow keeper -->
+- **THEN** it gives `replaces` `["keeper"]` <!-- boom: allow keeper -->
 
 #### Scenario: Not given to an agent
 
 - **WHEN** a person accepts that term for `boom`, and `boom query --repository boom --json` runs
-- **THEN** the answer gives the term `owner` with its meaning, and no byte of the answer is `keeper`
+- **THEN** the answer gives the term `owner` with its meaning, and no byte of the answer is `keeper` <!-- boom: allow keeper -->
 
 #### Scenario: Not searched
 
-- **WHEN** a person accepts that term for `boom`, and no other field of an accepted claim for `boom` holds `keeper`
-- **THEN** `boom search keeper --repository boom --json` gives no claim
+- **WHEN** a person accepts that term for `boom`, and no other field of an accepted claim for `boom` holds `keeper` <!-- boom: allow keeper -->
+- **THEN** `boom search keeper --repository boom --json` gives no claim <!-- boom: allow keeper -->

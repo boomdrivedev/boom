@@ -80,7 +80,7 @@ pub fn accepted(state: &State, repository: &str) -> Vec<Term> {
 
 /// `line` with a space at each change from a lowercase letter or a digit
 /// to an uppercase letter, so a name in code splits into its words:
-/// `KeeperStore` is `Keeper Store`. FTS5 splits at `_`, `-` and `.`.
+/// `KeeperStore` is `Keeper Store`. FTS5 splits at `_`, `-` and `.`. // boom: allow keeper
 fn split_names(line: &str) -> String {
     let mut split = String::with_capacity(line.len() + 8);
     let mut before: Option<char> = None;
@@ -305,7 +305,7 @@ mod tests {
                 version: "aaaaaaaaaaaa".to_owned(),
                 meaning: "A person who grants roles and registers keys in a store.".to_owned(),
                 repository: "boom".to_owned(),
-                replaces: vec!["keeper".to_owned(), "warden".to_owned()],
+                replaces: vec!["keeper".to_owned(), "warden".to_owned()], // boom: allow keeper
             },
             Term {
                 name: "run-log".to_owned(),
@@ -328,30 +328,30 @@ mod tests {
     #[test]
     fn an_old_word_in_another_form() {
         assert_eq!(
-            words("one\ntwo\nThe keeper signs.\nKeepers and KEEPER\n"),
+            words("one\ntwo\nThe keeper signs.\nKeepers and KEEPER\n"), // boom: allow keeper
             [
-                (3, "keeper".to_owned(), "keeper".to_owned()),
-                (4, "keeper".to_owned(), "Keepers".to_owned()),
-                (4, "keeper".to_owned(), "KEEPER".to_owned()),
+                (3, "keeper".to_owned(), "keeper".to_owned()), // boom: allow keeper
+                (4, "keeper".to_owned(), "Keepers".to_owned()), // boom: allow keeper
+                (4, "keeper".to_owned(), "KEEPER".to_owned()), // boom: allow keeper
             ]
         );
-        assert_eq!(words("A kéeper.").len(), 1);
+        assert_eq!(words("A kéeper.").len(), 1); // boom: allow keeper
     }
 
     #[test]
     fn a_name_in_code() {
         assert_eq!(
-            words("let keeper_id = KeeperStore::new(); x.keeper-name")
+            words("let keeper_id = KeeperStore::new(); x.keeper-name") // boom: allow keeper
                 .iter()
                 .map(|(_, _, written)| written.as_str())
                 .collect::<Vec<_>>(),
-            ["keeper", "Keeper", "keeper"]
+            ["keeper", "Keeper", "keeper"] // boom: allow keeper
         );
     }
 
     #[test]
     fn not_inside_a_longer_word() {
-        assert!(words("The gatekeeper opens. Keeperless.").is_empty());
+        assert!(words("The gatekeeper opens. Keeperless.").is_empty()); // boom: allow keeper
     }
 
     #[test]
@@ -369,15 +369,15 @@ mod tests {
         )
         .is_empty());
         assert_eq!(
-            words("boom: allow warden, and a keeper"),
-            [(1, "keeper".to_owned(), "keeper".to_owned())]
+            words("boom: allow warden, and a keeper"), // boom: allow keeper
+            [(1, "keeper".to_owned(), "keeper".to_owned())]  // boom: allow keeper
         );
         assert_eq!(words("boom: allow keeper\nkeeper").len(), 1);
     }
 
     #[test]
     fn no_term_no_word() {
-        assert!(find("keeper", &[]).unwrap().is_empty());
+        assert!(find("keeper", &[]).unwrap().is_empty()); // boom: allow keeper
     }
 
     #[test]
@@ -392,7 +392,7 @@ mod tests {
         let (_, texts) = written(&multi).unwrap().unwrap();
         assert_eq!(texts.len(), 2);
         assert_eq!(texts[1].1, "d");
-        let bash = json!({"tool_name": "Bash", "tool_input": {"command": "echo keeper > a"}});
+        let bash = json!({"tool_name": "Bash", "tool_input": {"command": "echo keeper > a"}}); // boom: allow keeper
         assert!(written(&bash).unwrap().is_none());
     }
 }

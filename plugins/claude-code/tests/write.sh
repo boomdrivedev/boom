@@ -102,7 +102,7 @@ scenario="The hook matches the tools that write a file's text"
 
 shop=$(repository shop git@github.com:example/shop.git)
 event=$(jq -cn --arg file "$shop/README.md" \
-  '{hook_event_name: "PreToolUse", tool_name: "Write", tool_input: {file_path: $file, content: "The keeper signs.\n"}}')
+  '{hook_event_name: "PreToolUse", tool_name: "Write", tool_input: {file_path: $file, content: "The keeper signs.\n"}}') # boom: allow keeper
 
 scenario="The hook runs boom"
 hook runs "$shop" "$fake" "$event"
@@ -118,7 +118,7 @@ hook unregistered "$shop" "$built" "$event"
 silent "$scenario"
 
 scenario="Another tool"
-bash_event=$(jq -cn '{hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {command: "echo keeper"}}')
+bash_event=$(jq -cn '{hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {command: "echo keeper"}}') # boom: allow keeper
 hook bash "$shop" "$built" "$bash_event"
 silent "$scenario"
 

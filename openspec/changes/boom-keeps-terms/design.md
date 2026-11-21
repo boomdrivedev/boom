@@ -138,7 +138,7 @@ case and accents, and takes each word to its stem with the same
 tokenizer as `boom search` (SQLite FTS5, `porter unicode61
 remove_diacritics 2`). An old word of two or more words matches its
 words in order, on one line. A stem matches a whole word only, so
-`gatekeeper` does not match `keeper`.
+`gatekeeper` does not match `keeper`. <!-- boom: allow keeper -->
 
 ### 8. An old word found is a refusal
 
