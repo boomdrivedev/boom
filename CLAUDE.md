@@ -25,6 +25,13 @@ fingerprint or `git:<repository>@<commit>:<path>`. Each edge to a claim
 stores the version that it meant, and `boom show` marks it out of date,
 gives the versions by base and the claims that rest on a claim, and
 writes a kept file with `--artifact`.
+A context owns path globs, each `<repository>:<pattern>`, and a version
+binds a context with `--context`, which stores the version of the
+context that it meant; `boom query --path <repository>:<path>` gives
+the claims for a file, those of the whole system, of its repository and
+of each context whose accepted globs match it, and `boom show` marks a
+binding out of date. Until someone draws a context, each repository is
+one context.
 A term is a word and its meaning in one repository, with the old words
 that it replaces, which only the log keeps: `boom query` gives the term
 and never its old words. `boom terms check` names each old word of an

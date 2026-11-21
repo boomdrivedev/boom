@@ -16,9 +16,28 @@ link meant (`a-link-remembers-the-version-it-meant`). It lands before
 this change. Turn 3 (`boom-keeps-terms`) made the kind `term`, which
 binds one repository (`a-term-binds-one-repository`).
 
-This design relies on these rules: a record never holds its status
-(core.1), boom computes each view from the ledger (core.2), and each
-tool that a gate task runs is the version that the tree pins (core.6).
+This design keeps these claims of the store:
+
+- `status-read-from-events`: a context and a binding have no status of
+  their own. Boom reads the accepted version of a context from the log.
+- `views-computed-from-the-ledger`: the rows of the globs and the
+  bindings are views, which a replay of the log builds again.
+- `a-link-remembers-the-version-it-meant`: a binding stores the version
+  of the context that it meant, and `boom show` marks it out of date.
+- `a-term-binds-one-repository`: a term binds no context.
+- `names-use-the-domains-terms`: the words are `context`, `path` and
+  `glob`, the words of Claude Code's rules files and of git.
+- `an-agent-gets-a-repositorys-rules-from-boom-query-each-claim-attached-to-the-repositories-it-binds`:
+  a binding is part of the attachment, and out of the fingerprint.
+- `an-agent-finds-claims-by-their-words-searched-in-memory-from-the-log`:
+  a search of a repository finds the claims of its contexts, with no
+  index.
+- `boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign`:
+  the tools take the new arguments, read from the command line.
+- `context-either-at-session-start-or-synced-into-the-repository`: the
+  globs of a context are the `paths:` line that `boom sync` writes.
+- `tools-at-their-pinned-versions`: `globset` is pinned in
+  `Cargo.lock`.
 
 ## Goals / Non-Goals
 
