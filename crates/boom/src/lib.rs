@@ -21,6 +21,7 @@ pub mod repository;
 pub mod search;
 pub mod sign;
 pub mod store;
+pub mod terms;
 
 /// Why a command did not do what it was asked: it refused, exit 2, or
 /// it could not run, exit 3. Either way nothing was written.

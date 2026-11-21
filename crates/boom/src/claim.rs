@@ -15,6 +15,9 @@ pub enum Kind {
     Decision,
     /// Something taken as true and not checked.
     Assumption,
+    /// A word and its meaning in one repository, with the old words it
+    /// replaces (term-claims).
+    Term,
 }
 
 impl Kind {
@@ -24,6 +27,7 @@ impl Kind {
             Kind::Invariant => "invariant",
             Kind::Decision => "decision",
             Kind::Assumption => "assumption",
+            Kind::Term => "term",
         }
     }
 }
@@ -84,6 +88,10 @@ pub struct Proposal {
     pub scenarios: Vec<String>,
     /// The fingerprint of its body, where it has one.
     pub body: Option<String>,
+    /// The old words a term replaces, each one time, in lowercase and
+    /// in order; written only where there is one (term-claims).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replaces: Vec<String>,
     /// Its history, where it comes in as history; written only where
     /// present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -91,8 +99,9 @@ pub struct Proposal {
 }
 
 /// The content a version is the fingerprint of, in the order it is
-/// written: its history last, and only where present, so a version
-/// with none keeps the fingerprint it had before histories were.
+/// written: its history, a term's repository and a term's old words
+/// last, and each only where present, so a version with none keeps the
+/// fingerprint it had before they were.
 #[derive(Serialize)]
 struct Content<'a> {
     kind: Kind,
@@ -103,6 +112,10 @@ struct Content<'a> {
     base: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     history: Option<&'a History>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repository: Option<&'a str>,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    replaces: &'a [String],
 }
 
 impl Proposal {
@@ -124,16 +137,35 @@ impl Proposal {
             statement: statement.to_owned(),
             scenarios,
             body,
+            replaces: Vec::new(),
             history,
         };
-        proposal.version = proposal.fingerprint();
+        proposal.version = proposal.fingerprint(None);
+        proposal
+    }
+
+    /// A version of a term: its word, its meaning, its body, its base,
+    /// the one repository it binds and the old words it replaces, kept
+    /// as [`replaces`] keeps them (term-claims).
+    pub fn term(
+        name: &str,
+        statement: &str,
+        body: Option<String>,
+        base: Option<String>,
+        repository: &str,
+        replaced: &[String],
+    ) -> Proposal {
+        let mut proposal = Proposal::new(Kind::Term, name, statement, Vec::new(), body, base, None);
+        proposal.replaces = replaces(replaced);
+        proposal.version = proposal.fingerprint(Some(repository));
         proposal
     }
 
     /// The first 12 hexadecimal characters of the SHA-256 of its kind,
     /// name, statement, scenarios, body's fingerprint, base and, where
-    /// it has one, history.
-    pub fn fingerprint(&self) -> String {
+    /// it has them, its history, the repository of a term, given as
+    /// `repository`, and the old words of a term.
+    pub fn fingerprint(&self, repository: Option<&str>) -> String {
         let content = serde_json::to_string(&Content {
             kind: self.kind,
             name: &self.name,
@@ -142,6 +174,8 @@ impl Proposal {
             body: self.body.as_deref(),
             base: self.base.as_deref(),
             history: self.history.as_ref(),
+            repository,
+            replaces: &self.replaces,
         })
         .expect("a version's content is JSON");
         crate::sha256_hex(content.as_bytes())[..12].to_owned()
@@ -152,8 +186,10 @@ impl Proposal {
     /// content. A version with scenarios is in the old form, valid as it
     /// was written, none of them empty. A version with none is in the new
     /// form: a decision needs a body. A version with a history has no
-    /// base, and names as its successor another claim (design 6).
-    pub fn check(&self) -> Result<(), String> {
+    /// base, and names as its successor another claim (design 6). A
+    /// term binds one repository of `repositories`, the ones its entry
+    /// binds, and only a term replaces words (term-claims).
+    pub fn check(&self, repositories: &[String]) -> Result<(), String> {
         check_name(&self.name)?;
         check_statement(&self.statement)?;
         match &self.history {
@@ -161,15 +197,97 @@ impl Proposal {
             None => check_scenarios(&self.scenarios)?,
             Some(history) => check_history(self, history)?,
         }
-        if self.version != self.fingerprint() {
+        let repository = match (self.kind, repositories) {
+            (Kind::Term, [one]) => Some(one.as_str()),
+            (Kind::Term, _) => {
+                return Err(format!(
+                    "a term binds one repository, and only one: {} binds {}",
+                    self.name,
+                    crate::repository::words(repositories)
+                ))
+            }
+            _ => None,
+        };
+        if self.kind == Kind::Term {
+            if !self.scenarios.is_empty() || self.history.is_some() {
+                return Err("a term has no scenarios and no history".to_owned());
+            }
+            check_replaces(&self.name, &self.replaces)?;
+        } else if !self.replaces.is_empty() {
             return Err(format!(
-                "its version {} is not the fingerprint of its content, {}",
-                self.version,
-                self.fingerprint()
+                "only a term replaces words: {} is {} {}",
+                self.name,
+                article(self.kind),
+                self.kind.as_str()
+            ));
+        }
+        let fingerprint = self.fingerprint(repository);
+        if self.version != fingerprint {
+            return Err(format!(
+                "its version {} is not the fingerprint of its content, {fingerprint}",
+                self.version
             ));
         }
         Ok(())
     }
+}
+
+fn article(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Invariant | Kind::Assumption => "an",
+        Kind::Decision | Kind::Term => "a",
+    }
+}
+
+/// Old words as a term keeps them: each with its runs of whitespace one
+/// space, in lowercase, one time, in the order of the alphabet.
+pub fn replaces(words: &[String]) -> Vec<String> {
+    let mut kept: Vec<String> = words
+        .iter()
+        .map(|word| {
+            word.split([' ', '\t'])
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase()
+        })
+        .collect();
+    kept.sort();
+    kept.dedup();
+    kept
+}
+
+/// The word of a term, as a file writes it: its name's words joined by
+/// spaces, `drive log` for `drive-log`.
+pub fn word(name: &str) -> String {
+    name.replace('-', " ")
+}
+
+/// A term's old words: none empty, each one line, as [`replaces`] keeps
+/// them, and none the word of the term.
+pub fn check_replaces(name: &str, replaces: &[String]) -> Result<(), String> {
+    for old in replaces {
+        if old.contains(['\n', '\r']) {
+            return Err(format!(
+                "an old word is one line: {old:?} holds a line break"
+            ));
+        }
+        if !old.chars().any(char::is_alphanumeric) {
+            return Err("an old word holds a letter or a digit: one is empty".to_owned());
+        }
+        if word(old) == word(name) {
+            return Err(format!(
+                "a term does not replace its own word: {name} replaces {old:?}"
+            ));
+        }
+    }
+    if replaces != self::replaces(replaces).as_slice() {
+        return Err(
+            "a term keeps its old words each one time, in lowercase, in the order of the alphabet"
+                .to_owned(),
+        );
+    }
+    Ok(())
 }
 
 /// A version that comes in as history: no base, no empty scenario, and
@@ -331,21 +449,21 @@ mod tests {
             None,
             None,
         );
-        assert_eq!(invariant.check(), Ok(()));
+        assert_eq!(invariant.check(&[]), Ok(()));
         let written = serde_json::to_string(&invariant).unwrap();
         assert!(!written.contains("scenarios"), "{written}");
         // A decision needs a body too.
-        let refused = floats(Vec::new(), None).check().unwrap_err();
+        let refused = floats(Vec::new(), None).check(&[]).unwrap_err();
         assert!(refused.starts_with("a decision needs a body"), "{refused}");
         let mut with_body = floats(Vec::new(), None);
         with_body.body = Some("a".repeat(64));
-        with_body.version = with_body.fingerprint();
-        assert_eq!(with_body.check(), Ok(()));
+        with_body.version = with_body.fingerprint(None);
+        assert_eq!(with_body.check(&[]), Ok(()));
         // An old version keeps its scenarios, none of them empty.
         assert!(check_scenarios(&[String::new()]).is_err());
         assert_eq!(check_scenarios(&["Given x, then y.".to_owned()]), Ok(()));
         assert_eq!(
-            floats(vec!["Given x, then y.".to_owned()], None).check(),
+            floats(vec!["Given x, then y.".to_owned()], None).check(&[]),
             Ok(())
         );
     }
@@ -364,10 +482,13 @@ mod tests {
             first.version,
             money("Every amount names one currency.", None).version
         );
-        assert_eq!(first.check(), Ok(()));
+        assert_eq!(first.check(&[]), Ok(()));
         let mut forged = first.clone();
         forged.version = "000000000000".to_owned();
-        assert!(forged.check().unwrap_err().contains("not the fingerprint"));
+        assert!(forged
+            .check(&[])
+            .unwrap_err()
+            .contains("not the fingerprint"));
     }
 
     #[test]
@@ -402,7 +523,7 @@ mod tests {
             br#"{"kind":"decision","name":"amounts-as-floats","statement":"Amounts are floats.","scenarios":["Given an amount, then it is a float."],"body":null,"base":null,"history":{"status":"superseded","by":"amounts-in-cents"}}"#,
         );
         assert_eq!(history.version, expected[..12]);
-        assert_eq!(history.check(), Ok(()));
+        assert_eq!(history.check(&[]), Ok(()));
     }
 
     #[test]
@@ -421,7 +542,7 @@ mod tests {
     fn a_history_version_needs_no_scenario() {
         let history = floats(Vec::new(), Some(superseded(Some("amounts-in-cents"))));
         assert!(history.scenarios.is_empty());
-        assert_eq!(history.check(), Ok(()));
+        assert_eq!(history.check(&[]), Ok(()));
         let rejected = floats(
             Vec::new(),
             Some(History {
@@ -429,17 +550,17 @@ mod tests {
                 by: None,
             }),
         );
-        assert_eq!(rejected.check(), Ok(()));
+        assert_eq!(rejected.check(&[]), Ok(()));
         let accepted = floats(Vec::new(), None);
         assert!(accepted
-            .check()
+            .check(&[])
             .unwrap_err()
             .starts_with("a decision needs a body"));
         let empty = floats(vec![" ".to_owned()], Some(superseded(None)));
-        assert!(empty.check().is_err());
+        assert!(empty.check(&[]).is_err());
         for by in ["Amounts_In_Cents", "amounts-as-floats"] {
             let refused = floats(Vec::new(), Some(superseded(Some(by))))
-                .check()
+                .check(&[])
                 .unwrap_err();
             assert!(refused.contains(by), "{refused}");
         }
@@ -456,7 +577,7 @@ mod tests {
             Some("aaaaaaaaaaaa".to_owned()),
             Some(superseded(Some("amounts-in-cents"))),
         );
-        let refused = history.check().unwrap_err();
+        let refused = history.check(&[]).unwrap_err();
         assert!(refused.contains("has no base"), "{refused}");
     }
 }

@@ -67,6 +67,10 @@ pub(crate) const ABSENT: &[(&str, &str)] = &[
         "repo show",
         "a person reads a store's repositories from the command line in this release",
     ),
+    (
+        "terms check",
+        "the hook of the plugin runs it on what an agent writes, and the gate on what a change touches",
+    ),
     ("mcp", "it is the server itself"),
 ];
 
@@ -359,7 +363,12 @@ fn call(tool: &Tool, raw: &Value, store: Option<&Path>, env: &Env) -> Value {
             return result(refused.stdout.trim(), true);
         }
     };
-    let outcome = crate::cli::run(words(tool, &given, store), &NoKeys, env);
+    let outcome = crate::cli::run_with_input(
+        words(tool, &given, store),
+        &NoKeys,
+        env,
+        &mut std::io::empty(),
+    );
     result(outcome.stdout.trim(), outcome.code != 0)
 }
 

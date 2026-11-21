@@ -214,7 +214,8 @@ fn a_tools_arguments_are_its_commands() {
                 "body",
                 "provenance",
                 "repositories",
-                "system"
+                "system",
+                "replaces"
             ]),
             names(&["kind", "name", "statement"])
         )
@@ -222,8 +223,10 @@ fn a_tools_arguments_are_its_commands() {
     let properties = &propose["inputSchema"]["properties"];
     assert_eq!(
         properties["kind"]["enum"],
-        json!(["invariant", "decision", "assumption"])
+        json!(["invariant", "decision", "assumption", "term"])
     );
+    assert_eq!(properties["replaces"]["type"], "array");
+    assert_eq!(properties["replaces"]["items"]["type"], "string");
     assert_eq!(properties["repositories"]["type"], "array");
     assert_eq!(properties["repositories"]["items"]["type"], "string");
     assert_eq!(
@@ -235,7 +238,7 @@ fn a_tools_arguments_are_its_commands() {
     assert_eq!(properties["statement"]["type"], "string");
     assert_eq!(
         arguments(tool(&tools, "show")),
-        (names(&["target"]), names(&["target"]))
+        (names(&["target", "repository"]), names(&["target"]))
     );
     assert_eq!(arguments(tool(&tools, "log")), (vec![], vec![]));
     let query = tool(&tools, "query");

@@ -6,7 +6,7 @@ the repository it works in. The views and `boom check` are designed,
 and the site shows what boom will do.
 
 A ledger of what a project has claimed about itself: its invariants,
-its decisions and its assumptions, each recorded with who proposed it,
+its decisions, its assumptions and its terms, each recorded with who proposed it,
 who accepted it and what it replaced. Its rules for a scope, its
 decision records, its design book and its context map are views
 computed from the ledger, and `boom check` reads the work against the
@@ -28,6 +28,14 @@ claims that hold.
   version for each change, named by the fingerprint of its words. An
   amendment names the version it amends. boom keeps a long body once,
   under the fingerprint of its bytes.
+- **A term is a word and its meaning in one repository.** `boom propose
+  term <word> <meaning> --repository <name>` proposes one, and each
+  `--replaces <old word>` names an old word that the term replaces. A
+  term binds one repository, and only one, so one word can have a term
+  in each repository, with a meaning for each. A person signs the old
+  words with the term. boom keeps them in the log alone: `boom show`
+  gives them to the person who accepts, and `boom query` and `boom
+  search` never give them. No list of old words goes into a repository.
 - **Each kind needs its own fields.** Every claim needs a statement of
   one line. A decision also needs a body: its context, options, outcome
   and consequences. An invariant's body is optional and says what it
@@ -83,6 +91,17 @@ claims that hold.
   first ten, or the number `--limit` names. Each comes with the passage
   of its body where the words fall and a pointer to the whole text.
   boom searches the views and keeps no index (record 0009).
+- **An old word is stopped where it is written.** `boom terms check
+  <file>...` names each old word of an accepted term in each file, with
+  its line and the term that replaces it, and exits 2 where it finds
+  one. It finds the repository of each file as `boom query` finds the
+  repository of a session. It matches an old word in another form, case
+  or accent, an old word of two words in their order, and the words of
+  a name in code, such as `RefundTotal`, but never an old word inside a
+  longer word. A line that holds `boom: allow <old word>` may name that
+  old word on purpose. The check reads the store and writes nothing,
+  not even the views, so it runs where nothing may write beside the
+  store.
 - **A repository's records, imported once.** `boom import adr` reads a
   folder of MADR records and `boom import rules` a rules page, and
   proposes each record in its file's own words, with the names the
@@ -119,7 +138,11 @@ boom log
 can put them in an agent's context as they are. boom's Claude Code
 plugin does it: its `SessionStart` hook runs `boom query --if-declared`,
 so every session in a registered repository starts with the claims that
-stand for it. Its first line names the repository, the number of claims
+stand for it. Its `PreToolUse` hook runs `boom terms check --hook
+--if-declared` on the text that `Write`, `Edit` or `MultiEdit` writes,
+so a write that holds an old word is stopped, and the agent reads the
+term to write in its place. The text that a `Bash` command writes is not
+checked. Its first line names the repository, the number of claims
 and the entry. A session anywhere else, or in a repository whose
 delivery at session start is off, hears nothing. A repository writes no
 hook into its own `.claude/settings.json`. With `--if-declared`, where
@@ -188,8 +211,9 @@ tag.
 
 | path | what |
 |---|---|
-| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import`, `query`, `search` and `mcp` |
-| `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom query --if-declared`, listed by the marketplace in `.claude-plugin/` |
+| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import`, `query`, `search`, `repo`, `terms check` and `mcp` |
+| `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom query --if-declared` and its write hook running `boom terms check --hook --if-declared`, listed by the marketplace in `.claude-plugin/` |
+| `check-terms.sh` | the gate's terms task: `boom terms check` on the files that a change adds or modifies |
 | `flake.nix`, `nix/` | boom's flake, giving `boom` and `boom-claude-plugin` at one version, and its offline checks |
 | `.github/workflows/release.yml` | the release: a landing with a new version, tagged on a release commit off main, its binaries built by cargo |
 | `site/` | the site, Astro with Starlight; its diagrams are drawn at build time (`site/README.md`) |

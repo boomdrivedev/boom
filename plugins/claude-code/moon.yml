@@ -1,8 +1,9 @@
 $schema: 'https://moonrepo.dev/schemas/project.json'
 
-# boom's Claude Code plugin: its manifest, and its session hook, which runs
-# boom query --if-declared (design 8). Each check is one task, in the fast
-# layer (core.5).
+# boom's Claude Code plugin: its manifest, its session hook, which runs
+# boom query --if-declared (design 8), and its write hook, which runs boom
+# terms check --hook --if-declared (term-check). Each check is one task, in
+# the fast layer (core.5).
 language: 'bash'
 layer: 'application'
 
@@ -22,9 +23,10 @@ tasks:
     command: '../claude.sh plugin validate --strict .'
     inputs: ['.claude-plugin/**/*', 'hooks/**/*', '/plugins/claude.sh', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]
-  # The session hook, run as Claude Code runs it, with a boom of its own
-  # and with the boom the tree builds (design 9).
+  # The session hook and the write hook, each run as Claude Code runs it,
+  # with a boom of its own and with the boom the tree builds (design 9;
+  # term-check).
   test:
-    command: 'bash tests/session.sh'
+    script: 'bash tests/session.sh && bash tests/write.sh'
     inputs: ['.claude-plugin/**/*', 'hooks/**/*', 'tests/**/*', '/crates/boom/**/*', '/Cargo.toml', '/Cargo.lock', '/.prototools', '/rust-toolchain.toml', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]

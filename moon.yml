@@ -34,6 +34,36 @@ tasks:
       - '/devenv.lock'
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
+  # Each file the change adds or modifies against main, but those under
+  # openspec/changes/archive/, holds no old word of a term that a person
+  # accepted for boom, by boom terms check, the boom the tree builds. It
+  # reads a file for the old words of the accepted terms and for nothing
+  # else: the term tool's check of its own words, which
+  # no-task-reads-markdown allows. It reads the store, outside the tree, so
+  # it never replays, as toolchain does, and names the entry of the store's
+  # log that it read (check-terms.sh; term-check).
+  terms:
+    command: 'sh check-terms.sh --repository boom'
+    inputs:
+      - '/**/*'
+      - '!/**/.devenv/**'
+      - '!/**/.devenv.flake.nix'
+      - '!/**/devenv.local.nix'
+      - '!/**/.pre-commit-config.yaml'
+      - '!/**/.moon/cache/**'
+      - '!/result'
+      - '!/result/**'
+      - '!/**/.DS_Store'
+      - '!/target/**'
+      - '!/site/node_modules/**'
+      - '!/site/dist/**'
+      - '!/site/.astro/**'
+      - '!/site/shots/**'
+      - '/devenv.nix'
+      - '/devenv.lock'
+      - '/check-terms.sh'
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true, cache: false}
   # rustc, cargo, clippy and rustfmt are the build .prototools pins, and
   # OpenSpec and Vale, which the pages' writers run, and the plugin's
   # Claude Code and jq, the releases devenv.nix pins, on whichever host

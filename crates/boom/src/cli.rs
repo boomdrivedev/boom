@@ -161,6 +161,10 @@ enum Command {
         /// Bind the version to the whole system, every repository.
         #[arg(long)]
         system: bool,
+        /// An old word that a term replaces; any number of times. Only a
+        /// term replaces words.
+        #[arg(long = "replaces", value_name = "WORD")]
+        replaces: Vec<String>,
     },
     /// Accept one or more versions, as a person, in one entry that their
     /// security key signs one time: every version, or none.
@@ -189,6 +193,10 @@ enum Command {
         /// The claim's name, `<name>@<version>`, or the number of an
         /// entry of the log, for the version that the entry names.
         target: String,
+        /// For a word with a term in several repositories, the term of
+        /// this repository.
+        #[arg(long, value_name = "NAME")]
+        repository: Option<String>,
     },
     /// Show the log's entries in order, each with whether it counts.
     Log,
@@ -246,10 +254,42 @@ enum Command {
         #[command(subcommand)]
         what: RepoCommand,
     },
+    /// Check files, or the text an agent writes, against the accepted
+    /// terms of their repositories.
+    Terms {
+        #[command(subcommand)]
+        what: TermsCommand,
+    },
     /// Serve boom's commands to an agent's program as tools, over the
     /// Model Context Protocol on standard input and output; none of them
     /// is a person's act.
     Mcp,
+}
+
+#[derive(Subcommand, Debug)]
+enum TermsCommand {
+    /// Name each old word of an accepted term in each file, with its line
+    /// and the term that replaces it; exit 2 where one is found. It reads
+    /// the store and writes nothing.
+    Check {
+        /// The files.
+        #[arg(value_name = "FILE")]
+        files: Vec<PathBuf>,
+        /// The repository of every file; by default the repository of
+        /// each file, as `boom query` finds the repository of a session
+        /// from the folder of the file.
+        #[arg(long, value_name = "NAME")]
+        repository: Option<String>,
+        /// Skip a file where boom finds no repository, and check nothing
+        /// where there is no store, as a hook in every session asks.
+        #[arg(long)]
+        if_declared: bool,
+        /// Read one Claude Code `PreToolUse` event from standard input and
+        /// check the text that `Write`, `Edit` or `MultiEdit` writes, in
+        /// place of files; say nothing where no old word is found.
+        #[arg(long, conflicts_with = "files")]
+        hook: bool,
+    },
 }
 
 /// On or off.
@@ -356,6 +396,21 @@ where
     I: IntoIterator<Item = A>,
     A: Into<OsString>,
 {
+    run_with_input(args, keys, env, &mut std::io::stdin())
+}
+
+/// Runs boom as [`run`] does, with `input` as its standard input, which
+/// only `boom terms check --hook` reads.
+pub fn run_with_input<I, A>(
+    args: I,
+    keys: &dyn Keys,
+    env: &Env,
+    input: &mut dyn std::io::Read,
+) -> Outcome
+where
+    I: IntoIterator<Item = A>,
+    A: Into<OsString>,
+{
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
     let json = args.iter().any(|arg| arg == "--json");
     let argv = std::iter::once(OsString::from("boom")).chain(args);
@@ -382,6 +437,24 @@ where
         env.xdg_data_home.as_deref(),
         env.home.as_deref(),
     );
+    if let Command::Terms {
+        what:
+            TermsCommand::Check {
+                files,
+                repository,
+                if_declared,
+                hook,
+            },
+    } = cli.command
+    {
+        let check = TermsCheck {
+            files,
+            named: repository,
+            if_declared,
+            hook,
+        };
+        return terms_check(cli.json, path, &check, env, input);
+    }
     let answer = execute(cli.command, path, keys, env);
     match answer {
         Ok(answer) if cli.json => Outcome {
@@ -482,6 +555,7 @@ fn execute(
             key,
             repositories,
             system,
+            replaces,
         } => propose(
             &path?,
             Proposed {
@@ -493,6 +567,7 @@ fn execute(
                 provenance,
                 repositories,
                 system,
+                replaces,
             },
             key.as_deref(),
             keys,
@@ -504,7 +579,7 @@ fn execute(
             reason,
             key,
         } => reject(&path?, &target, reason, key.as_deref(), keys, env),
-        Command::Show { target } => show(&path?, &target),
+        Command::Show { target, repository } => show(&path?, &target, repository.as_deref()),
         Command::Log => log(&path?),
         Command::Verify => verify(&path?),
         Command::Query {
@@ -518,6 +593,9 @@ fn execute(
             limit,
         } => search(&path?, &words, repository.as_deref(), all, limit, env),
         Command::Mcp => unreachable!("boom mcp is served before a store's path is resolved"),
+        Command::Terms { .. } => {
+            unreachable!("boom terms check is run before a command answers")
+        }
         Command::Repo { what } => match what {
             RepoCommand::Add {
                 name,
@@ -747,6 +825,7 @@ struct Proposed {
     provenance: Option<String>,
     repositories: Vec<String>,
     system: bool,
+    replaces: Vec<String>,
 }
 
 /// What a proposal binds, in the order record 0008 (point 4) gives:
@@ -754,12 +833,7 @@ struct Proposed {
 /// `--system`, the whole system; else, for an amendment, what its base
 /// binds in `state`; else the repository `declared`; else the whole
 /// system.
-fn attachment(
-    proposed: &Proposed,
-    proposal: &Proposal,
-    declared: Option<&str>,
-    state: &State,
-) -> Option<Attach> {
+fn attachment(proposed: &Proposed, declared: Option<&str>, state: &State) -> Option<Attach> {
     let named = |repositories: Vec<String>| {
         Some(repositories)
             .filter(|repositories| !repositories.is_empty())
@@ -774,10 +848,9 @@ fn attachment(
     if proposed.system {
         return None;
     }
-    if let Some(base) = &proposal.base {
+    if let Some(base) = &proposed.amends {
         let base = state
-            .claims
-            .get(&proposal.name)
+            .holding(&proposed.name, base)
             .and_then(|claim| claim.version(base));
         return base.and_then(|base| named(base.repositories.clone()));
     }
@@ -826,17 +899,40 @@ fn propose(
         } else {
             None
         };
-    let proposal = Proposal::new(
-        proposed.kind,
-        &proposed.name,
-        &proposed.statement,
-        Vec::new(),
-        body.as_deref().map(crate::sha256_hex),
-        proposed.amends.clone(),
-        None,
-    );
     let signer = key.map(|key| keys.signer(key)).transpose()?;
     let scope = Scope::names([proposed.name.clone()]);
+    let body_fingerprint = body.as_deref().map(crate::sha256_hex);
+    // The version is made with what it binds: a term's version is the
+    // fingerprint of its repository too (term-claims).
+    let version_of = |attach: Option<&Attach>| {
+        if proposed.kind == Kind::Term {
+            return Proposal::term(
+                &proposed.name,
+                &proposed.statement,
+                body_fingerprint.clone(),
+                proposed.amends.clone(),
+                judge::repositories(attach)
+                    .first()
+                    .map_or("", String::as_str),
+                &proposed.replaces,
+            );
+        }
+        // Another kind with old words is refused by the judge, which
+        // reads them from the version.
+        let mut proposal = Proposal::new(
+            proposed.kind,
+            &proposed.name,
+            &proposed.statement,
+            Vec::new(),
+            body_fingerprint.clone(),
+            proposed.amends.clone(),
+            None,
+        );
+        proposal.replaces = crate::claim::replaces(&proposed.replaces);
+        proposal.version = proposal.fingerprint(None);
+        proposal
+    };
+    let mut made = None;
     let (written, state) = write(
         &mut store,
         &scope,
@@ -849,18 +945,24 @@ fn propose(
                     provenance: proposed.provenance.clone().unwrap_or_default(),
                 },
             };
+            let attach = attachment(&proposed, declared.as_deref(), state);
+            let proposal = version_of(attach.as_ref());
+            made = Some(proposal.clone());
             Ok(Entry {
                 at: env.clock.now(),
                 actor,
                 act: Act::Proposed {
-                    claim: proposal.clone(),
+                    claim: proposal,
                     imported: None,
-                    attach: attachment(&proposed, &proposal, declared.as_deref(), state),
+                    attach,
                 },
             })
         },
     )?;
-    let claim = &state.claims[&proposal.name];
+    let proposal = made.expect("a proposal written was made");
+    let claim = state
+        .holding(&proposal.name, &proposal.version)
+        .expect("a proposal written is in the state");
     let version = claim
         .version(&proposal.version)
         .expect("a proposal written is in the state");
@@ -994,8 +1096,9 @@ fn accept(
     let mut accepted = Vec::with_capacity(versions.len());
     let mut words = String::new();
     for &(name, version) in &versions {
-        let found = state.claims[name]
-            .version(version)
+        let found = state
+            .holding(name, version)
+            .and_then(|claim| claim.version(version))
             .expect("an accept written is in the state");
         let by = found.decided_by.clone().unwrap_or_default();
         let seq = found.decided_in.unwrap_or_default();
@@ -1072,8 +1175,9 @@ fn reject(
             })
         },
     )?;
-    let rejected = state.claims[name]
-        .version(version)
+    let rejected = state
+        .holding(name, version)
+        .and_then(|claim| claim.version(version))
         .expect("a reject written is in the state");
     let by = rejected.decided_by.clone().unwrap_or_default();
     let why = rejected.reason.clone().unwrap_or_default();
@@ -1151,7 +1255,7 @@ fn version_words(view: &store::VersionView) -> String {
     words
 }
 
-fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
+fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, Failure> {
     let mut store = Store::open(path)?;
     store.read(|conn| {
         let named;
@@ -1164,72 +1268,60 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
                 None => (target, None),
             }
         };
-        let claim = store::claim_view(conn, name)?
-            .ok_or_else(|| Failure::refused(format!("no claim has the name {name}")))?;
+        let mut claims = store::claim_views(conn, name)?;
+        if claims.is_empty() {
+            return Err(Failure::refused(format!("no claim has the name {name}")));
+        }
+        if let Some(repository) = repository {
+            claims.retain(|claim| claim.repository.as_deref() == Some(repository));
+            if claims.is_empty() {
+                return Err(Failure::refused(format!(
+                    "{name} has no term for the repository {repository}"
+                )));
+            }
+        }
         let Some(version) = version else {
-            // The newest version in full, then the others, newest first
-            // (claim-versions, "A claim shown by its name").
-            let newest = claim
-                .versions
-                .last()
-                .ok_or_else(|| Failure::not_run(format!("the claim {name} has no version")))?;
-            let newest_body = body_text(conn, newest.body.as_deref())?;
-            let others: Vec<_> = claim.versions.iter().rev().skip(1).collect();
-            let mut words = format!(
-                "{} {}, {}\n\nnewest: {}\n{}\nbinds: {}\n",
-                claim.kind,
-                claim.name,
-                claim
-                    .standing
-                    .as_deref()
-                    .map_or("no version is accepted".to_owned(), |standing| format!(
-                        "accepted: {standing}"
-                    )),
-                version_words(newest),
-                newest.statement,
-                repository::words(&newest.repositories)
-            );
-            if let Some(body) = &newest_body {
-                words.push_str(&format!("\n{}", body));
-                if !body.ends_with('\n') {
+            // A word with a term in several repositories: each term, in
+            // the order of their repositories (term-claims).
+            if let [claim] = claims.as_slice() {
+                let (object, words) = claim_shown(conn, claim)?;
+                let mut json = serde_json::Map::new();
+                json.insert("format".into(), json!("boom-show/2"));
+                json.extend(object);
+                return Ok(Answer {
+                    json: Value::Object(json),
+                    words,
+                });
+            }
+            let mut terms = Vec::with_capacity(claims.len());
+            let mut words = String::new();
+            for claim in &claims {
+                let (object, shown) = claim_shown(conn, claim)?;
+                terms.push(Value::Object(object));
+                if !words.is_empty() {
                     words.push('\n');
                 }
+                words.push_str(&shown);
             }
-            if !others.is_empty() {
-                words.push_str("\nother versions:\n");
-            }
-            for view in &others {
-                words.push_str(&format!(
-                    "  {}\n    {}\n    binds: {}\n",
-                    version_words(view),
-                    view.statement,
-                    repository::words(&view.repositories)
-                ));
-            }
-            let mut newest_json = version_json(newest);
-            newest_json.insert("statement".into(), json!(newest.statement));
-            newest_json.insert("body".into(), json!(newest_body));
-            let versions: Vec<Value> = claim
-                .versions
-                .iter()
-                .map(|view| Value::Object(version_json(view)))
-                .collect();
             return Ok(Answer {
                 json: json!({
                     "format": "boom-show/2",
-                    "claim": claim.name,
-                    "kind": claim.kind,
-                    "accepted": claim.standing,
-                    "newest": newest_json,
-                    "versions": versions,
+                    "claim": name,
+                    "kind": claims[0].kind,
+                    "terms": terms,
                 }),
                 words,
             });
         };
-        let view = claim
-            .versions
+        let (claim, view) = claims
             .iter()
-            .find(|view| view.version == version)
+            .find_map(|claim| {
+                claim
+                    .versions
+                    .iter()
+                    .find(|view| view.version == version)
+                    .map(|view| (claim, view))
+            })
             .ok_or_else(|| {
                 Failure::refused(format!("the claim {name} has no version {version}"))
             })?;
@@ -1239,9 +1331,13 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
         object.insert("format".into(), json!("boom-show/2"));
         object.insert("claim".into(), json!(claim.name));
         object.insert("kind".into(), json!(claim.kind));
+        if let Some(repository) = &claim.repository {
+            object.insert("repository".into(), json!(repository));
+        }
         object.extend(version_json(view));
         object.insert("statement".into(), json!(view.statement));
         object.insert("scenarios".into(), json!(view.scenarios));
+        object.insert("replaces".into(), json!(view.replaces));
         object.insert("body_fingerprint".into(), json!(view.body));
         object.insert("body".into(), json!(body));
         object.insert("imported".into(), json!(imported));
@@ -1255,6 +1351,11 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
         );
         for scenario in &view.scenarios {
             words.push_str(&format!("scenario: {scenario}\n"));
+        }
+        if !view.replaces.is_empty() {
+            // The old words are given to the person who accepts the term
+            // (term-claims, "The old words stay in the log").
+            words.push_str(&format!("replaces: {}\n", view.replaces.join(", ")));
         }
         words.push_str(&format!(
             "binds: {}\n",
@@ -1292,6 +1393,76 @@ fn show(path: &Path, target: &str) -> Result<Answer, Failure> {
             words,
         })
     })
+}
+
+/// A claim as `boom show <name>` gives it: its kind, its accepted
+/// version, the newest version in full, then the others, newest first
+/// (claim-versions, "A claim shown by its name").
+fn claim_shown(
+    conn: &rusqlite::Connection,
+    claim: &store::ClaimView,
+) -> Result<(serde_json::Map<String, Value>, String), Failure> {
+    // The newest version in full, then the others, newest first
+    // (claim-versions, "A claim shown by its name").
+    let newest = claim
+        .versions
+        .last()
+        .ok_or_else(|| Failure::not_run(format!("the claim {} has no version", claim.name)))?;
+    let newest_body = body_text(conn, newest.body.as_deref())?;
+    let others: Vec<_> = claim.versions.iter().rev().skip(1).collect();
+    let mut words = format!(
+        "{} {}, {}\n\nnewest: {}\n{}\nbinds: {}\n",
+        claim.kind,
+        claim.name,
+        claim
+            .standing
+            .as_deref()
+            .map_or("no version is accepted".to_owned(), |standing| format!(
+                "accepted: {standing}"
+            )),
+        version_words(newest),
+        newest.statement,
+        repository::words(&newest.repositories)
+    );
+    if !newest.replaces.is_empty() {
+        words.push_str(&format!("replaces: {}\n", newest.replaces.join(", ")));
+    }
+    if let Some(body) = &newest_body {
+        words.push_str(&format!("\n{}", body));
+        if !body.ends_with('\n') {
+            words.push('\n');
+        }
+    }
+    if !others.is_empty() {
+        words.push_str("\nother versions:\n");
+    }
+    for view in &others {
+        words.push_str(&format!(
+            "  {}\n    {}\n    binds: {}\n",
+            version_words(view),
+            view.statement,
+            repository::words(&view.repositories)
+        ));
+    }
+    let mut newest_json = version_json(newest);
+    newest_json.insert("statement".into(), json!(newest.statement));
+    newest_json.insert("replaces".into(), json!(newest.replaces));
+    newest_json.insert("body".into(), json!(newest_body));
+    let versions: Vec<Value> = claim
+        .versions
+        .iter()
+        .map(|view| Value::Object(version_json(view)))
+        .collect();
+    let mut object = serde_json::Map::new();
+    object.insert("claim".into(), json!(claim.name));
+    object.insert("kind".into(), json!(claim.kind));
+    if let Some(repository) = &claim.repository {
+        object.insert("repository".into(), json!(repository));
+    }
+    object.insert("accepted".into(), json!(claim.standing));
+    object.insert("newest".into(), Value::Object(newest_json));
+    object.insert("versions".into(), Value::Array(versions));
+    Ok((object, words))
 }
 
 /// What the entry that proposed a version says of where it came from
@@ -1989,8 +2160,7 @@ fn import_answer(repository: &str, read: &Read, state: Option<&State>) -> Answer
         let proposal = record.proposal();
         let found = state.and_then(|state| {
             state
-                .claims
-                .get(&proposal.name)
+                .holding(&proposal.name, &proposal.version)
                 .and_then(|claim| claim.version(&proposal.version))
         });
         let name = record.name.as_deref();
@@ -2069,4 +2239,252 @@ fn record_words(record: &Record, proposed: Option<(&str, &str, u64)>) -> String 
     }
     words.push('\n');
     words
+}
+
+/// The arguments of `boom terms check`.
+struct TermsCheck {
+    files: Vec<PathBuf>,
+    named: Option<String>,
+    if_declared: bool,
+    hook: bool,
+}
+
+/// What `boom terms check` checks: each file, or each text that a hook's
+/// event writes, with its name.
+struct Checked {
+    file: PathBuf,
+    texts: Vec<(Option<String>, String)>,
+}
+
+/// `boom terms check` (term-check): each old word of the accepted terms
+/// of the repository of each file, from the store, which it reads and
+/// never writes. An old word found is a refusal, exit 2, with each one in
+/// `refused.found`. With `--hook`, the text of one `PreToolUse` event,
+/// and no word where none is found.
+fn terms_check(
+    json: bool,
+    path: Result<PathBuf, Failure>,
+    check: &TermsCheck,
+    env: &Env,
+    input: &mut dyn std::io::Read,
+) -> Outcome {
+    let silent = Outcome {
+        code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let checked = match terms_input(check, input) {
+        Ok(Some(checked)) => checked,
+        Ok(None) => return silent,
+        Err(failure) => return failed(json, failure),
+    };
+    match terms_found(path, check, &checked, env) {
+        Ok(None) if check.hook => silent,
+        Ok(None) => {
+            let answer = json!({
+                "format": "boom-terms-check/1",
+                "head": null,
+                "files": [],
+                "found": [],
+            });
+            Outcome {
+                code: 0,
+                stdout: if json {
+                    format!("{answer}\n")
+                } else {
+                    String::new()
+                },
+                stderr: String::new(),
+            }
+        }
+        Ok(Some(report)) if report.found.is_empty() => {
+            if check.hook {
+                return silent;
+            }
+            let files = report.files.len();
+            let words = format!(
+                "No old word in {} file{}, at entry {} of the store's log.\n",
+                files,
+                if files == 1 { "" } else { "s" },
+                report.head.0
+            );
+            let answer = json!({
+                "format": "boom-terms-check/1",
+                "head": {"number": report.head.0, "hash": report.head.1},
+                "files": report.files,
+                "found": [],
+            });
+            if json {
+                Outcome {
+                    code: 0,
+                    stdout: format!("{answer}\n"),
+                    stderr: words,
+                }
+            } else {
+                Outcome {
+                    code: 0,
+                    stdout: words,
+                    stderr: String::new(),
+                }
+            }
+        }
+        Ok(Some(report)) => {
+            let count = report.found.len();
+            let reason = format!(
+                "{count} old word{} of an accepted term: write the term in place of each",
+                if count == 1 { "" } else { "s" }
+            );
+            let object = json!({
+                "format": "boom-refused/1",
+                "refused": {
+                    "reason": reason,
+                    "head": {"number": report.head.0, "hash": report.head.1},
+                    "found": report.found,
+                },
+            });
+            Outcome {
+                code: 2,
+                stdout: if json {
+                    format!("{object}\n")
+                } else {
+                    String::new()
+                },
+                stderr: format!("boom: refused: {reason}\n{}", report.words),
+            }
+        }
+        Err(failure) => failed(json, failure),
+    }
+}
+
+/// The files a check names, or the text of the hook's event: none for an
+/// event of a tool that writes no file's text.
+fn terms_input(
+    check: &TermsCheck,
+    input: &mut dyn std::io::Read,
+) -> Result<Option<Vec<Checked>>, Failure> {
+    if !check.hook {
+        return Ok(Some(
+            check
+                .files
+                .iter()
+                .map(|file| Checked {
+                    file: file.clone(),
+                    texts: Vec::new(),
+                })
+                .collect(),
+        ));
+    }
+    let mut event = String::new();
+    input
+        .read_to_string(&mut event)
+        .map_err(|error| Failure::refused(format!("the hook's event cannot be read: {error}")))?;
+    let event: Value = serde_json::from_str(&event)
+        .map_err(|error| Failure::refused(format!("the hook's event is not JSON: {error}")))?;
+    Ok(crate::terms::written(&event)?.map(|(file, texts)| {
+        vec![Checked {
+            file,
+            texts: texts
+                .into_iter()
+                .map(|(name, text)| (Some(name), text))
+                .collect(),
+        }]
+    }))
+}
+
+/// What a check found, with the entry of the log it read at.
+struct TermsReport {
+    head: (u64, String),
+    files: Vec<Value>,
+    found: Vec<Value>,
+    words: String,
+}
+
+/// Checks `checked`: none where `--if-declared` finds no store; else
+/// each file of a repository with what it holds.
+fn terms_found(
+    path: Result<PathBuf, Failure>,
+    check: &TermsCheck,
+    checked: &[Checked],
+    env: &Env,
+) -> Result<Option<TermsReport>, Failure> {
+    let path = path?;
+    if let Some(launched) = env.boom_repository.as_deref() {
+        repository::check_name(launched).map_err(|why| {
+            Failure::refused(format!(
+                "{} names {launched:?}: {why}",
+                repository::LAUNCHER
+            ))
+        })?;
+    }
+    if let Some(named) = &check.named {
+        repository::check_name(named).map_err(Failure::Refused)?;
+    }
+    if check.if_declared && !path.exists() {
+        return Ok(None);
+    }
+    let read = store::read_terms(&path)?;
+    let mut report = TermsReport {
+        head: read.head.clone(),
+        files: Vec::new(),
+        found: Vec::new(),
+        words: String::new(),
+    };
+    for one in checked {
+        let shown = one.file.display().to_string();
+        let found = crate::terms::repository_of(
+            &one.file,
+            check.named.as_deref(),
+            env.boom_repository.as_deref(),
+            &read.repositories,
+        )?;
+        let Some(repository) = found else {
+            if check.if_declared {
+                continue;
+            }
+            return Err(Failure::refused(format!(
+                "boom finds no repository of {shown}: name it with --repository, or register its remote with boom repo add"
+            )));
+        };
+        let terms = crate::terms::accepted(&read.state, &repository);
+        let texts = if one.texts.is_empty() && !check.hook {
+            let bytes = std::fs::read(&one.file)
+                .map_err(|error| Failure::refused(format!("{shown} cannot be read: {error}")))?;
+            match String::from_utf8(bytes) {
+                Ok(text) => vec![(None, text)],
+                Err(_) => {
+                    // A file that is not text holds no word.
+                    report.files.push(json!({
+                        "file": shown,
+                        "repository": repository,
+                        "text": false,
+                    }));
+                    continue;
+                }
+            }
+        } else {
+            one.texts.clone()
+        };
+        report.files.push(json!({
+            "file": shown,
+            "repository": repository,
+            "text": true,
+        }));
+        for (name, text) in &texts {
+            for found in crate::terms::find(text, &terms)? {
+                report.found.push(crate::terms::found_json(
+                    &shown,
+                    &found,
+                    &terms,
+                    name.as_deref(),
+                ));
+                report.words.push_str(&crate::terms::found_words(
+                    &shown,
+                    &found,
+                    &terms,
+                    name.as_deref(),
+                ));
+            }
+        }
+    }
+    Ok(Some(report))
 }
