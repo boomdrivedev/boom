@@ -463,3 +463,25 @@ fn history_accepted_keeps_its_files_status() {
     assert_eq!(place.status("amounts-as-floats", &first), "accepted");
     assert_eq!(place.status("amounts-as-floats", &version), "superseded");
 }
+
+#[test]
+fn a_name_shows_its_newest_version_in_full_then_the_others() {
+    let place = Place::new();
+    let ada = place.made();
+    let first = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &first, &ada);
+    let amendment = place.amended("money-has-currency", ONE, &first);
+    let shown = place.show("money-has-currency");
+    assert_eq!(shown["accepted"], first.as_str());
+    assert_eq!(shown["newest"]["version"], amendment.as_str());
+    assert_eq!(shown["newest"]["statement"], ONE);
+    let words = place.run(&["show", "money-has-currency"]).stdout;
+    let newest = words.find(ONE).expect(&words);
+    let others = words.find("other versions:").expect(&words);
+    let older = words.rfind(MONEY).expect(&words);
+    assert!(newest < others && others < older, "{words}");
+    assert!(
+        words.starts_with(&format!("invariant money-has-currency, accepted: {first}")),
+        "{words}"
+    );
+}

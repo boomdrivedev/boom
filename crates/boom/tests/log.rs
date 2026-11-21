@@ -254,7 +254,9 @@ fn an_accept_written_by_hand_counts_for_nothing() {
     assert!(
         words
             .stdout
-            .contains("3 accepted by ada, not counted: a person's act needs their signature"),
+            .contains(&format!(
+                "3 accepted money-has-currency@{version} by ada, not counted: a person's act needs their signature"
+            )),
         "{words:?}"
     );
 }
@@ -273,4 +275,48 @@ fn an_accept_by_a_key_no_one_registered_counts_for_nothing() {
     let accepted = place.log().pop().unwrap();
     assert_eq!(accepted["counted"], false);
     assert_eq!(accepted["reason"], "its key is not registered");
+}
+
+#[test]
+fn each_line_names_the_version_of_its_act() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &version, &ada);
+    let words = place.run(&["log"]).stdout;
+    let lines: Vec<&str> = words.lines().collect();
+    assert_eq!(lines[0], "1 registered by ada", "{words}");
+    assert!(
+        lines[1].starts_with(&format!(
+            "2 proposed money-has-currency@{version} by an agent"
+        )),
+        "{words}"
+    );
+    assert_eq!(
+        lines[2],
+        format!("3 accepted money-has-currency@{version} by ada")
+    );
+    let entries = place.log();
+    assert_eq!(entries[0]["target"], serde_json::Value::Null);
+    assert_eq!(
+        entries[1]["target"],
+        format!("money-has-currency@{version}")
+    );
+    assert_eq!(
+        entries[2]["target"],
+        format!("money-has-currency@{version}")
+    );
+}
+
+#[test]
+fn an_entry_number_shows_the_version_it_names() {
+    let place = Place::new();
+    let ada = place.made();
+    let version = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &version, &ada);
+    let by_name = place.show(&format!("money-has-currency@{version}"));
+    assert_eq!(place.show("2"), by_name);
+    assert_eq!(place.show("3"), by_name);
+    place.refused(&["show", "1"], "entry 1 names no version");
+    place.refused(&["show", "9"], "the log has no entry 9");
 }

@@ -147,6 +147,19 @@ impl Act {
             Act::Rejected { .. } => "rejected",
         }
     }
+
+    /// The version the act names, as its claim's name and its version:
+    /// a proposal's, an accept's or a reject's, and none for a
+    /// registration.
+    pub fn target(&self) -> Option<(&str, &str)> {
+        match self {
+            Act::Registered { .. } => None,
+            Act::Proposed { claim, .. } => Some((&claim.name, &claim.version)),
+            Act::Accepted { name, version } | Act::Rejected { name, version, .. } => {
+                Some((name, version))
+            }
+        }
+    }
 }
 
 /// What a proposed version binds, written after its claim and no part

@@ -355,5 +355,5 @@ fn a_claim_shown_gives_each_versions_repositories() {
         words.stdout.contains("    binds: the whole system\n"),
         "{words:?}"
     );
-    assert!(words.stdout.contains("    binds: shop\n"), "{words:?}");
+    assert!(words.stdout.contains("\nbinds: shop\n"), "{words:?}");
 }
