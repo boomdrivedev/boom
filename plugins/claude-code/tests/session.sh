@@ -5,8 +5,9 @@
 # of the script's own proves the hook calls boom by its command line from
 # PATH, in the session's folder, and hands its output on as it is; the
 # boom the tree builds proves the hook says nothing and makes no store
-# where no repository is declared, and shows a declaration boom cannot
-# read. The claims given for a declared repository are boom query's,
+# where no repository of the session is found, and shows a repository
+# name from the launcher that boom cannot read. The claims given for a
+# registered repository are boom query's,
 # proven in crates/boom/tests/query.rs with the tests' keys, which a shell
 # cannot make (record 0006). Each case that fails prints
 # `claude-code: <case>: <what>`, and every case runs.
@@ -55,17 +56,16 @@ cat >"$fake/boom" <<EOF
 #!/bin/sh
 printf '%s\n' "\$*" >"$record/args"
 pwd -P >"$record/cwd"
-echo "1 claim stands for shop, at entry 3 of the store's log."
+echo "Boom: 1 claim for shop, at entry 3"
 EOF
 chmod +x "$fake/boom"
 
-# A repository's folder: a .git folder and, where given, a declaration of
-# those words.
-repository() { # name [declaration]
+# A repository's folder: a .git folder whose configuration names, where
+# given, that remote as its origin.
+repository() { # name [remote]
   mkdir -p "$scratch/$1/.git"
   if [ $# -gt 1 ]; then
-    mkdir -p "$scratch/$1/.config"
-    printf '%s\n' "$2" >"$scratch/$1/.config/boom.toml"
+    printf '[remote "origin"]\n\turl = %s\n' "$2" >"$scratch/$1/.git/config"
   fi
   printf '%s\n' "$scratch/$1"
 }
@@ -84,6 +84,7 @@ hook() { # name folder bin
   (
     cd "$2" &&
       PATH="$3:$PATH" XDG_DATA_HOME="$data" HOME="$scratch/home-$1" \
+        BOOM_REPOSITORY="${launch:-}" \
         sh -c "$command" >"$scratch/out-$1" 2>"$scratch/err-$1"
   )
   code=$?
@@ -101,18 +102,20 @@ silent() { # case
 }
 
 scenario="The hook runs boom"
-declared=$(repository declared 'repository = "shop"')
+declared=$(repository declared git@github.com:example/shop.git)
 hook runs "$declared" "$fake"
 [ "$code" = 0 ] || fail "$scenario" "exited $code, not 0: $err"
 args=$(cat "$record/args" 2>/dev/null)
 [ "$args" = "query --if-declared" ] || fail "$scenario" "boom was called as '${args:-nothing}', not 'query --if-declared'"
 cwd=$(cat "$record/cwd" 2>/dev/null)
 [ "$cwd" = "$declared" ] || fail "$scenario" "boom ran in ${cwd:-no folder}, not $declared"
-[ "$out" = "1 claim stands for shop, at entry 3 of the store's log." ] ||
+[ "$out" = "Boom: 1 claim for shop, at entry 3" ] ||
   fail "$scenario" "the hook's output is not boom's line: $out"
 
 scenario="A repository that declares nothing"
-undeclared=$(repository undeclared)
+undeclared=$(repository undeclared git@github.com:example/unknown.git)
+mkdir -p "$undeclared/.config"
+printf 'repository = "shop"\n' >"$undeclared/.config/boom.toml"
 hook undeclared "$undeclared" "$built"
 silent "$scenario"
 
@@ -132,12 +135,12 @@ hook outside "$outside" "$built"
 silent "$scenario"
 
 scenario="A name not in kebab case"
-named=$(repository named 'repository = "Shop"')
-hook named "$named" "$built"
+named=$(repository named)
+launch=Shop hook named "$named" "$built"
 [ "$code" = 2 ] || fail "$scenario" "exited $code, not 2: $err"
 case $err in
-*.config/boom.toml*) ;;
-*) fail "$scenario" "standard error does not name .config/boom.toml: $err" ;;
+*Shop*) ;;
+*) fail "$scenario" "standard error does not name Shop: $err" ;;
 esac
 
 [ "$failures" = 0 ] || exit 1

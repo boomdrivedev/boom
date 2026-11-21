@@ -208,6 +208,7 @@ impl Place {
             xdg_data_home: Some(dir.path().join("data")),
             home: Some(dir.path().join("home")),
             cwd: Some(dir.path().to_owned()),
+            boom_repository: None,
             clock: boom::cli::Clock::Fixed(1_763_424_000),
         };
         let store = dir.path().join("boom.sqlite");
@@ -470,6 +471,9 @@ pub fn accept_entry(person: &str, name: &str, version: &str) -> boom::entry::Ent
     }
 }
 
+/// The remote of the repository `shop` in the tests.
+pub const SHOP_REMOTE: &str = "git@github.com:example/shop.git";
+
 impl Place {
     /// Makes the empty folder `name` in the place, giving its path.
     pub fn empty_folder(&self, name: &str) -> PathBuf {
@@ -479,22 +483,43 @@ impl Place {
     }
 
     /// Writes `text`, from the test's code, as `folder`'s
-    /// `.config/boom.toml`.
+    /// `.config/boom.toml`, a file boom no longer reads.
     pub fn declare(&self, folder: &Path, text: &str) {
         std::fs::create_dir_all(folder.join(".config")).unwrap();
-        std::fs::write(folder.join(boom::repository::DECLARATION), text).unwrap();
+        std::fs::write(folder.join(".config/boom.toml"), text).unwrap();
     }
 
     /// Makes a repository's folder `name` in the place, holding a `.git`
-    /// folder and, where `declaration` is given, a `.config/boom.toml` of
-    /// those words, giving its path (design 6).
-    pub fn repository(&self, name: &str, declaration: Option<&str>) -> PathBuf {
+    /// folder whose configuration names `remote` as its `origin`, where
+    /// it is given, giving its path.
+    pub fn repository(&self, name: &str, remote: Option<&str>) -> PathBuf {
         let folder = self.empty_folder(name);
         std::fs::create_dir_all(folder.join(".git")).unwrap();
-        if let Some(text) = declaration {
-            self.declare(&folder, text);
+        let mut config = String::from("[core]\n\tbare = false\n");
+        if let Some(remote) = remote {
+            config.push_str(&format!("[remote \"origin\"]\n\turl = {remote}\n"));
         }
+        std::fs::write(folder.join(".git/config"), config).unwrap();
         folder
+    }
+
+    /// Registers the repository `name` with `remote`, as the owner whose
+    /// key is `owner`.
+    pub fn repo_added(&self, owner: &str, name: &str, remote: &str) {
+        let outcome = self.run(&["repo", "add", name, "--remote", remote, "--key", owner]);
+        assert_eq!(outcome.code, 0, "{outcome:?}");
+    }
+
+    /// Runs `args` on the place's store with `cwd` its working folder and
+    /// `BOOM_REPOSITORY` set to `launcher`.
+    pub fn run_launched(&self, cwd: &Path, launcher: &str, args: &[&str]) -> boom::cli::Outcome {
+        let mut env = self.env.clone();
+        env.cwd = Some(cwd.to_owned());
+        env.boom_repository = Some(launcher.to_owned());
+        let store = self.store_arg();
+        let mut all: Vec<&str> = args.to_vec();
+        all.extend(["--store", &store]);
+        boom::cli::run(all, &self.keys, &env)
     }
 
     /// Runs `args` on the place's store with `cwd` its working folder.

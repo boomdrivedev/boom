@@ -11,11 +11,12 @@ repository's MADR records and rules page once, proposing each in its
 file's own words for a person to accept together, attached to that
 repository. A version binds the repositories its proposal names, or the
 whole system, once a person accepts it, and `boom query` gives an agent
-every claim that stands for its repository, named or declared in
-`.config/boom.toml`, from views kept in step with the log, which
-`boom verify` checks against a full replay; its Claude Code plugin's
-session hook runs `boom query --if-declared`, so a session in a declared
-repository starts with those claims, and `boom search` finds the claims
+every claim that stands for its repository, named, set by its launcher
+in `BOOM_REPOSITORY`, or matched by its git remote against the
+repositories an owner registers with `boom repo add`, from views kept in
+step with the log, which `boom verify` checks against a full replay; its
+Claude Code plugin's session hook runs `boom query --if-declared`, so a
+session in a registered repository starts with those claims, and `boom search` finds the claims
 that stand by their words, in a repository or every repository.
 `boom mcp` serves an agent's program the commands it may run,
 `propose`, `show`, `log`, `query`, `search` and the imports, as MCP

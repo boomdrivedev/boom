@@ -126,6 +126,17 @@ pub enum Act {
         /// once.
         versions: Vec<Named>,
     },
+    /// A repository's settings, set by an owner (repository-settings):
+    /// its name, its remote in one form, and whether a session gets its
+    /// context when it starts.
+    Repository {
+        /// The repository's name, kebab case.
+        name: String,
+        /// Its remote, in the one form `repository::remote_form` gives.
+        remote: String,
+        /// Whether a session in it gets its context at session start.
+        session: bool,
+    },
     /// A version rejected, with why.
     Rejected {
         /// The claim's name.
@@ -145,6 +156,7 @@ impl Act {
             Act::Proposed { .. } => "proposed",
             Act::Accepted { .. } => "accepted",
             Act::Rejected { .. } => "rejected",
+            Act::Repository { .. } => "repository",
         }
     }
 
@@ -153,7 +165,7 @@ impl Act {
     /// none for a registration.
     pub fn targets(&self) -> Vec<(&str, &str)> {
         match self {
-            Act::Registered { .. } => Vec::new(),
+            Act::Registered { .. } | Act::Repository { .. } => Vec::new(),
             Act::Proposed { claim, .. } => vec![(&claim.name, &claim.version)],
             Act::Accepted { versions } => versions
                 .iter()
@@ -251,6 +263,18 @@ struct AcceptedPart {
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RepositoryPart {
+    format: String,
+    act: String,
+    at: u64,
+    actor: Actor,
+    name: String,
+    remote: String,
+    session: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RejectedPart {
     format: String,
     act: String,
@@ -313,6 +337,19 @@ impl Entry {
                     version: None,
                     versions: Some(several.to_vec()),
                 },
+            }),
+            Act::Repository {
+                name,
+                remote,
+                session,
+            } => serde_json::to_string(&RepositoryPart {
+                format,
+                act,
+                at,
+                actor,
+                name: name.clone(),
+                remote: remote.clone(),
+                session: *session,
             }),
             Act::Rejected {
                 name,
@@ -389,6 +426,18 @@ impl Entry {
                     at: part.at,
                     actor: part.actor,
                     act: Act::Accepted { versions },
+                })
+            }
+            Some("repository") => {
+                let part: RepositoryPart = serde_json::from_str(signed).map_err(form)?;
+                Ok(Entry {
+                    at: part.at,
+                    actor: part.actor,
+                    act: Act::Repository {
+                        name: part.name,
+                        remote: part.remote,
+                        session: part.session,
+                    },
                 })
             }
             Some("rejected") => {

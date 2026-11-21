@@ -31,6 +31,22 @@ pub struct Person {
     pub registered_in: u64,
 }
 
+/// A repository a store registers, with its settings, as the newest
+/// counted `repository` entry for it gives them (repository-settings).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Repository {
+    /// Its name, kebab case.
+    pub name: String,
+    /// Its remote, in one form.
+    pub remote: String,
+    /// Whether a session in it gets its context at session start.
+    pub session: bool,
+    /// The owner who set it.
+    pub set_by: String,
+    /// The entry that set it.
+    pub set_in: u64,
+}
+
 /// A version's status, read from the log (claim-versions).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -138,6 +154,8 @@ pub struct State {
     /// The store's first owner, the person its first counted entry
     /// registers.
     pub first_owner: Option<String>,
+    /// The repositories the store registers, by name.
+    pub repositories: BTreeMap<String, Repository>,
 }
 
 impl State {
@@ -291,6 +309,16 @@ fn check_form(act: &Act) -> Result<(), String> {
             }
             Ok(())
         }
+        Act::Repository { name, remote, .. } => {
+            crate::repository::check_name(name)?;
+            // A remote kept in its one form reads back as itself.
+            match crate::repository::remote_form(&format!("https://{remote}")) {
+                Some(form) if &form == remote => Ok(()),
+                _ => Err(format!(
+                    "a repository's remote is kept in one form, its host and path: {remote} is not"
+                )),
+            }
+        }
         Act::Rejected { name, reason, .. } => {
             claim::check_name(name)?;
             if reason.trim().is_empty() {
@@ -408,6 +436,11 @@ fn check_agent(act: &Act, provenance: &str, proof: Proof<'_>) -> Result<(), Stri
                 "only an owner registers a person: a person's act needs their signature".to_owned(),
             )
         }
+        Act::Repository { .. } => {
+            return Err(
+                "only an owner sets a repository: a person's act needs their signature".to_owned(),
+            )
+        }
     }
     if provenance.trim().is_empty() {
         return Err("an agent's proposal names its provenance, with --provenance".to_owned());
@@ -472,7 +505,43 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
             let rejecter = actor_name(&entry.actor).unwrap_or_default();
             check_reject(state, name, version, rejecter)
         }
+        Act::Repository {
+            name,
+            remote,
+            session,
+        } => check_repository(state, &entry.actor, name, remote, *session),
     }
+}
+
+/// A repository's settings: an owner's act; a remote no other repository
+/// has; the settings it holds already, a repeat.
+fn check_repository(
+    state: &State,
+    actor: &Actor,
+    name: &str,
+    remote: &str,
+    session: bool,
+) -> Result<Verdict, String> {
+    let owner = actor_name(actor).and_then(|name| state.persons.get(name));
+    if !owner.is_some_and(|owner| owner.owner) {
+        return Err("only an owner sets a repository".to_owned());
+    }
+    if let Some(other) = state
+        .repositories
+        .values()
+        .find(|other| other.remote == remote && other.name != name)
+    {
+        return Err(format!(
+            "the remote {remote} is the remote of {}",
+            other.name
+        ));
+    }
+    if let Some(set) = state.repositories.get(name) {
+        if set.remote == remote && set.session == session {
+            return Ok(Verdict::Repeats(set.set_in));
+        }
+    }
+    Ok(Verdict::Counts)
 }
 
 fn check_registration(
@@ -749,6 +818,22 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
             for named in versions {
                 apply_accept(state, seq, actor.clone(), &named.name, &named.version);
             }
+        }
+        Act::Repository {
+            name,
+            remote,
+            session,
+        } => {
+            state.repositories.insert(
+                name.clone(),
+                Repository {
+                    name: name.clone(),
+                    remote: remote.clone(),
+                    session: *session,
+                    set_by: actor.unwrap_or_default(),
+                    set_in: seq,
+                },
+            );
         }
         Act::Rejected {
             name,

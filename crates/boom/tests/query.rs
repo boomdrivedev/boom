@@ -211,10 +211,7 @@ fn nothing_stands() {
     assert_eq!(answer["claims"], json!([]));
     let words = place.run(&["query", "--repository", "shop"]);
     assert_eq!(words.code, 0, "{words:?}");
-    assert_eq!(
-        words.stdout,
-        "No claim stands for shop, at entry 1 of the store's log.\n"
-    );
+    assert_eq!(words.stdout, "Boom: 0 claims for shop, at entry 1\n");
 }
 
 #[test]
@@ -266,7 +263,7 @@ fn answered_in_words() {
     assert_eq!(
         outcome.stdout,
         format!(
-            "2 claims stand for shop, at entry {last} of the store's log.\n\
+            "Boom: 2 claims for shop, at entry {last}\n\
              invariant money-has-currency@{money}: {MONEY}\n\
              decision amounts-in-cents@{cents}: {CENTS}\n\
              \x20 body: boom show amounts-in-cents@{cents}\n"
@@ -319,8 +316,9 @@ fn refused_in(place: &Place, cwd: &std::path::Path) -> String {
 #[test]
 fn declared_by_the_repository() {
     let place = Place::new();
-    money_in_shop(&place);
-    place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let (ada, _) = money_in_shop(&place);
+    place.repository("shop-repo", Some(support::SHOP_REMOTE));
+    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
     let inside = place.empty_folder("shop-repo/src/money");
     let answer = place.json_in(&inside, &["query"]);
     assert_eq!(answer["repository"], "shop");
@@ -329,7 +327,7 @@ fn declared_by_the_repository() {
     assert!(
         words
             .stdout
-            .starts_with("1 claim stands for shop, at entry "),
+            .starts_with("Boom: 1 claim for shop, at entry "),
         "{words:?}"
     );
 }
@@ -337,30 +335,44 @@ fn declared_by_the_repository() {
 #[test]
 fn named_outright() {
     let place = Place::new();
-    money_in_shop(&place);
-    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let (ada, _) = money_in_shop(&place);
+    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
+    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
     let answer = place.json_in(&repo, &["query", "--repository", "ledger"]);
     assert_eq!(answer["repository"], "ledger");
     assert_eq!(answer["claims"], json!([]));
 }
 
 #[test]
+fn named_by_the_launcher() {
+    let place = Place::new();
+    let (ada, _) = money_in_shop(&place);
+    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
+    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
+    place.repo_added(&ada, "flume", "https://github.com/example/flume");
+    let outcome = place.run_launched(&repo, "flume", &["query", "--json"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
+    assert_eq!(answer["repository"], "flume");
+}
+
+#[test]
 fn neither_named_nor_declared_is_refused() {
     let place = Place::new();
-    money_in_shop(&place);
-    let repo = place.repository("undeclared", None);
+    let (ada, _) = money_in_shop(&place);
+    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
+    let repo = place.repository("undeclared", Some("git@github.com:example/other.git"));
     let words = refused_in(&place, &repo);
     assert!(words.contains("--repository"), "{words}");
-    assert!(words.contains(".config/boom.toml"), "{words}");
+    assert!(words.contains("boom repo add"), "{words}");
 }
 
 #[test]
 fn a_declaration_above_the_repository_is_not_read() {
     let place = Place::new();
     money_in_shop(&place);
-    let above = place.empty_folder("above");
-    place.declare(&above, "repository = \"shop\"\n");
-    let repo = place.repository("above/repo", None);
+    let repo = place.repository("declared", None);
+    place.declare(&repo, "repository = \"shop\"\n");
     let words = refused_in(&place, &repo);
     assert!(words.contains("--repository"), "{words}");
 }
@@ -379,22 +391,28 @@ fn outside_a_repository_no_declaration_is_read() {
 fn a_declaration_it_cannot_read_is_refused() {
     let place = Place::new();
     money_in_shop(&place);
-    let named = place.repository("named", Some("repository = \"Shop\"\n"));
-    let file = named.join(".config/boom.toml");
-    let words = refused_in(&place, &named);
-    assert!(words.contains(file.to_str().unwrap()), "{words}");
-    assert!(
-        words.contains("a repository's name is kebab case"),
-        "{words}"
-    );
-    let other = place.repository(
-        "other",
-        Some("repository = \"shop\"\ncontext = \"billing\"\n"),
-    );
-    let file = other.join(".config/boom.toml");
-    let words = refused_in(&place, &other);
-    assert!(words.contains(file.to_str().unwrap()), "{words}");
-    assert!(words.contains("context"), "{words}");
+    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
+    let before = log_rows(&place);
+    let outcome = place.run_launched(&repo, "nowhere", &["query"]);
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    assert!(outcome.stderr.contains("nowhere"), "{outcome:?}");
+    assert!(outcome.stderr.contains("BOOM_REPOSITORY"), "{outcome:?}");
+    assert_eq!(log_rows(&place), before);
+}
+
+#[test]
+fn two_repositories_that_match_are_refused() {
+    let place = Place::new();
+    let (ada, _) = money_in_shop(&place);
+    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
+    place.repo_added(&ada, "flume", "https://github.com/example/flume");
+    let repo = place.repository("both", Some(support::SHOP_REMOTE));
+    let config = repo.join(".git/config");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str("[remote \"other\"]\n\turl = https://github.com/example/flume\n");
+    std::fs::write(&config, text).unwrap();
+    let words = refused_in(&place, &repo);
+    assert!(words.contains("shop") && words.contains("flume"), "{words}");
 }
 
 #[test]
@@ -574,8 +592,9 @@ fn answered_nothing(outcome: &boom::cli::Outcome) {
 #[test]
 fn if_declared_answers_as_without_it() {
     let place = Place::new();
-    money_in_shop(&place);
-    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let (ada, _) = money_in_shop(&place);
+    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
+    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
     let inside = place.empty_folder("shop-repo/src/money");
     for cwd in [&repo, &inside] {
         for json in [&[][..], &["--json"][..]] {
@@ -590,6 +609,19 @@ fn if_declared_answers_as_without_it() {
             assert_eq!(with, without);
         }
     }
+}
+
+#[test]
+fn if_declared_with_delivery_off_answers_nothing() {
+    let place = Place::new();
+    let (ada, _) = money_in_shop(&place);
+    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
+    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
+    let set = place.run(&["repo", "set", "shop", "--session", "off", "--key", &ada]);
+    assert_eq!(set.code, 0, "{set:?}");
+    answered_nothing(&place.run_in(&repo, &["query", "--if-declared"]));
+    let asked = place.run_in(&repo, &["query", "--repository", "shop"]);
+    assert!(asked.stdout.contains("money-has-currency"), "{asked:?}");
 }
 
 #[test]
@@ -638,23 +670,19 @@ fn if_declared_with_nothing_declared_answers_null_json() {
 fn if_declared_refuses_a_declaration_it_cannot_read() {
     let place = Place::new();
     money_in_shop(&place);
-    let named = place.repository("named", Some("repository = \"Shop\"\n"));
-    let file = named.join(".config/boom.toml");
+    let repo = place.repository("named", Some(support::SHOP_REMOTE));
     let before = log_rows(&place);
-    let outcome = place.run_in(&named, &["query", "--if-declared"]);
+    let outcome = place.run_launched(&repo, "nowhere", &["query", "--if-declared"]);
     assert_eq!(outcome.code, 2, "{outcome:?}");
     assert_eq!(outcome.stdout, "", "{outcome:?}");
-    assert!(
-        outcome.stderr.contains(file.to_str().unwrap()),
-        "{outcome:?}"
-    );
+    assert!(outcome.stderr.contains("nowhere"), "{outcome:?}");
     assert_eq!(log_rows(&place), before);
 }
 
 #[test]
 fn if_declared_with_a_repository_is_refused() {
     let place = Place::new();
-    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
     let outcome = place.run_in(&repo, &["query", "--if-declared", "--repository", "shop"]);
     assert_eq!(outcome.code, 2, "{outcome:?}");
     assert_eq!(outcome.stdout, "", "{outcome:?}");

@@ -11,7 +11,7 @@ nothing, so an agent or another tool can call boom and read its answer
 
 ### Requirement: The commands
 
-Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import adr` and `import rules`. Each command SHALL take `--store <path>` and `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line that calls the engine of the library. Thus a caller gets from the command what the engine does.
+Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import adr`, `import rules`, `repo add`, `repo set` and `repo show`. Each command SHALL take `--store <path>` and `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line that calls the engine of the library. Thus a caller gets from the command what the engine does.
 
 #### Scenario: The version
 
@@ -32,6 +32,11 @@ Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log
 
 - **WHEN** `boom verify --store <path> --json` runs on a new store
 - **THEN** standard output is one JSON object whose `format` is `boom-verify/1`. It names the last entry of the log and no view built again. Boom exits 0
+
+#### Scenario: The repositories answered as JSON
+
+- **WHEN** `boom repo show --store <path> --json` runs on a store that registers one repository
+- **THEN** standard output is one JSON object whose `format` is `boom-repo/1`, and boom exits 0
 
 ### Requirement: Exit codes
 

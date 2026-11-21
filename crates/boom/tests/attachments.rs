@@ -102,8 +102,9 @@ fn bound_to_the_whole_system() {
 #[test]
 fn the_repository_the_working_folder_declares() {
     let place = Place::new();
-    place.made();
-    let repo = place.repository("shop-repo", Some("repository = \"shop\"\n"));
+    let ada = place.made();
+    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
+    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
     let inside = place.empty_folder("shop-repo/src/money");
     let answer = place.json_in(&inside, &money(&[]));
     assert_eq!(answer["repositories"], json!(["shop"]));
@@ -291,7 +292,12 @@ fn amending<'a>(base: &'a str, extra: &[&'a str]) -> Vec<&'a str> {
 fn amended_with_nothing_named_keeps_its_bases() {
     let place = Place::new();
     let base = standing_in_shop(&place);
-    let ledger = place.repository("ledger-repo", Some("repository = \"ledger\"\n"));
+    let ledger = place.repository("ledger-repo", Some("git@github.com:example/ledger.git"));
+    place.repo_added(
+        &place.key("ada", 1),
+        "ledger",
+        "git@github.com:example/ledger.git",
+    );
     let amendment = place.json_in(&ledger, &amending(&base, &[]));
     assert_eq!(amendment["base"], base.as_str());
     assert_eq!(amendment["repositories"], json!(["shop"]));

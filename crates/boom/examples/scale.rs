@@ -99,6 +99,7 @@ impl Keys for AdasKey {
 
 fn env(dir: &Path) -> boom::cli::Env {
     boom::cli::Env {
+        boom_repository: None,
         xdg_data_home: Some(dir.join("data")),
         home: Some(dir.join("home")),
         cwd: Some(dir.to_owned()),
