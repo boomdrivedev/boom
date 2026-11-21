@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 16,
+  "branch": "main",
+  "head": "8c1ee62eff02334942b6e2d2e51b52b9caa8d2ad",
+  "from": {
+    "agent": "change/boom-keeps-terms",
+    "worktree": "pull/23",
+    "head": "change/boom-keeps-terms"
+  },
+  "submitted": "2026-11-21T03:03:05Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 2,
+  "state": "landed",
+  "tested": {
+    "combination": "74655ca7ee399075c7f524931a51cb15e004418f",
+    "on": "0d25c15011a02768f04e4747e0b9b3c1e6f0249e",
+    "submissions": [
+      16
+    ]
+  },
+  "result": "passed",
+  "landed_as": "4f50e90bfd03d9bcb8a3675d7c792b310735a75a",
+  "subject": "change/boom-keeps-terms",
+  "under_test_ms": 62000
+}

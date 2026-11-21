@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 4,
+  "branch": "main",
+  "head": "7a4e7e2915b07f538252389e9b929defd2d2fcb6",
+  "from": {
+    "agent": "change/boom-captures-intent-by-context",
+    "worktree": "pull/16",
+    "head": "change/boom-captures-intent-by-context"
+  },
+  "submitted": "2026-11-20T23:18:36Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "10e9c869b3359bea2d6423961478359bebab07c1",
+    "on": "435e99f520c97eb834ec8198e2866fbc1254b5f3",
+    "submissions": [
+      4
+    ]
+  },
+  "result": "passed",
+  "landed_as": "2ebea232cfd260e1ca2d95ca4fa69c1cb2b79fa2",
+  "subject": "each kind of claim needs its own fields, the status words are proposed, accepted, rejected, superseded and deprecated, and each command reads only the view rows it needs",
+  "under_test_ms": 54000
+}

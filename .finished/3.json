@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 3,
+  "branch": "main",
+  "head": "e980708aa7c9d54c0c1a85e90430b57735da6fea",
+  "from": {
+    "agent": "change/boom-keeps-its-views-in-step",
+    "worktree": "pull/15",
+    "head": "change/boom-keeps-its-views-in-step"
+  },
+  "submitted": "2026-11-20T23:15:56Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "4fbf52131f202081db0c1d858628403342c77277",
+    "on": "75686af3dd8150320e238fb8e4cb50f46ad1e674",
+    "submissions": [
+      3
+    ]
+  },
+  "result": "passed",
+  "landed_as": "435e99f520c97eb834ec8198e2866fbc1254b5f3",
+  "subject": "boom keeps its views in step with the log, and boom verify replays the whole log",
+  "under_test_ms": 66000
+}

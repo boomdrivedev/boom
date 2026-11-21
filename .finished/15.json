@@ -1,0 +1,38 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 15,
+  "branch": "main",
+  "head": "e1f7900bd01ef17baa5520aa1fead867ae27ccac",
+  "from": {
+    "agent": "change/boom-keeps-terms",
+    "worktree": "pull/23",
+    "head": "change/boom-keeps-terms"
+  },
+  "submitted": "2026-11-21T02:58:18Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "withdrawn",
+  "tested": {
+    "combination": "1cde992a9fb2354a15c6d66c737f2b12177c3c97",
+    "on": "0d25c15011a02768f04e4747e0b9b3c1e6f0249e",
+    "submissions": [
+      15
+    ]
+  },
+  "result": "failed",
+  "failed": [
+    {
+      "task": "root:terms",
+      "hash": "2dc16f15b65c837c59fcf406ec286a271901f88f950c2848111ade9b720b51bd",
+      "log": "/Users/chuck/.local/share/boomdrive/repositories/boomdrivedev/boom/boom.git/sluice-remote/origin/.logs/main/c17/root:terms.log",
+      "unsigned": "root:terms: .boom-terms/head.json is not in the tree"
+    }
+  ],
+  "withdrawn": {
+    "by": "resubmission",
+    "at": "2026-11-21T03:03:05Z"
+  },
+  "subject": "change/boom-keeps-terms",
+  "under_test_ms": 59000
+}

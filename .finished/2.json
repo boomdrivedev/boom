@@ -1,0 +1,26 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 2,
+  "branch": "main",
+  "head": "8b57a67555dcfb0f3e9d0253f7adeaa0044b0ace",
+  "from": {
+    "agent": "bolt/boom-holds-the-rules-agents-read",
+    "worktree": "pull/14",
+    "head": "bolt/boom-holds-the-rules-agents-read"
+  },
+  "submitted": "2026-11-19T19:18:19Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 2,
+  "state": "landed",
+  "tested": {
+    "combination": "61ce63b3ddda5fe1a07fb0a0ac79c7070b72144c",
+    "on": "429dcbc38ffb1af04aabe88c11f9c39250abac9e",
+    "submissions": [
+      2
+    ]
+  },
+  "result": "passed",
+  "landed_as": "75686af3dd8150320e238fb8e4cb50f46ad1e674",
+  "subject": "bolt/boom-holds-the-rules-agents-read"
+}

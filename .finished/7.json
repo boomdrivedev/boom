@@ -1,0 +1,26 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 7,
+  "branch": "main",
+  "head": "55a72ffe7089a88352f6f6e302d6a536ac072cca",
+  "from": {
+    "agent": "bolt/booms-changes-are-checked-as-archived",
+    "worktree": "pull/9",
+    "head": "bolt/booms-changes-are-checked-as-archived"
+  },
+  "submitted": "2026-11-16T23:20:33Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "f36304b83e0dc6cdbe7d8a18ded42ffc57783d2a",
+    "on": "de40c080d44c4091e1cab1a38b9ba45af7f61a28",
+    "submissions": [
+      7
+    ]
+  },
+  "result": "passed",
+  "landed_as": "0d3600ffdab3c665e12e3049a058b983d49e0dcb",
+  "subject": "bolt/booms-changes-are-checked-as-archived"
+}

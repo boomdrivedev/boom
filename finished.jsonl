@@ -1,0 +1,22 @@
+{"id":5,"state":"landed","worktree":"pull/8","subject":"bolt/booms-checks-read-no-markdown"}
+{"id":7,"state":"landed","worktree":"pull/9","subject":"bolt/booms-changes-are-checked-as-archived"}
+{"id":8,"state":"landed","worktree":"pull/10","subject":"design/boom-keeps-a-local-database"}
+{"id":9,"state":"landed","worktree":"pull/11","subject":"design/record-5-accepted"}
+{"id":13,"state":"landed","worktree":"pull/12","subject":"design/a-repository-moves-into-boom-whole"}
+{"id":14,"state":"landed","worktree":"pull/13","subject":"fix/main--sluice-policy-names-its-signers"}
+{"id":1,"state":"withdrawn","worktree":"pull/14","subject":"bolt/boom-holds-the-rules-agents-read"}
+{"id":2,"state":"landed","worktree":"pull/14","subject":"bolt/boom-holds-the-rules-agents-read"}
+{"id":3,"state":"landed","worktree":"pull/15","subject":"boom keeps its views in step with the log, and boom verify replays the whole log"}
+{"id":4,"state":"landed","worktree":"pull/16","subject":"each kind of claim needs its own fields, the status words are proposed, accepted, rejected, superseded and deprecated, and each command reads only the view rows it needs"}
+{"id":6,"state":"landed","worktree":"pull/17","subject":"the release workflow takes turns, so two landings close together get two tags"}
+{"id":8,"state":"landed","worktree":"pull/18","subject":"the rules page and records 0001 to 0011 and the rename, in Plain"}
+{"id":10,"state":"landed","worktree":"pull/19","subject":"each rule's details say what breaks the rule and what does not, in Plain"}
+{"id":11,"state":"landed","worktree":"pull/20","subject":"boom log names the version of each act, and boom show takes an entry number and shows a claim's newest version in full"}
+{"id":12,"state":"landed","worktree":"pull/21","subject":"boom accept of several versions is one entry that the key signs one time"}
+{"id":14,"state":"landed","worktree":"pull/22","subject":"the repository of a session comes from the launcher or a registered remote, and the hook names what Boom found"}
+{"id":15,"state":"withdrawn","worktree":"pull/23","subject":"change/boom-keeps-terms"}
+{"id":16,"state":"landed","worktree":"pull/23","subject":"change/boom-keeps-terms"}
+{"id":17,"state":"landed","worktree":"pull/24","subject":"change/the-graphs-first-edges"}
+{"id":18,"state":"landed","worktree":"pull/25","subject":"change/contexts-own-paths"}
+{"id":19,"state":"landed","worktree":"pull/26","subject":"change/terms-match-a-hyphenated-word-whole"}
+{"id":20,"state":"landed","worktree":"pull/27","subject":"fix/came-from-before-origin"}

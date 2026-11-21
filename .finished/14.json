@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 14,
+  "branch": "main",
+  "head": "2356fdce12c2216a73a38c74ceb4ae4d3dbd3961",
+  "from": {
+    "agent": "change/context-at-session-start",
+    "worktree": "pull/22",
+    "head": "change/context-at-session-start"
+  },
+  "submitted": "2026-11-21T02:23:36Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "d4d447ffeeae817ba2dbfc6a332eed10e0c05173",
+    "on": "8e7fa62396d3fb934c561d4823151a2e5c3cfc5c",
+    "submissions": [
+      14
+    ]
+  },
+  "result": "passed",
+  "landed_as": "0d25c15011a02768f04e4747e0b9b3c1e6f0249e",
+  "subject": "the repository of a session comes from the launcher or a registered remote, and the hook names what Boom found",
+  "under_test_ms": 45000
+}

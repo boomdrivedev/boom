@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 10,
+  "branch": "main",
+  "head": "b4ff214bde779dce4bfcba0508dbb029c878a8e3",
+  "from": {
+    "agent": "change/rule-details-in-plain",
+    "worktree": "pull/19",
+    "head": "change/rule-details-in-plain"
+  },
+  "submitted": "2026-11-20T23:58:26Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "0cd86e2aa2198f5c0171e2cf649bd58fb6da5dcd",
+    "on": "c0cbe116afcbb4952cdb17c2f0222e65c8e806f8",
+    "submissions": [
+      10
+    ]
+  },
+  "result": "passed",
+  "landed_as": "18272d706e7395ac1ca7919932751af4d0bbfbeb",
+  "subject": "each rule's details say what breaks the rule and what does not, in Plain",
+  "under_test_ms": 34000
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 9,
+  "branch": "main",
+  "head": "a72899d91fc9c7418f5eecadcc13d42150e1a896",
+  "from": {
+    "agent": "boomdrive-design",
+    "worktree": "pull/11",
+    "head": "design/record-5-accepted"
+  },
+  "submitted": "2026-11-18T18:56:32Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "1885a13dcaecf660d10c2ee06c9adf1b4c5876fa",
+    "on": "0ad331f7b02e5a0cc351bbccbcaa2dbb24d595e2",
+    "submissions": [
+      9
+    ]
+  },
+  "result": "passed",
+  "landed_as": "54c73d182c51482f263d6a99aacf933415b488e0",
+  "subject": "design/record-5-accepted"
+}

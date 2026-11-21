@@ -1,0 +1,37 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 1,
+  "branch": "main",
+  "head": "2d378b8db6c65d620e3e4431b287154f51028fcb",
+  "from": {
+    "agent": "bolt/boom-holds-the-rules-agents-read",
+    "worktree": "pull/14",
+    "head": "bolt/boom-holds-the-rules-agents-read"
+  },
+  "submitted": "2026-11-19T14:22:08Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "withdrawn",
+  "tested": {
+    "combination": "a0ce17e6565ff48a772b4df97f48246b9bea9982",
+    "on": "429dcbc38ffb1af04aabe88c11f9c39250abac9e",
+    "submissions": [
+      1
+    ]
+  },
+  "result": "failed",
+  "failed": [
+    {
+      "task": "root:format",
+      "hash": "1c611e6cc00f4f7343efbfa1408109a3d907230481cc35471a5a8c555a16e8a5",
+      "log": "/Users/chuck/.local/share/boomdrive/repositories/boomdrivedev/boom/boom.git/sluice-remote/origin/.logs/main/c7/root:format.log",
+      "unsigned": "root:format: .devenv/bootstrap/bootstrapLib.nix is not in the tree"
+    }
+  ],
+  "withdrawn": {
+    "by": "resubmission",
+    "at": "2026-11-19T19:18:19Z"
+  },
+  "subject": "bolt/boom-holds-the-rules-agents-read"
+}

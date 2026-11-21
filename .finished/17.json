@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 17,
+  "branch": "main",
+  "head": "c5cf2b0c6b35d99376c65a30703bd39d834d97d4",
+  "from": {
+    "agent": "change/the-graphs-first-edges",
+    "worktree": "pull/24",
+    "head": "change/the-graphs-first-edges"
+  },
+  "submitted": "2026-11-21T03:58:30Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "0a256c97f29c888157a06bd34b2a2f43235f02bb",
+    "on": "4f50e90bfd03d9bcb8a3675d7c792b310735a75a",
+    "submissions": [
+      17
+    ]
+  },
+  "result": "passed",
+  "landed_as": "ac0b18a4ed81d9721a7caa7c6e3a3303807123e0",
+  "subject": "change/the-graphs-first-edges",
+  "under_test_ms": 56000
+}
