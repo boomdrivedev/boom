@@ -119,12 +119,12 @@ pub enum Act {
         /// `None`, the whole system.
         attach: Option<Attach>,
     },
-    /// A version accepted.
+    /// One or more versions accepted, by one act of a person that one
+    /// signature covers (record-log, "One accept names each version").
     Accepted {
-        /// The claim's name.
-        name: String,
-        /// The version.
-        version: String,
+        /// The versions, in the order the person named them, each claim
+        /// once.
+        versions: Vec<Named>,
     },
     /// A version rejected, with why.
     Rejected {
@@ -148,18 +148,40 @@ impl Act {
         }
     }
 
-    /// The version the act names, as its claim's name and its version:
-    /// a proposal's, an accept's or a reject's, and none for a
-    /// registration.
-    pub fn target(&self) -> Option<(&str, &str)> {
+    /// The versions the act names, each as its claim's name and its
+    /// version: a proposal's or a reject's one, an accept's each, and
+    /// none for a registration.
+    pub fn targets(&self) -> Vec<(&str, &str)> {
         match self {
-            Act::Registered { .. } => None,
-            Act::Proposed { claim, .. } => Some((&claim.name, &claim.version)),
-            Act::Accepted { name, version } | Act::Rejected { name, version, .. } => {
-                Some((name, version))
-            }
+            Act::Registered { .. } => Vec::new(),
+            Act::Proposed { claim, .. } => vec![(&claim.name, &claim.version)],
+            Act::Accepted { versions } => versions
+                .iter()
+                .map(|named| (named.name.as_str(), named.version.as_str()))
+                .collect(),
+            Act::Rejected { name, version, .. } => vec![(name, version)],
         }
     }
+
+    /// An accept of the one version `name@version`.
+    pub fn accepted(name: &str, version: &str) -> Act {
+        Act::Accepted {
+            versions: vec![Named {
+                name: name.to_owned(),
+                version: version.to_owned(),
+            }],
+        }
+    }
+}
+
+/// A version named by its claim's name and its fingerprint.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Named {
+    /// The claim's name.
+    pub name: String,
+    /// The version.
+    pub version: String,
 }
 
 /// What a proposed version binds, written after its claim and no part
@@ -209,6 +231,9 @@ struct ProposedPart {
     attach: Option<Attach>,
 }
 
+/// An accept of one version keeps the form it always had, `name` and
+/// `version`; an accept of several names them in `versions`, so an entry
+/// written before several could be accepted at once reads as it did.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AcceptedPart {
@@ -216,8 +241,12 @@ struct AcceptedPart {
     act: String,
     at: u64,
     actor: Actor,
-    name: String,
-    version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    versions: Option<Vec<Named>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -265,13 +294,25 @@ impl Entry {
                 imported: imported.clone(),
                 attach: attach.clone(),
             }),
-            Act::Accepted { name, version } => serde_json::to_string(&AcceptedPart {
-                format,
-                act,
-                at,
-                actor,
-                name: name.clone(),
-                version: version.clone(),
+            Act::Accepted { versions } => serde_json::to_string(&match versions.as_slice() {
+                [one] => AcceptedPart {
+                    format,
+                    act,
+                    at,
+                    actor,
+                    name: Some(one.name.clone()),
+                    version: Some(one.version.clone()),
+                    versions: None,
+                },
+                several => AcceptedPart {
+                    format,
+                    act,
+                    at,
+                    actor,
+                    name: None,
+                    version: None,
+                    versions: Some(several.to_vec()),
+                },
             }),
             Act::Rejected {
                 name,
@@ -329,13 +370,25 @@ impl Entry {
             }
             Some("accepted") => {
                 let part: AcceptedPart = serde_json::from_str(signed).map_err(form)?;
+                let versions =
+                    match (part.name, part.version, part.versions) {
+                        (Some(name), Some(version), None) => vec![Named { name, version }],
+                        (None, None, Some(several)) if several.len() > 1 => several,
+                        (None, None, Some(_)) => return Err(
+                            "its form: an accept of one version names it by `name` and `version`"
+                                .to_owned(),
+                        ),
+                        _ => {
+                            return Err(
+                                "its form: an accept names `name` and `version`, or `versions`"
+                                    .to_owned(),
+                            )
+                        }
+                    };
                 Ok(Entry {
                     at: part.at,
                     actor: part.actor,
-                    act: Act::Accepted {
-                        name: part.name,
-                        version: part.version,
-                    },
+                    act: Act::Accepted { versions },
                 })
             }
             Some("rejected") => {

@@ -467,7 +467,12 @@ impl Scope {
                     scope.names.insert(claim.name.clone());
                     scope.imported |= imported.is_some();
                 }
-                Act::Accepted { name, .. } | Act::Rejected { name, .. } => {
+                Act::Accepted { versions } => {
+                    scope
+                        .names
+                        .extend(versions.iter().map(|named| named.name.clone()));
+                }
+                Act::Rejected { name, .. } => {
                     scope.names.insert(name.clone());
                 }
             }
@@ -740,9 +745,13 @@ fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), 
     match &entry.act {
         Act::Registered { person, .. } => write_person(conn, &state.persons[person]),
         Act::Proposed { claim, .. } => write_claim(conn, &state.claims[&claim.name]),
-        Act::Accepted { name, .. } | Act::Rejected { name, .. } => {
-            write_claim(conn, &state.claims[name])
+        Act::Accepted { versions } => {
+            for named in versions {
+                write_claim(conn, &state.claims[&named.name])?;
+            }
+            Ok(())
         }
+        Act::Rejected { name, .. } => write_claim(conn, &state.claims[name]),
     }
 }
 

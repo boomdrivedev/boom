@@ -273,7 +273,24 @@ fn check_form(act: &Act) -> Result<(), String> {
             claim.check()?;
             check_attach(attach.as_ref())
         }
-        Act::Accepted { name, .. } => claim::check_name(name),
+        Act::Accepted { versions } => {
+            for (at, named) in versions.iter().enumerate() {
+                claim::check_name(&named.name)?;
+                if versions[..at]
+                    .iter()
+                    .any(|before| before.name == named.name)
+                {
+                    return Err(format!(
+                        "an accept names each claim one time: it names {} twice",
+                        named.name
+                    ));
+                }
+            }
+            if versions.is_empty() {
+                return Err("an accept names a version".to_owned());
+            }
+            Ok(())
+        }
         Act::Rejected { name, reason, .. } => {
             claim::check_name(name)?;
             if reason.trim().is_empty() {
@@ -421,9 +438,35 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
             }
             check_proposal(state, claim, attach.as_ref())
         }
-        Act::Accepted { name, version } => {
+        Act::Accepted { versions } => {
+            // One act, judged whole: each version counts, or each is
+            // accepted already by this person and the act repeats.
             let accepter = actor_name(&entry.actor).unwrap_or_default();
-            check_accept(state, name, version, accepter)
+            let mut verdicts = Vec::with_capacity(versions.len());
+            for named in versions {
+                verdicts.push(
+                    check_accept(state, &named.name, &named.version, accepter)
+                        .map_err(|why| naming(&named.name, &named.version, why))?,
+                );
+            }
+            match verdicts.as_slice() {
+                [Verdict::Repeats(seq), rest @ ..]
+                    if rest.iter().all(|v| matches!(v, Verdict::Repeats(_))) =>
+                {
+                    Ok(Verdict::Repeats(*seq))
+                }
+                _ => match versions
+                    .iter()
+                    .zip(&verdicts)
+                    .find(|(_, verdict)| matches!(verdict, Verdict::Repeats(_)))
+                {
+                    Some((named, _)) => Err(format!(
+                        "{}@{} is accepted already: an accept of several versions names only versions that wait",
+                        named.name, named.version
+                    )),
+                    None => Ok(Verdict::Counts),
+                },
+            }
         }
         Act::Rejected { name, version, .. } => {
             let rejecter = actor_name(&entry.actor).unwrap_or_default();
@@ -702,38 +745,10 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 imported: imported.as_deref().cloned(),
             });
         }
-        Act::Accepted { name, version } => {
-            let claim = state
-                .claims
-                .get_mut(name)
-                .expect("a counted accept's claim");
-            let accepted = claim
-                .version_mut(version)
-                .expect("a counted accept's version");
-            if let Some(history) = &accepted.proposal.history {
-                // History is never in force and supersedes no version: it
-                // keeps its file's own status.
-                accepted.status = match history.status {
-                    claim::HistoryStatus::Superseded => Status::Superseded,
-                    claim::HistoryStatus::Deprecated => Status::Deprecated,
-                    claim::HistoryStatus::Rejected => Status::Rejected,
-                };
-                accepted.decided_by = actor;
-                accepted.decided_in = Some(seq);
-                return;
+        Act::Accepted { versions } => {
+            for named in versions {
+                apply_accept(state, seq, actor.clone(), &named.name, &named.version);
             }
-            if let Some(standing) = claim.standing.take() {
-                if let Some(superseded) = claim.version_mut(&standing) {
-                    superseded.status = Status::Superseded;
-                }
-            }
-            let accepted = claim
-                .version_mut(version)
-                .expect("a counted accept's version");
-            accepted.status = Status::Accepted;
-            accepted.decided_by = actor;
-            accepted.decided_in = Some(seq);
-            claim.standing = Some(version.clone());
         }
         Act::Rejected {
             name,
@@ -780,6 +795,51 @@ pub fn replay<'a>(
         .map(|(seq, signed, signature)| (seq, step(&mut state, seq, signed, signature)))
         .collect();
     (state, judgments)
+}
+
+/// A counted accept of `name@version`, applied to the state.
+fn apply_accept(state: &mut State, seq: u64, actor: Option<String>, name: &str, version: &str) {
+    let claim = state
+        .claims
+        .get_mut(name)
+        .expect("a counted accept's claim");
+    let accepted = claim
+        .version_mut(version)
+        .expect("a counted accept's version");
+    if let Some(history) = &accepted.proposal.history {
+        // History is never in force and supersedes no version: it
+        // keeps its file's own status.
+        accepted.status = match history.status {
+            claim::HistoryStatus::Superseded => Status::Superseded,
+            claim::HistoryStatus::Deprecated => Status::Deprecated,
+            claim::HistoryStatus::Rejected => Status::Rejected,
+        };
+        accepted.decided_by = actor;
+        accepted.decided_in = Some(seq);
+        return;
+    }
+    if let Some(standing) = claim.standing.take() {
+        if let Some(superseded) = claim.version_mut(&standing) {
+            superseded.status = Status::Superseded;
+        }
+    }
+    let accepted = claim
+        .version_mut(version)
+        .expect("a counted accept's version");
+    accepted.status = Status::Accepted;
+    accepted.decided_by = actor;
+    accepted.decided_in = Some(seq);
+    claim.standing = Some(version.to_owned());
+}
+
+/// A refusal of `name@version` that names it.
+fn naming(name: &str, version: &str, why: String) -> String {
+    let target = format!("{name}@{version}");
+    if why.contains(&target) {
+        why
+    } else {
+        format!("{target}: {why}")
+    }
 }
 
 #[cfg(test)]
