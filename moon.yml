@@ -30,8 +30,48 @@ tasks:
       - '!/site/dist/**'
       - '!/site/.astro/**'
       - '!/site/shots/**'
+      - '!/.boom-terms/**'
       - '/devenv.nix'
       - '/devenv.lock'
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}
+  # The last entry of the store's log, as the boom the tree builds reads it
+  # and writes nothing, written to .boom-terms/head.json for the
+  # terms task to declare as an input: a pass of that task replays only
+  # for the entry it read. It runs each time, and is no check of its own
+  # (check-terms.sh; term-check).
+  terms-head:
+    command: 'sh check-terms.sh head .boom-terms/head.json --repository boom'
+    options: {runFromWorkspaceRoot: true, cache: false}
+  # Each file the change adds or modifies against main, but those under
+  # openspec/changes/archive/, holds no old word of a term that a person
+  # accepted for boom, by boom terms check, the boom the tree builds. It
+  # reads a file for the old words of the accepted terms and for nothing
+  # else: the term tool's check of its own words, which
+  # no-task-reads-markdown allows. Its inputs are the tree's files that git
+  # does not ignore, as format's are, and the store's last entry that
+  # terms-head writes (check-terms.sh; term-check).
+  terms:
+    command: 'sh check-terms.sh check --repository boom'
+    deps: ['root:terms-head']
+    inputs:
+      - '/**/*'
+      - '!/**/.devenv/**'
+      - '!/**/.devenv.flake.nix'
+      - '!/**/devenv.local.nix'
+      - '!/**/.pre-commit-config.yaml'
+      - '!/**/.moon/cache/**'
+      - '!/result'
+      - '!/result/**'
+      - '!/**/.DS_Store'
+      - '!/target/**'
+      - '!/site/node_modules/**'
+      - '!/site/dist/**'
+      - '!/site/.astro/**'
+      - '!/site/shots/**'
+      - '/devenv.nix'
+      - '/devenv.lock'
+      - '/.boom-terms/head.json'
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
   # rustc, cargo, clippy and rustfmt are the build .prototools pins, and

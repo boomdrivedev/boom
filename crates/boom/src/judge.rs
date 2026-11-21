@@ -123,6 +123,9 @@ pub struct Claim {
     pub name: String,
     /// Its kind.
     pub kind: Kind,
+    /// The repository of a term, where one word can have a term in each
+    /// repository; none for the other kinds (term-claims).
+    pub repository: Option<String>,
     /// The version that stands, where one does.
     pub standing: Option<String>,
     /// Its versions, in the order proposed.
@@ -144,13 +147,30 @@ impl Claim {
     }
 }
 
+/// The key of a claim among a state's claims: its name, and the
+/// repository of a term or nothing for the other kinds.
+pub type Key = (String, String);
+
+/// The key of the claim `name`, a term of `repository` where one is
+/// given.
+pub fn key(name: &str, repository: Option<&str>) -> Key {
+    (name.to_owned(), repository.unwrap_or_default().to_owned())
+}
+
+impl Claim {
+    /// Its key among a state's claims.
+    pub fn key(&self) -> Key {
+        key(&self.name, self.repository.as_deref())
+    }
+}
+
 /// What the counted entries of a log, replayed in order, build.
 #[derive(Debug, Clone, Default)]
 pub struct State {
     /// The persons registered, by name.
     pub persons: BTreeMap<String, Person>,
-    /// The claims, by name.
-    pub claims: BTreeMap<String, Claim>,
+    /// The claims, by name and, for a term, its repository.
+    pub claims: BTreeMap<Key, Claim>,
     /// The store's first owner, the person its first counted entry
     /// registers.
     pub first_owner: Option<String>,
@@ -166,14 +186,42 @@ impl State {
             .find(|person| person.key.key_data() == key.key_data())
     }
 
+    /// The claims named `name`: one, or for a term one in each
+    /// repository, in the order of their repositories.
+    pub fn named(&self, name: &str) -> Vec<&Claim> {
+        self.claims
+            .range(key(name, None)..)
+            .take_while(|((named, _), _)| named == name)
+            .map(|(_, claim)| claim)
+            .collect()
+    }
+
+    /// The claim named `name` that holds `version`.
+    pub fn holding(&self, name: &str, version: &str) -> Option<&Claim> {
+        self.named(name)
+            .into_iter()
+            .find(|claim| claim.version(version).is_some())
+    }
+
+    fn holding_mut(&mut self, name: &str, version: &str) -> Option<&mut Claim> {
+        let key = self.holding(name, version)?.key();
+        self.claims.get_mut(&key)
+    }
+
     /// Each claim that stands with its standing version: for
     /// `Some(repository)`, those whose standing version binds that
     /// repository or the whole system; for `None`, every one. In the
-    /// order invariants, decisions, assumptions, each kind by name
-    /// (claim-search; design 4).
+    /// order invariants, decisions, assumptions and terms, each kind by
+    /// name and a term then by its repository (claim-search; design 4;
+    /// term-claims).
     pub fn standing_for(&self, repository: Option<&str>) -> Vec<(&Claim, &Version)> {
         let mut standing = Vec::new();
-        for kind in [Kind::Invariant, Kind::Decision, Kind::Assumption] {
+        for kind in [
+            Kind::Invariant,
+            Kind::Decision,
+            Kind::Assumption,
+            Kind::Term,
+        ] {
             for claim in self.claims.values().filter(|claim| claim.kind == kind) {
                 let Some(version) = claim
                     .standing
@@ -288,19 +336,16 @@ fn check_form(act: &Act) -> Result<(), String> {
             sign::check_key_type(&key)
         }
         Act::Proposed { claim, attach, .. } => {
-            claim.check()?;
-            check_attach(attach.as_ref())
+            check_attach(attach.as_ref())?;
+            claim.check(repositories(attach.as_ref()))
         }
         Act::Accepted { versions } => {
             for (at, named) in versions.iter().enumerate() {
                 claim::check_name(&named.name)?;
-                if versions[..at]
-                    .iter()
-                    .any(|before| before.name == named.name)
-                {
+                if versions[..at].iter().any(|before| before == named) {
                     return Err(format!(
-                        "an accept names each claim one time: it names {} twice",
-                        named.name
+                        "an accept names each version one time: it names {}@{} twice",
+                        named.name, named.version
                     ));
                 }
             }
@@ -476,7 +521,17 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
             // accepted already by this person and the act repeats.
             let accepter = actor_name(&entry.actor).unwrap_or_default();
             let mut verdicts = Vec::with_capacity(versions.len());
+            let mut claims: Vec<Key> = Vec::with_capacity(versions.len());
             for named in versions {
+                if let Some(claim) = state.holding(&named.name, &named.version) {
+                    if claims.contains(&claim.key()) {
+                        return Err(format!(
+                            "an accept names each claim one time: it names two versions of {}",
+                            named.name
+                        ));
+                    }
+                    claims.push(claim.key());
+                }
                 verdicts.push(
                     check_accept(state, &named.name, &named.version, accepter)
                         .map_err(|why| naming(&named.name, &named.version, why))?,
@@ -581,31 +636,49 @@ fn check_proposal(
     attach: Option<&Attach>,
 ) -> Result<Verdict, String> {
     let name = &proposal.name;
-    let claim = state.claims.get(name);
-    if let Some(claim) = claim {
-        if let Some(version) = claim.version(&proposal.version) {
-            // The same version under the same attachment is a repeat;
-            // under another, a move, which no proposal makes (record
-            // 0008, point 4).
-            if version.repositories == repositories(attach) {
-                return Ok(Verdict::Repeats(version.proposed_in));
-            }
-            return Err(format!(
-                "{name}@{} is attached to {}; a version's attachment does not move",
-                proposal.version,
-                repository::words(&version.repositories)
-            ));
+    if let Some(held) = state.holding(name, &proposal.version) {
+        // The same version under the same attachment is a repeat;
+        // under another, a move, which no proposal makes (record
+        // 0008, point 4).
+        let version = held
+            .version(&proposal.version)
+            .expect("the claim holds the version");
+        if version.repositories == repositories(attach) {
+            return Ok(Verdict::Repeats(version.proposed_in));
         }
-        if claim.kind != proposal.kind {
-            return Err(format!(
-                "the name {name} is taken by the {} {name}",
-                claim.kind.as_str()
-            ));
-        }
+        return Err(format!(
+            "{name}@{} is attached to {}; a version's attachment does not move",
+            proposal.version,
+            repository::words(&version.repositories)
+        ));
     }
+    // One name space, except that a word has a term in each repository
+    // (term-claims).
+    if let Some(other) = state
+        .named(name)
+        .into_iter()
+        .find(|claim| claim.kind != proposal.kind)
+    {
+        return Err(format!(
+            "the name {name} is taken by the {} {name}",
+            other.kind.as_str()
+        ));
+    }
+    let term = (proposal.kind == Kind::Term)
+        .then(|| repositories(attach).first().map(String::as_str))
+        .flatten();
+    let claim = state.claims.get(&key(name, term));
     match (&proposal.base, claim) {
         (Some(base), Some(claim)) if claim.version(base).is_some() => {}
-        (Some(base), _) => return Err(format!("the claim {name} has no version {base}")),
+        (Some(base), _) => {
+            if let (Some(term), Some(other)) = (term, state.holding(name, base)) {
+                return Err(format!(
+                    "the term {name}@{base} binds {}, and a term amends a version of its own repository, not {term}",
+                    other.repository.as_deref().unwrap_or_default()
+                ));
+            }
+            return Err(format!("the claim {name} has no version {base}"));
+        }
         (
             None,
             Some(Claim {
@@ -614,7 +687,7 @@ fn check_proposal(
             }),
         ) => {
             return Err(format!(
-                "{name}@{standing} stands: amend it, with --amends {standing}"
+                "{name}@{standing} is accepted: amend it, with --amends {standing}"
             ))
         }
         (None, _) => {}
@@ -651,7 +724,7 @@ fn check_imported(state: &State, proposal: &Proposal, imported: &Imported) -> Re
             claim.name,
         ));
     }
-    if let Some(claim) = state.claims.get(name) {
+    if let Some(claim) = state.named(name).first().copied() {
         return Err(format!(
             "the name {name} is held by the {} {name}: name {} otherwise in its draft",
             claim.kind.as_str(),
@@ -679,13 +752,14 @@ fn find<'a>(
     name: &str,
     version: &str,
 ) -> Result<(&'a Claim, &'a Version), String> {
-    let claim = state
-        .claims
-        .get(name)
-        .ok_or_else(|| format!("no claim has the name {name}"))?;
-    let found = claim
-        .version(version)
-        .ok_or_else(|| format!("the claim {name} has no version {version}"))?;
+    let claim = match state.holding(name, version) {
+        Some(claim) => claim,
+        None if state.named(name).is_empty() => {
+            return Err(format!("no claim has the name {name}"))
+        }
+        None => return Err(format!("the claim {name} has no version {version}")),
+    };
+    let found = claim.version(version).expect("the claim holds the version");
     Ok((claim, found))
 }
 
@@ -738,9 +812,9 @@ fn check_accept(
             .map_or("no version".to_owned(), |base| format!("{name}@{base}"));
         return Err(match &claim.standing {
             Some(standing) => format!(
-                "{name}@{standing} stands, and {name}@{version} amends {amends}: propose its words again amending {standing}"
+                "{name}@{standing} is accepted, and {name}@{version} amends {amends}: propose its words again amending {standing}"
             ),
-            None => format!("{name}@{version} amends {amends}, which does not stand"),
+            None => format!("{name}@{version} amends {amends}, which is not accepted"),
         });
     }
     Ok(Verdict::Counts)
@@ -793,12 +867,16 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
             imported,
             attach,
         } => {
+            let term = (claim.kind == Kind::Term)
+                .then(|| repositories(attach.as_ref()).first().cloned())
+                .flatten();
             let entry_claim = state
                 .claims
-                .entry(claim.name.clone())
+                .entry(key(&claim.name, term.as_deref()))
                 .or_insert_with(|| Claim {
                     name: claim.name.clone(),
                     kind: claim.kind,
+                    repository: term.clone(),
                     standing: None,
                     versions: Vec::new(),
                 });
@@ -841,8 +919,7 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
             reason,
         } => {
             let claim = state
-                .claims
-                .get_mut(name)
+                .holding_mut(name, version)
                 .expect("a counted reject's claim");
             let rejected = claim
                 .version_mut(version)
@@ -885,8 +962,7 @@ pub fn replay<'a>(
 /// A counted accept of `name@version`, applied to the state.
 fn apply_accept(state: &mut State, seq: u64, actor: Option<String>, name: &str, version: &str) {
     let claim = state
-        .claims
-        .get_mut(name)
+        .holding_mut(name, version)
         .expect("a counted accept's claim");
     let accepted = claim
         .version_mut(version)
@@ -962,10 +1038,11 @@ mod tests {
         let mut insert = |kind, name: &str, repositories: &[&str], status| {
             let version = version(kind, name, repositories, status);
             state.claims.insert(
-                name.to_owned(),
+                key(name, None),
                 Claim {
                     name: name.to_owned(),
                     kind,
+                    repository: None,
                     standing: (status == Status::Accepted)
                         .then_some(version.proposal.version.clone()),
                     versions: vec![version],

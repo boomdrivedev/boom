@@ -77,6 +77,7 @@ the rule.
   - the diagram test of the site, which reads `docs/diagrams/boom.svg`
   - Claude Code's own validation of the plugin and the marketplace, `claude-code:typecheck` and `root:marketplace`, whose advice on a README changes no verdict (record 0010)
   - Vale when a writer runs it from the shell as `prose`, which no task or workflow runs (record 0002)
+  - `root:terms`, which reads the files that a change touches for the old words of the accepted terms, and for nothing else: the term tool's check of its own words, not a check of what a page says (the claim `no-task-reads-markdown`, as the user accepted it on 2026-11-21)
   Source: record 0001, and flume's core.21, the pattern that this repository copies. For Markdown, also boomdrivedev/blueprints principle 16 and record 0002.
 - **core.6** On each host that runs the gate, each tool that a gate task runs is the version that the tree pins.
   Breaks the rule:

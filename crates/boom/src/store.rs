@@ -55,12 +55,15 @@ CREATE TABLE persons (
     registered_in INTEGER NOT NULL
 );
 CREATE TABLE claims (
-    name TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    term TEXT NOT NULL,
     kind TEXT NOT NULL,
-    standing TEXT
+    standing TEXT,
+    PRIMARY KEY (name, term)
 );
 CREATE TABLE versions (
     name TEXT NOT NULL,
+    term TEXT NOT NULL,
     version TEXT NOT NULL,
     base TEXT,
     statement TEXT NOT NULL,
@@ -103,7 +106,7 @@ const VIEW_TABLES: [&str; 6] = [
 
 /// The views' form, kept in `views_head`. Views of another form are
 /// built again from the whole log.
-const VIEWS_FORM: i64 = 4;
+const VIEWS_FORM: i64 = 5;
 
 thread_local! {
     static ENTRIES_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -449,6 +452,116 @@ impl Store {
     }
 }
 
+/// What a reader that writes nothing reads from a store: the log's last
+/// entry, the repositories it registers, and each accepted term
+/// (term-check).
+#[derive(Debug, Clone)]
+pub struct TermsRead {
+    /// The log's last entry, `(number, hash)`; `(0, GENESIS)` for an
+    /// empty log.
+    pub head: (u64, String),
+    /// The repositories the store registers.
+    pub repositories: Vec<judge::Repository>,
+    /// A state that holds every claim whose accepted version is a term,
+    /// and maybe other claims.
+    pub state: State,
+}
+
+/// Reads the accepted terms of the store at `path` and writes nothing,
+/// not even the views: where the views are not at the log's last entry,
+/// the log is replayed in memory. Where SQLite cannot open the store to
+/// read beside it, as in a sandbox that lets nothing write the store's
+/// folder, the store is read as a file that does not change, which holds
+/// only while no entry waits in its write-ahead log (term-check, the gate
+/// task).
+pub fn read_terms(path: &Path) -> Result<TermsRead, Failure> {
+    if !path.is_file() {
+        return Err(Failure::not_run(format!(
+            "no store at {}: boom init makes one",
+            path.display()
+        )));
+    }
+    let conn = open_to_read(path)?;
+    let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version != SCHEMA_VERSION {
+        return Err(Failure::not_run(format!(
+            "{} is not a boom store of schema {SCHEMA_VERSION}: its user_version is {version}",
+            path.display()
+        )));
+    }
+    let tx = conn.unchecked_transaction()?;
+    let read = if fresh(&tx, path)? {
+        let mut state = State::default();
+        load_claims(
+            &tx,
+            &mut state,
+            "WHERE kind = 'term' AND standing IS NOT NULL",
+            [],
+        )?;
+        TermsRead {
+            head: views_head(&tx)?,
+            repositories: repositories(&tx)?,
+            state,
+        }
+    } else {
+        let rows = read_log(&tx)?;
+        check_chain(path, &rows)?;
+        let (state, _) = replay(&rows);
+        let head = rows
+            .last()
+            .map_or((0, GENESIS.to_owned()), |row| (row.seq, row.hash.clone()));
+        TermsRead {
+            head,
+            repositories: state.repositories.values().cloned().collect(),
+            state,
+        }
+    };
+    tx.finish()?;
+    Ok(read)
+}
+
+/// A connection that only reads the store at `path`: an ordinary one
+/// where SQLite can share the store's memory file, else one that takes
+/// the file as one that does not change, refused while its write-ahead
+/// log holds a write.
+fn open_to_read(path: &Path) -> Result<Connection, Failure> {
+    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let ordinary = Connection::open_with_flags(path, flags).and_then(|conn| {
+        conn.busy_timeout(BUSY_TIMEOUT)?;
+        conn.query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))?;
+        Ok(conn)
+    });
+    let error = match ordinary {
+        Ok(conn) => return Ok(conn),
+        Err(error) => error,
+    };
+    let mut wal = path.as_os_str().to_owned();
+    wal.push("-wal");
+    if fs::metadata(&wal).is_ok_and(|wal| wal.len() > 0) {
+        return Err(Failure::not_run(format!(
+            "the store at {} could not be read: {error}; and a write waits in its write-ahead log, so it cannot be read as a file that does not change",
+            path.display()
+        )));
+    }
+    let uri = format!("file:{}?immutable=1", uri_path(path));
+    let conn = Connection::open_with_flags(uri, flags | OpenFlags::SQLITE_OPEN_URI)?;
+    Ok(conn)
+}
+
+/// A path as the path of an SQLite URI: each byte other than a letter,
+/// a digit and `/-_.~` written as `%XX`.
+fn uri_path(path: &Path) -> String {
+    let mut written = String::new();
+    for byte in path.as_os_str().as_encoded_bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-_.~".contains(byte) {
+            written.push(char::from(*byte));
+        } else {
+            written.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    written
+}
+
 /// The part of the state a command needs: every person, the claims it
 /// names, and, for an import, every claim with a version that came in
 /// from a file. A command loads only these rows from the views.
@@ -759,16 +872,26 @@ fn catch_up(conn: &Connection, path: &Path, mut scope: Scope) -> Result<State, F
 fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), Failure> {
     match &entry.act {
         Act::Registered { person, .. } => write_person(conn, &state.persons[person]),
-        Act::Proposed { claim, .. } => write_claim(conn, &state.claims[&claim.name]),
+        Act::Proposed { claim, .. } => {
+            write_claim(conn, holding(state, &claim.name, &claim.version))
+        }
         Act::Accepted { versions } => {
             for named in versions {
-                write_claim(conn, &state.claims[&named.name])?;
+                write_claim(conn, holding(state, &named.name, &named.version))?;
             }
             Ok(())
         }
-        Act::Rejected { name, .. } => write_claim(conn, &state.claims[name]),
+        Act::Rejected { name, version, .. } => write_claim(conn, holding(state, name, version)),
         Act::Repository { name, .. } => write_repository(conn, &state.repositories[name]),
     }
+}
+
+/// The claim of `state` that holds `name@version`, an entry that counts
+/// named.
+fn holding<'a>(state: &'a State, name: &str, version: &str) -> &'a Claim {
+    state
+        .holding(name, version)
+        .expect("a counted entry's version is in the state")
 }
 
 /// A view table's rows, each as its columns' text, in order; none where
@@ -931,19 +1054,24 @@ fn to_json<T: serde::Serialize>(value: &T) -> String {
 }
 
 fn write_claim(conn: &Connection, claim: &Claim) -> Result<(), Failure> {
-    conn.execute("DELETE FROM versions WHERE name = ?1", [&claim.name])?;
+    let term = claim.repository.as_deref().unwrap_or_default();
     conn.execute(
-        "INSERT OR REPLACE INTO claims (name, kind, standing) VALUES (?1, ?2, ?3)",
-        params![claim.name, claim.kind.as_str(), claim.standing],
+        "DELETE FROM versions WHERE name = ?1 AND term = ?2",
+        [&claim.name, term],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO claims (name, term, kind, standing) VALUES (?1, ?2, ?3, ?4)",
+        params![claim.name, term, claim.kind.as_str(), claim.standing],
     )?;
     for version in &claim.versions {
         conn.execute(
-            "INSERT INTO versions (name, version, base, statement, scenarios, body, proposer, \
-             proposed_in, status, decided_by, decided_in, reason, repositories, imported, \
-             proposal) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            "INSERT INTO versions (name, term, version, base, statement, scenarios, body, \
+             proposer, proposed_in, status, decided_by, decided_in, reason, repositories, \
+             imported, proposal) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 claim.name,
+                term,
                 version.proposal.version,
                 version.proposal.base,
                 version.proposal.statement,
@@ -1069,19 +1197,24 @@ fn load_claims<P: rusqlite::Params + Copy>(
     filter: &str,
     params: P,
 ) -> Result<(), Failure> {
-    let mut claims = conn.prepare(&format!("SELECT name, kind, standing FROM claims {filter}"))?;
+    let mut claims = conn.prepare(&format!(
+        "SELECT name, term, kind, standing FROM claims {filter}"
+    ))?;
     let rows = claims
         .query_map(params, |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let accepted_only = filter == "WHERE standing IS NOT NULL";
-    for (name, kind, standing) in rows {
-        if state.claims.contains_key(&name) {
+    let accepted_only = filter.contains("standing IS NOT NULL");
+    for (name, term, kind, standing) in rows {
+        let repository = Some(term.clone()).filter(|term| !term.is_empty());
+        let key = judge::key(&name, repository.as_deref());
+        if state.claims.contains_key(&key) {
             continue;
         }
         let kind: Kind = serde_json::from_value(serde_json::Value::String(kind))
@@ -1089,17 +1222,26 @@ fn load_claims<P: rusqlite::Params + Copy>(
         let versions = if accepted_only {
             read_versions(
                 conn,
-                "WHERE name = ?1 AND version = ?2",
-                [name.as_str(), standing.as_deref().unwrap_or_default()],
+                "WHERE name = ?1 AND term = ?2 AND version = ?3",
+                [
+                    name.as_str(),
+                    term.as_str(),
+                    standing.as_deref().unwrap_or_default(),
+                ],
             )?
         } else {
-            read_versions(conn, "WHERE name = ?1", [name.as_str()])?
+            read_versions(
+                conn,
+                "WHERE name = ?1 AND term = ?2",
+                [name.as_str(), term.as_str()],
+            )?
         };
         state.claims.insert(
-            name.clone(),
+            key,
             Claim {
                 name,
                 kind,
+                repository,
                 standing,
                 versions,
             },
@@ -1207,6 +1349,8 @@ pub struct ClaimView {
     pub name: String,
     /// Its kind.
     pub kind: String,
+    /// A term's repository; none for the other kinds.
+    pub repository: Option<String>,
     /// Its standing version.
     pub standing: Option<String>,
     /// Its versions in the order proposed.
@@ -1226,6 +1370,8 @@ pub struct VersionView {
     pub scenarios: Vec<String>,
     /// Its body's fingerprint.
     pub body: Option<String>,
+    /// The old words a term's version replaces.
+    pub replaces: Vec<String>,
     /// What it binds: the repositories its proposal names, or none for
     /// the whole system.
     pub repositories: Vec<String>,
@@ -1248,25 +1394,42 @@ fn from_json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, Failure> {
         .map_err(|error| Failure::not_run(format!("a view could not be read: {error}")))
 }
 
-/// The claim named `name`, where there is one.
-pub fn claim_view(conn: &Connection, name: &str) -> Result<Option<ClaimView>, Failure> {
-    let Some((kind, standing)) = conn
-        .query_row(
-            "SELECT kind, standing FROM claims WHERE name = ?1",
-            [name],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
-        )
-        .optional()?
-    else {
-        return Ok(None);
-    };
+/// The claims named `name`: none, one, or for a word with a term in
+/// several repositories one for each, in the order of their
+/// repositories.
+pub fn claim_views(conn: &Connection, name: &str) -> Result<Vec<ClaimView>, Failure> {
+    let mut claims =
+        conn.prepare("SELECT term, kind, standing FROM claims WHERE name = ?1 ORDER BY term")?;
+    let found = claims
+        .query_map([name], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut views = Vec::with_capacity(found.len());
+    for (term, kind, standing) in found {
+        views.push(ClaimView {
+            name: name.to_owned(),
+            versions: version_views(conn, name, &term)?,
+            repository: Some(term).filter(|term| !term.is_empty()),
+            kind,
+            standing,
+        });
+    }
+    Ok(views)
+}
+
+fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<VersionView>, Failure> {
     let mut statement = conn.prepare(
         "SELECT version, base, statement, scenarios, body, proposer, proposed_in, status, \
-         decided_by, decided_in, reason, repositories FROM versions WHERE name = ?1 \
-         ORDER BY proposed_in",
+         decided_by, decided_in, reason, repositories, proposal FROM versions \
+         WHERE name = ?1 AND term = ?2 ORDER BY proposed_in",
     )?;
     let rows = statement
-        .query_map([name], |row| {
+        .query_map([name, term], |row| {
             Ok((
                 (
                     row.get::<_, String>(0)?,
@@ -1283,6 +1446,7 @@ pub fn claim_view(conn: &Connection, name: &str) -> Result<Option<ClaimView>, Fa
                     row.get::<_, Option<i64>>(9)?,
                     row.get::<_, Option<String>>(10)?,
                     row.get::<_, String>(11)?,
+                    row.get::<_, String>(12)?,
                 ),
             ))
         })?
@@ -1290,7 +1454,7 @@ pub fn claim_view(conn: &Connection, name: &str) -> Result<Option<ClaimView>, Fa
     let mut versions = Vec::with_capacity(rows.len());
     for (
         (version, base, words, scenarios, body, proposer),
-        (proposed_in, status, by, decided_in, reason, repositories),
+        (proposed_in, status, by, decided_in, reason, repositories, proposal),
     ) in rows
     {
         versions.push(VersionView {
@@ -1299,6 +1463,7 @@ pub fn claim_view(conn: &Connection, name: &str) -> Result<Option<ClaimView>, Fa
             statement: words,
             scenarios: from_json(&scenarios)?,
             body,
+            replaces: from_json::<Proposal>(&proposal)?.replaces,
             repositories: from_json(&repositories)?,
             proposer: from_json(&proposer)?,
             proposed_in: u64::try_from(proposed_in).unwrap_or(0),
@@ -1308,12 +1473,7 @@ pub fn claim_view(conn: &Connection, name: &str) -> Result<Option<ClaimView>, Fa
             reason,
         });
     }
-    Ok(Some(ClaimView {
-        name: name.to_owned(),
-        kind,
-        standing,
-        versions,
-    }))
+    Ok(versions)
 }
 
 /// The signed part of the entry numbered `seq`, where there is one.

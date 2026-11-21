@@ -21,8 +21,10 @@ tasks:
     inputs: ['/crates/boom/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '/rust-toolchain.toml']
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
+  # The tests run the gate's terms script and the plugin's write hook too,
+  # with the boom the crate builds (term-check).
   test:
     command: 'cargo test -p boom'
-    inputs: ['/crates/boom/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '/rust-toolchain.toml']
+    inputs: ['/crates/boom/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '/rust-toolchain.toml', '/check-terms.sh', '/plugins/claude-code/hooks/hooks.json']
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}

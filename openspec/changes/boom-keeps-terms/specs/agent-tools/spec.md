@@ -12,7 +12,7 @@
 #### Scenario: A tool's arguments are its command's
 
 - **WHEN** a client sends `tools/list`
-- **THEN** `propose` takes `kind` (one of `invariant`, `decision`, `assumption` and `term`), `name`, `statement`, `amends`, `body`, `replaces`, `provenance`, `repositories` and `system`, and requires `kind`, `name` and `statement`. `replaces` is an array of strings. `propose` takes no `scenarios`. `show` takes `target`, required. `log` takes nothing. `query` takes `repository` and `if_declared`. `search` takes `words`, an array of strings, required, and `repository`, `all` and `limit`. `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, and requires `dir`. `import_rules` takes the same, with `page` for `dir`
+- **THEN** `propose` takes `kind` (one of `invariant`, `decision`, `assumption` and `term`), `name`, `statement`, `amends`, `body`, `provenance`, `repositories`, `system` and `replaces`, and requires `kind`, `name` and `statement`. `replaces` is an array of strings. `propose` takes no `scenarios`. `show` takes `target`, required, and `repository`. `log` takes nothing. `query` takes `repository` and `if_declared`. `search` takes `words`, an array of strings, required, and `repository`, `all` and `limit`. `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, and requires `dir`. `import_rules` takes the same, with `page` for `dir`
 
 #### Scenario: Each command served or absent
 

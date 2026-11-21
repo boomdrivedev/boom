@@ -1,5 +1,5 @@
 {
-  "description": "Give a session the claims that stand for the repository of the session, by boom query --if-declared; nothing where boom finds none, or where its delivery at session start is off.",
+  "description": "Give a session the claims that stand for the repository of the session, by boom query --if-declared; nothing where boom finds none, or where its delivery at session start is off. Check the text that an agent writes to a file against the accepted terms of the repository of the file, by boom terms check --hook --if-declared; a write that holds an old word is stopped, and the agent is told the term to write.",
   "hooks": {
     "SessionStart": [
       {
@@ -7,6 +7,17 @@
           {
             "type": "command",
             "command": "boom query --if-declared"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "boom terms check --hook --if-declared"
           }
         ]
       }

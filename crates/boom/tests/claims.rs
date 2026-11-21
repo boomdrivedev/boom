@@ -243,7 +243,7 @@ fn a_name_whose_claim_stands_is_refused() {
             "--provenance",
             "run-2",
         ],
-        &format!("money-has-currency@{first} stands"),
+        &format!("money-has-currency@{first} is accepted"),
     );
     assert!(refused.stderr.contains("amend it"), "{refused:?}");
 }
@@ -278,7 +278,7 @@ fn two_amendments_of_one_base() {
             "--key",
             &ada,
         ],
-        &format!("money-has-currency@{one} stands"),
+        &format!("money-has-currency@{one} is accepted"),
     );
     assert_eq!(place.status("money-has-currency", &iso), "proposed");
 }
