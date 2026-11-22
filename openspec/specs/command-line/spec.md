@@ -11,7 +11,7 @@ nothing, so an agent or another tool can call boom and read its answer
 
 ### Requirement: The commands
 
-Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import adr`, `import rules`, `repo add`, `repo set`, `repo show` and `terms check`. Each command SHALL take `--store <path>` and `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line that calls the engine of the library. Thus a caller gets from the command what the engine does.
+Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import adr`, `import rules`, `repo add`, `repo set`, `repo show`, `terms check`, `hook session-start` and `hook pre-tool-use`. Each command SHALL take `--store <path>`. Each command other than `hook` SHALL take `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line that calls the engine of the library.
 
 #### Scenario: The version
 
@@ -42,6 +42,11 @@ Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log
 
 - **WHEN** `boom terms check <file> --store <path> --repository shop --json` runs on a file that holds no old word
 - **THEN** standard output is one JSON object whose `format` is `boom-terms-check/1`, and boom exits 0
+
+#### Scenario: A hook answered in the JSON of Claude Code
+
+- **WHEN** `boom hook session-start --store <path>` runs with a `SessionStart` event on standard input, in a worktree of a registered repository with an accepted claim
+- **THEN** standard output is one JSON object with `systemMessage` and `hookSpecificOutput`, and boom exits 0
 
 ### Requirement: Exit codes
 
