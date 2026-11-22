@@ -73,8 +73,9 @@ in
   settings.formatter.shfmt.priority = 2;
 
   # .prototools is TOML under a name with no extension.
-  # Biome lays out the site's TypeScript, JavaScript, CSS and JSON, and the
-  # plugin's and the marketplace's JSON, by the settings biome.json holds,
+  # Biome lays out the site's TypeScript, JavaScript, CSS and JSON, the
+  # plugin's JSON and the JavaScript of its tests, and the marketplace's
+  # JSON, by the settings biome.json holds,
   # the ones site:format, claude-code:format and their lint tasks check by,
   # so the two never differ. Biome is the package devenv.nix puts in the
   # shell.
@@ -91,6 +92,7 @@ in
     includes = [
       "biome.json"
       "plugins/*.json"
+      "plugins/*.mjs"
       ".claude-plugin/*.json"
       "site/*.ts"
       "site/*.mjs"

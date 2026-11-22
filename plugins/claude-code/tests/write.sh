@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # The plugin's PreToolUse hook, run as Claude Code runs it: its command,
 # read from hooks/hooks.json, by `sh -c`, with Claude Code's event on its
-# standard input (term-check, claude-code-plugin). A `boom` of the
-# script's own proves the hook calls boom by its command line from PATH
-# and hands it the event; the boom the tree builds proves the hook says
-# nothing and makes no store where boom finds no repository of the file,
-# and lets a tool that writes no file's text pass. That an old word stops
-# a write is proven in crates/boom/tests/terms.rs, with a store whose term
-# a person accepted with the tests' keys, which a shell cannot make
-# (record 0006). Each case that fails prints `claude-code: <case>: <what>`,
+# standard input (claude-code-plugin; session-context). A `boom` of the
+# script's own proves that the hook calls boom by its command line from
+# PATH and hands it the event. The boom the tree builds proves that the
+# hook says nothing and makes no store where boom finds no repository of
+# the file, and lets a tool that writes no file's text pass. An old word
+# that stops a write, the first edit in a context and the edit made again
+# are proven in crates/boom/tests/hooks.rs through this command with the
+# boom the tree builds, with a store that the tests' keys sign, which a
+# shell cannot make (record 0006). Each case that fails prints `claude-code: <case>: <what>`,
 # and every case runs.
 
 set -u
@@ -81,7 +82,7 @@ hook() { # name folder bin event
   (
     cd "$2" &&
       printf '%s' "$4" | PATH="$3:$PATH" XDG_DATA_HOME="$data" HOME="$scratch/home-$1" \
-        BOOM_REPOSITORY="" sh -c "$command" >"$scratch/out-$1" 2>"$scratch/err-$1"
+        XDG_STATE_HOME="$scratch/state-$1" BOOM_REPOSITORY="" sh -c "$command" >"$scratch/out-$1" 2>"$scratch/err-$1"
   )
   code=$?
   out=$(cat "$scratch/out-$1")
@@ -102,14 +103,14 @@ scenario="The hook matches the tools that write a file's text"
 
 shop=$(repository shop git@github.com:example/shop.git)
 event=$(jq -cn --arg file "$shop/README.md" \
-  '{hook_event_name: "PreToolUse", tool_name: "Write", tool_input: {file_path: $file, content: "The keeper signs.\n"}}') # boom: allow keeper
+  '{session_id: "s-1", hook_event_name: "PreToolUse", tool_name: "Write", tool_input: {file_path: $file, content: "The keeper signs.\n"}}') # boom: allow keeper
 
 scenario="The hook runs boom"
 hook runs "$shop" "$fake" "$event"
 [ "$code" = 0 ] || fail "$scenario" "exited $code, not 0: $err"
 args=$(cat "$record/args" 2>/dev/null)
-[ "$args" = "terms check --hook --if-declared" ] ||
-  fail "$scenario" "boom was called as '${args:-nothing}', not 'terms check --hook --if-declared'"
+[ "$args" = "hook pre-tool-use" ] ||
+  fail "$scenario" "boom was called as '${args:-nothing}', not 'hook pre-tool-use'"
 input=$(cat "$record/input" 2>/dev/null)
 [ "$input" = "$event" ] || fail "$scenario" "boom read '${input:-nothing}', not the event"
 
