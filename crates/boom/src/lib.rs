@@ -15,6 +15,7 @@ pub mod claim;
 pub mod cli;
 pub mod context;
 pub mod entry;
+pub mod hook;
 pub mod import;
 pub mod judge;
 pub mod mcp;

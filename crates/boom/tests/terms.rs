@@ -968,10 +968,14 @@ fn an_agent_writes_the_old_word_and_the_hook_names_owner() {
         child.wait_with_output().unwrap()
     };
     let stopped = run("The keeper signs.\n"); // boom: allow keeper
-    let stderr = String::from_utf8_lossy(&stopped.stderr);
-    assert_eq!(stopped.status.code(), Some(2), "{stderr}");
-    assert!(stderr.contains("\"keeper\""), "{stderr}"); // boom: allow keeper
-    assert!(stderr.contains("owner in boom"), "{stderr}");
+    assert_eq!(stopped.status.code(), Some(0), "{stopped:?}");
+    let answer: Value = serde_json::from_slice(&stopped.stdout).unwrap();
+    assert_eq!(answer["hookSpecificOutput"]["permissionDecision"], "deny");
+    let reason = answer["hookSpecificOutput"]["permissionDecisionReason"]
+        .as_str()
+        .unwrap();
+    assert!(reason.contains("\"keeper\""), "{reason}"); // boom: allow keeper
+    assert!(reason.contains("owner in boom"), "{reason}");
     let passed = run("The owner signs.\n");
     assert_eq!(passed.status.code(), Some(0));
     assert!(passed.stdout.is_empty() && passed.stderr.is_empty());

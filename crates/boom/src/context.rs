@@ -11,6 +11,8 @@
 use globset::{GlobBuilder, GlobMatcher};
 use rusqlite::Connection;
 
+use crate::claim::Kind;
+use crate::judge::State;
 use crate::{repository, store, Failure};
 
 /// A glob or a path, `whole`, split at its first `:`: its repository,
@@ -113,8 +115,47 @@ pub fn binds_words(repositories: &[String], contexts: &[String]) -> String {
 /// at the log's last entry: each `<name>@<version>`, sorted. This is the
 /// one answer that every command asks; none matches a glob of its own.
 pub fn falls_in(conn: &Connection, repository: &str, path: &str) -> Result<Vec<String>, Failure> {
+    matching(store::accepted_globs(conn, repository)?, path)
+}
+
+/// The contexts that the file `path` of `repository` falls in, as
+/// [`falls_in`] gives them, from the accepted contexts that `state`
+/// holds: for a reader that replays the log in memory and does not write
+/// the views (session-context).
+pub fn falls_in_state(state: &State, repository: &str, path: &str) -> Result<Vec<String>, Failure> {
+    let mut globs = Vec::new();
+    for claim in state
+        .claims
+        .values()
+        .filter(|claim| claim.kind == Kind::Context)
+    {
+        let Some(version) = claim
+            .standing
+            .as_deref()
+            .and_then(|version| claim.version(version))
+        else {
+            continue;
+        };
+        for glob in &version.proposal.paths {
+            if let Some((name, pattern)) = glob.split_once(':') {
+                if name == repository {
+                    globs.push((
+                        claim.name.clone(),
+                        version.proposal.version.clone(),
+                        pattern.to_owned(),
+                    ));
+                }
+            }
+        }
+    }
+    matching(globs, path)
+}
+
+/// The contexts of `globs`, each `(name, version, pattern)`, that `path`
+/// matches: each `<name>@<version>` one time, sorted.
+fn matching(globs: Vec<(String, String, String)>, path: &str) -> Result<Vec<String>, Failure> {
     let mut found: Vec<String> = Vec::new();
-    for (name, version, pattern) in store::accepted_globs(conn, repository)? {
+    for (name, version, pattern) in globs {
         let context = format!("{name}@{version}");
         if found.contains(&context) {
             continue;

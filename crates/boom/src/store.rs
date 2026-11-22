@@ -491,28 +491,48 @@ impl Store {
 }
 
 /// What a reader that writes nothing reads from a store: the log's last
-/// entry, the repositories it registers, and each accepted term
-/// (term-check).
+/// entry, the repositories it registers, and the claims that it asks for
+/// (term-check; session-context).
 #[derive(Debug, Clone)]
-pub struct TermsRead {
+pub struct ReadOnly {
     /// The log's last entry, `(number, hash)`; `(0, GENESIS)` for an
     /// empty log.
     pub head: (u64, String),
     /// The repositories the store registers.
     pub repositories: Vec<judge::Repository>,
-    /// A state that holds every claim whose accepted version is a term,
-    /// and maybe other claims.
+    /// A state that holds each claim that the reader asks for, and maybe
+    /// other claims.
     pub state: State,
 }
 
+/// The claims that a reader that writes nothing asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wanted {
+    /// Each claim whose accepted version is a term.
+    Terms,
+    /// Each claim that has an accepted version.
+    Accepted,
+}
+
 /// Reads the accepted terms of the store at `path` and writes nothing,
-/// not even the views: where the views are not at the log's last entry,
-/// the log is replayed in memory. Where SQLite cannot open the store to
-/// read beside it, as in a sandbox that lets nothing write the store's
-/// folder, the store is read as a file that does not change, which holds
-/// only while no entry waits in its write-ahead log (term-check, the gate
-/// task).
-pub fn read_terms(path: &Path) -> Result<TermsRead, Failure> {
+/// not even the views: [`read_only`] of the terms.
+pub fn read_terms(path: &Path) -> Result<ReadOnly, Failure> {
+    read_only(path, Wanted::Terms, |_, read| Ok(read))
+}
+
+/// Reads the store at `path` and writes nothing, not even the views, and
+/// answers with `answer` on the connection that read it, which can also
+/// read the blobs. Where the views are not at the log's last entry, the
+/// log is replayed in memory. Where SQLite cannot open the store to read
+/// beside it, as in a sandbox that lets nothing write the store's folder,
+/// the store is read as a file that does not change, which holds only
+/// while no entry waits in its write-ahead log (term-check, the gate
+/// task; session-context).
+pub fn read_only<T>(
+    path: &Path,
+    wanted: Wanted,
+    answer: impl FnOnce(&Connection, ReadOnly) -> Result<T, Failure>,
+) -> Result<T, Failure> {
     if !path.is_file() {
         return Err(Failure::not_run(format!(
             "no store at {}: boom init makes one",
@@ -530,13 +550,12 @@ pub fn read_terms(path: &Path) -> Result<TermsRead, Failure> {
     let tx = conn.unchecked_transaction()?;
     let read = if fresh(&tx, path)? {
         let mut state = State::default();
-        load_claims(
-            &tx,
-            &mut state,
-            "WHERE kind = 'term' AND standing IS NOT NULL",
-            [],
-        )?;
-        TermsRead {
+        let filter = match wanted {
+            Wanted::Terms => "WHERE kind = 'term' AND standing IS NOT NULL",
+            Wanted::Accepted => "WHERE standing IS NOT NULL",
+        };
+        load_claims(&tx, &mut state, filter, [])?;
+        ReadOnly {
             head: views_head(&tx)?,
             repositories: repositories(&tx)?,
             state,
@@ -548,14 +567,15 @@ pub fn read_terms(path: &Path) -> Result<TermsRead, Failure> {
         let head = rows
             .last()
             .map_or((0, GENESIS.to_owned()), |row| (row.seq, row.hash.clone()));
-        TermsRead {
+        ReadOnly {
             head,
             repositories: state.repositories.values().cloned().collect(),
             state,
         }
     };
+    let answered = answer(&tx, read);
     tx.finish()?;
-    Ok(read)
+    answered
 }
 
 /// A connection that only reads the store at `path`: an ordinary one

@@ -206,6 +206,7 @@ impl Place {
         std::fs::create_dir(&keys_dir).unwrap();
         let env = boom::cli::Env {
             xdg_data_home: Some(dir.path().join("data")),
+            xdg_state_home: Some(dir.path().join("state")),
             home: Some(dir.path().join("home")),
             cwd: Some(dir.path().to_owned()),
             boom_repository: None,
