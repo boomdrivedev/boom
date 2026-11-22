@@ -420,12 +420,15 @@ The terms check still runs.
   record and stops. The second finds the record and runs. It can run
   before the agent reads the rules. The rules still reach the agent
   in the same turn.
-- [A reason past the cap] → The hooks reference names the cap for
-  `additionalContext`, `systemMessage` and standard output, and not for
-  `permissionDecisionReason`. A context with many long bodies can pass
-  10,000 characters. A test with a long reason on the pinned Claude
-  Code shows what the agent gets. Where Claude Code cuts it, boom gives
-  the rules without bodies above the cap, with `boom show` in the menu.
+- [A long reason] → Claude Code caps `additionalContext`,
+  `systemMessage` and standard output at 10,000 characters. It does not
+  cap `permissionDecisionReason`. Claude Code 2.1.296 gives the agent
+  the whole reason of a stop, after the prefix
+  `PreToolUse:Write hook error: `, with no file path and no cut. The
+  plugin's `tests/cap.sh` shows this with a reason of 15,000
+  characters, through the plugin's own hook. So the rules of a context
+  come with their bodies at each length. A context with many long
+  bodies costs that many tokens at the first edit in it.
 - [A rule accepted during a session] → A context in the record does not
   give a new rule until the session is cleared or compacted. A rule of
   the repository does not come until the next session start, as now.

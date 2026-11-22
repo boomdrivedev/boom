@@ -183,19 +183,44 @@ boom log
 ```
 
 `boom query` writes its words to standard output alone, so a harness
-can put them in an agent's context as they are. boom's Claude Code
-plugin does it: its `SessionStart` hook runs `boom query --if-declared`,
-so every session in a registered repository starts with the claims that
-stand for it. Its `PreToolUse` hook runs `boom terms check --hook
---if-declared` on the text that `Write`, `Edit` or `MultiEdit` writes,
-so a write that holds an old word is stopped, and the agent reads the
-term to write in its place. The text that a `Bash` command writes is not
-checked. Its first line names the repository, the number of claims
-and the entry. A session anywhere else, or in a repository whose
-delivery at session start is off, hears nothing. A repository writes no
-hook into its own `.claude/settings.json`. With `--if-declared`, where
-boom finds no repository of the session, it answers nothing and exits
-0. A name from `BOOM_REPOSITORY` that it cannot read, it still refuses.
+can put them in an agent's context as they are. A person or a script
+that runs `boom query` gets every claim in full.
+
+boom's Claude Code plugin gives an agent's session its claims in
+layers, with `boom hook`. Each hook reads one event of Claude Code on
+standard input and answers with the JSON of Claude Code, or nothing.
+
+- At session start, `boom hook session-start` gives the rules of the
+  repository of the session in full: each invariant and each term, one
+  line each, with its statement. The decisions, the assumptions and the
+  contexts come as a count and their names. A menu names `boom show`,
+  `boom query --path` and `boom search`. A claim that binds only a
+  context does not come.
+- Before an edit, `boom hook pre-tool-use` reads the `Write`, `Edit` or
+  `MultiEdit`. It stops a write that holds an old word of an accepted
+  term, and the agent reads the term to write in its place. At the
+  first edit of a file in a context in a session, it stops the edit and
+  gives the rules of that context, each with its body: what breaks the
+  rule, what does not, and its source. The agent then makes the edit
+  again, and the hook is silent for that context in that session.
+- Each hook that gives claims shows the person one line, such as
+  `Boom: 39 claims for sluice, at entry 217` or
+  `Boom: 4 rules and 1 decision for sluice-host`.
+
+boom keeps the contexts that a session got in
+`$XDG_STATE_HOME/boom/sessions/<session_id>/`, or in
+`~/.local/state/boom/sessions/<session_id>/`, outside each repository
+and outside the store. A session that Claude Code clears or compacts
+gets the rules again. A session start deletes each record that no hook
+changed in 30 days. The hooks read the store and write nothing into it.
+
+A session anywhere else, or in a repository whose delivery at session
+start is off, hears nothing, and the terms are still checked. A
+repository writes no hook into its own `.claude/settings.json`. A name
+from `BOOM_REPOSITORY` that boom cannot read, the session hook refuses.
+The text that a `Bash` command writes is not checked.
+`boom query --if-declared` and `boom terms check --hook` stay for a
+harness that reads standard output or an exit code.
 
 A repository's `.mcp.json` names `boom mcp`, and the harness starts it
 in the repository, so `query` answers for the repository of the
@@ -260,7 +285,7 @@ tag.
 | path | what |
 |---|---|
 | `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import`, `query`, `search`, `repo`, `terms check` and `mcp` |
-| `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom query --if-declared` and its write hook running `boom terms check --hook --if-declared`, listed by the marketplace in `.claude-plugin/` |
+| `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom hook session-start` and its `PreToolUse` hook running `boom hook pre-tool-use`, listed by the marketplace in `.claude-plugin/` |
 | `check-terms.sh` | the gate's terms task: `boom terms check` on the files that a change adds or modifies |
 | `flake.nix`, `nix/` | boom's flake, giving `boom` and `boom-claude-plugin` at one version, and its offline checks |
 | `.github/workflows/release.yml` | the release: a landing with a new version, tagged on a release commit off main, its binaries built by cargo |
