@@ -27,4 +27,4 @@
 
 - [x] 5.1 Write the layers, `boom hook` and the record of a session into `README.md` and `CLAUDE.md`, in Plain. Proved by `devenv shell -- moon run root:format root:terms`
 - [x] 5.2 Run `boom terms check` on each file that the change writes, before each commit
-- [ ] 5.3 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `claude-code:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main -- moon run <task>`, then `sluice exec main` once the work is committed
+- [x] 5.3 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `claude-code:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main -- moon run <task>`, then `sluice exec main` once the work is committed
