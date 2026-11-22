@@ -101,6 +101,7 @@ fn env(dir: &Path) -> boom::cli::Env {
     boom::cli::Env {
         boom_repository: None,
         xdg_data_home: Some(dir.join("data")),
+        xdg_state_home: Some(dir.join("state")),
         home: Some(dir.join("home")),
         cwd: Some(dir.to_owned()),
         clock: boom::cli::Clock::Fixed(1_763_424_000),

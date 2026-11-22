@@ -14,10 +14,9 @@ whole system, once a person accepts it, and `boom query` gives an agent
 every claim that stands for its repository, named, set by its launcher
 in `BOOM_REPOSITORY`, or matched by its git remote against the
 repositories an owner registers with `boom repo add`, from views kept in
-step with the log, which `boom verify` checks against a full replay; its
-Claude Code plugin's session hook runs `boom query --if-declared`, so a
-session in a registered repository starts with those claims, and `boom search` finds the claims
-that stand by their words, in a repository or every repository.
+step with the log, which `boom verify` checks against a full replay, and
+`boom search` finds the claims that stand by their words, in a
+repository or every repository.
 A version links to the claims that it rests on with `--source`, to
 the claims that a decision changes with `--changes`, and to the file or
 commit that it came from with `--origin`, a file that boom keeps by its
@@ -32,12 +31,21 @@ the claims for a file, those of the whole system, of its repository and
 of each context whose accepted globs match it, and `boom show` marks a
 binding out of date. Until someone draws a context, each repository is
 one context.
+The Claude Code plugin gives an agent's session its claims in layers.
+`boom hook session-start` gives the rules of the repository of the
+session in full, the decisions, the assumptions and the contexts by
+name, and a menu. `boom hook pre-tool-use` stops the first edit of a
+file in a context in a session, gives the rules of that context with
+their bodies, and the agent makes the edit again. Each hook shows the
+person one line. Boom keeps the contexts that a session got in
+`$XDG_STATE_HOME/boom/sessions/<session_id>/`, outside each repository
+and the store.
 A term is a word and its meaning in one repository, with the old words
 that it replaces, which only the log keeps: `boom query` gives the term
 and never its old words. `boom terms check` names each old word of an
-accepted term in a file, reading the store and writing nothing; the
-plugin's `PreToolUse` hook runs it on what an agent writes, and the
-gate's `root:terms` on the files that a change adds or modifies. A line
+accepted term in a file, reading the store and writing nothing;
+`boom hook pre-tool-use` runs the same check on what an agent writes,
+and the gate's `root:terms` on the files that a change adds or modifies. A line
 that names an old word on purpose holds `boom: allow <old word>`.
 `boom mcp` serves an agent's program the commands it may run,
 `propose`, `show`, `log`, `query`, `search` and the imports, as MCP
@@ -89,7 +97,7 @@ branch requires:
 
 | layer | what | who requires it |
 |---|---|---|
-| `check-fast` | the crate's format (rustfmt), lint (clippy -D warnings), type check and tests; the plugin's format and lint (Biome), validation (Claude Code) and its session and write hook tests; the flake's lint (statix), evaluation and cases; the site's format and lint (Biome), type check (astro check), diagrams and build; the root's format (treefmt), toolchain, terms (the old words of the accepted terms in the files a change touches), specs, open changes, each validated as it would archive, and that check's cases, versions, release workflow and marketplace | main |
+| `check-fast` | the crate's format (rustfmt), lint (clippy -D warnings), type check and tests; the plugin's format and lint (Biome), validation (Claude Code), its session and `PreToolUse` hook tests, and its test of a long stop on the pinned Claude Code; the flake's lint (statix), evaluation and cases; the site's format and lint (Biome), type check (astro check), diagrams and build; the root's format (treefmt), toolchain, terms (the old words of the accepted terms in the files a change touches), specs, open changes, each validated as it would archive, and that check's cases, versions, release workflow and marketplace | main |
 
 Run suites through sluice, so the agents on this host take turns under
 its bound: once your work is committed, `sluice exec main` for the

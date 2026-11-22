@@ -72,6 +72,14 @@ pub(crate) const ABSENT: &[(&str, &str)] = &[
         "the hook of the plugin runs it on what an agent writes, and the gate on what a change touches",
     ),
     ("mcp", "it is the server itself"),
+    (
+        "hook session-start",
+        "the harness of an agent runs it when a session starts, and an agent does not call a hook",
+    ),
+    (
+        "hook pre-tool-use",
+        "the harness of an agent runs it before an edit, and an agent does not call a hook",
+    ),
 ];
 
 /// The arguments of a served command no tool takes, with why (design

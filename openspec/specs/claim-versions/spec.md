@@ -10,7 +10,7 @@ every version read from the log (record 0005, point 2; interview:
 
 ### Requirement: A claim and its name
 
-A claim SHALL have one kind: `invariant`, `decision`, `assumption` or `term`. The first proposal SHALL fix the kind and the name. A name SHALL be kebab case: lowercase letters and digits, in words that single hyphens join. Each version SHALL have a statement of one line. A decision version SHALL also have a body. Another version MAY have a body. A new version SHALL have no scenarios. An old version SHALL keep the scenarios that its entry holds.
+A claim SHALL have one kind: `invariant`, `decision`, `assumption`, `term` or `context`. The first proposal SHALL fix the kind and the name. A name SHALL be kebab case: lowercase letters and digits, in words that single hyphens join. Each version SHALL have a statement of one line. A decision version SHALL also have a body. Another version MAY have a body. A new version SHALL have no scenarios. An old version SHALL keep the scenarios that its entry holds.
 
 #### Scenario: A claim proposed
 
@@ -52,9 +52,14 @@ A claim SHALL have one kind: `invariant`, `decision`, `assumption` or `term`. Th
 - **WHEN** an agent proposes a term with a meaning and no `--body`, for one repository
 - **THEN** boom exits 0
 
+#### Scenario: A context with no body
+
+- **WHEN** an agent proposes a context with a statement, one glob and no `--body`
+- **THEN** boom exits 0
+
 ### Requirement: A version is the fingerprint of its content
 
-Boom SHALL name a version by the first 12 hexadecimal characters of the SHA-256 of its content. The content SHALL be the kind, the name, the statement, the scenarios, the body's fingerprint and the version that it amends. It SHALL also include the history of a version that comes in as history, the repository and any `replaces` of a term, and any edge `source`, `changes` and `origin`. When a proposal gives the same content again, boom SHALL give the same version and append nothing.
+Boom SHALL name a version by the first 12 hexadecimal characters of the SHA-256 of its content. The content SHALL be the kind, name, statement, scenarios, body fingerprint and base. It SHALL also hold the history of a version from history, the repository and `replaces` of a term, and the globs of a context. It SHALL hold the edges `source`, `changes` and `origin`. For the same content again, boom SHALL give the same version and append nothing.
 
 #### Scenario: The same proposal twice
 
@@ -86,6 +91,16 @@ Boom SHALL name a version by the first 12 hexadecimal characters of the SHA-256 
 - **WHEN** an agent proposes a claim again with the same words and one more `--source`
 - **THEN** boom gives a second version, with a different fingerprint
 
+#### Scenario: One more glob
+
+- **WHEN** an agent proposes a context again with the same statement and one more `--path`
+- **THEN** boom gives a second version, with a different fingerprint
+
+#### Scenario: The same words bound to a context
+
+- **WHEN** an agent proposes a claim bound to `shop`, and the same claim in the same words is proposed to another store bound to the context `shop-billing`
+- **THEN** both answers give the same version
+
 #### Scenario: A version from before terms
 
 - **WHEN** a store holds versions that boom proposed before the kind `term` came, and this boom builds its views again
@@ -94,6 +109,11 @@ Boom SHALL name a version by the first 12 hexadecimal characters of the SHA-256 
 #### Scenario: A version from before the edges
 
 - **WHEN** a store holds versions that boom proposed before the edges `source`, `changes` and `origin` came, and this boom builds its views again
+- **THEN** each version has the fingerprint that its entry names
+
+#### Scenario: A version from before contexts
+
+- **WHEN** a store holds versions that boom proposed before the kind `context` came, and this boom builds its views again
 - **THEN** each version has the fingerprint that its entry names
 
 ### Requirement: One name space

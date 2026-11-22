@@ -10,7 +10,7 @@
     {
       "name": "boom",
       "source": "./plugins/claude-code",
-      "description": "Start every agent session in a repository that declares itself to boom with the claims that stand for it, and say nothing in a session anywhere else."
+      "description": "Start each agent session in a registered repository with its rules in full and its other claims by name. Before the first edit of a file in a context, give the rules of that context. Stop a write that holds an old word of an accepted term. Say nothing anywhere else."
     }
   ]
 }

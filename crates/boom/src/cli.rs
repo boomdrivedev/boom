@@ -28,6 +28,9 @@ use crate::{context, repository, Failure};
 pub struct Env {
     /// `XDG_DATA_HOME`, where it is set.
     pub xdg_data_home: Option<PathBuf>,
+    /// `XDG_STATE_HOME`, where it is set: the records of the sessions are
+    /// under it (session-context).
+    pub xdg_state_home: Option<PathBuf>,
     /// `HOME`, where it is set.
     pub home: Option<PathBuf>,
     /// The working folder, where it can be read.
@@ -68,6 +71,7 @@ impl Env {
         let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
         Env {
             xdg_data_home: var("XDG_DATA_HOME").map(PathBuf::from),
+            xdg_state_home: var("XDG_STATE_HOME").map(PathBuf::from),
             home: var("HOME").map(PathBuf::from),
             cwd: std::env::current_dir().ok(),
             boom_repository: var(repository::LAUNCHER).and_then(|value| value.into_string().ok()),
@@ -309,6 +313,24 @@ enum Command {
     /// Model Context Protocol on standard input and output; none of them
     /// is a person's act.
     Mcp,
+    /// Answer one event of Claude Code, read as JSON on standard input,
+    /// with the JSON of Claude Code's hook output, or nothing: the claims
+    /// that an agent's session gets, in layers.
+    Hook {
+        #[command(subcommand)]
+        what: HookCommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum HookCommand {
+    /// Answer `SessionStart`: the rules of the repository of the session
+    /// in full, its other claims by name, and a menu.
+    SessionStart,
+    /// Answer `PreToolUse` of `Write`, `Edit` or `MultiEdit`: stop a write
+    /// that holds an old word, and stop the first edit of a file in a
+    /// context to give the rules of the context.
+    PreToolUse,
 }
 
 #[derive(Subcommand, Debug)]
@@ -445,7 +467,7 @@ where
 }
 
 /// Runs boom as [`run`] does, with `input` as its standard input, which
-/// only `boom terms check --hook` reads.
+/// only `boom terms check --hook` and `boom hook` read.
 pub fn run_with_input<I, A>(
     args: I,
     keys: &dyn Keys,
@@ -477,6 +499,14 @@ where
     };
     if let Command::Mcp = cli.command {
         return mcp(cli.json, cli.store.as_deref(), env);
+    }
+    if let Command::Hook { what } = &cli.command {
+        let path = store::resolve(
+            cli.store.as_deref(),
+            env.xdg_data_home.as_deref(),
+            env.home.as_deref(),
+        );
+        return hook(cli.json, what, path, env, input);
     }
     let path = store::resolve(
         cli.store.as_deref(),
@@ -549,6 +579,46 @@ fn mcp(json: bool, store: Option<&Path>, env: &Env) -> Outcome {
         code: 0,
         stdout: String::new(),
         stderr: String::new(),
+    }
+}
+
+/// `boom hook <event>` (session-context): refused with `--json`, else the
+/// answer to the event on standard input as one JSON object, or nothing.
+fn hook(
+    json: bool,
+    what: &HookCommand,
+    path: Result<PathBuf, Failure>,
+    env: &Env,
+    input: &mut dyn std::io::Read,
+) -> Outcome {
+    if json {
+        return failed(
+            false,
+            Failure::refused(
+                "boom hook takes no --json: a hook always answers in the JSON of Claude Code",
+            ),
+        );
+    }
+    let mut event = String::new();
+    let answered = input
+        .read_to_string(&mut event)
+        .map_err(|error| Failure::refused(format!("the hook's event cannot be read: {error}")))
+        .and_then(|_| {
+            serde_json::from_str::<Value>(&event)
+                .map_err(|error| Failure::refused(format!("the hook's event is not JSON: {error}")))
+        })
+        .and_then(|event| match what {
+            HookCommand::SessionStart => crate::hook::session_start(path, env, &event),
+            HookCommand::PreToolUse => crate::hook::pre_tool_use(path, env, &event),
+        });
+    match answered {
+        Ok(answer) => Outcome {
+            bytes: None,
+            code: 0,
+            stdout: answer.map_or_else(String::new, |answer| format!("{answer}\n")),
+            stderr: String::new(),
+        },
+        Err(failure) => failed(false, failure),
     }
 }
 
@@ -757,6 +827,7 @@ fn execute(
             limit,
         } => search(&path?, &words, repository.as_deref(), all, limit, env),
         Command::Mcp => unreachable!("boom mcp is served before a store's path is resolved"),
+        Command::Hook { .. } => unreachable!("boom hook answers before a store is opened"),
         Command::Terms { .. } => {
             unreachable!("boom terms check is run before a command answers")
         }

@@ -1,12 +1,12 @@
 {
-  "description": "Give a session the claims that stand for the repository of the session, by boom query --if-declared; nothing where boom finds none, or where its delivery at session start is off. Check the text that an agent writes to a file against the accepted terms of the repository of the file, by boom terms check --hook --if-declared; a write that holds an old word is stopped, and the agent is told the term to write.",
+  "description": "Give a session the claims of its repository in layers, by boom hook session-start: the rules in full, the other claims by name, and a menu; nothing where boom finds no repository, or where its delivery at session start is off. Before an agent edits a file, run boom hook pre-tool-use: it stops a write that holds an old word of an accepted term, and it stops the first edit of a file in a context to give the rules of that context. The agent then makes the edit again.",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "boom query --if-declared"
+            "command": "boom hook session-start"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "boom terms check --hook --if-declared"
+            "command": "boom hook pre-tool-use"
           }
         ]
       }
