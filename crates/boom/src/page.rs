@@ -5,16 +5,18 @@
 //! random bits that only the line boom prints holds. Each response is
 //! computed from the views at the log's last entry, and no file holds
 //! the page (`views-computed-from-the-ledger`). The page holds its own
-//! style, loads nothing from another host and holds no script: a note is
-//! a plain HTML form, and each response refuses each script with its
-//! policy.
+//! style and loads nothing from another host. A note is a plain HTML
+//! form. Its one script is Mermaid's, which boom holds in its binary and
+//! serves under the token, loaded only by a page that draws a diagram;
+//! each response refuses each other script with its policy.
 
+use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use pulldown_cmark::{CowStr, Event, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, CowStr, Event, Tag, TagEnd};
 
 use crate::claim::Kind;
 use crate::cli::Env;
@@ -24,9 +26,39 @@ use crate::narrative::{self, Paragraph};
 use crate::store::{self, Scope, Store};
 use crate::Failure;
 
-/// The policy of each response: nothing from another host, no script,
-/// the style the page holds, and forms sent to the page alone.
-pub const POLICY: &str = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'";
+/// The policy of each response: nothing from another host, no script
+/// but the page's own origin's, which serves Mermaid's alone, the style
+/// the page holds, and forms sent to the page alone.
+pub const POLICY: &str =
+    "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; form-action 'self'";
+
+/// The version of Mermaid that boom holds: the package `mermaid` at this
+/// version gives `crates/boom/assets/mermaid/` (narrative-page, "boom
+/// serves Mermaid's script from itself").
+pub const MERMAID_VERSION: &str = "11.17.2";
+
+/// The SHA-256 of [`MERMAID_SCRIPT`], which a test holds it to.
+pub const MERMAID_SHA256: &str = "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8";
+
+/// Mermaid's script, `dist/mermaid.min.js` of its package, byte for byte.
+pub const MERMAID_SCRIPT: &[u8] = include_bytes!("../assets/mermaid/mermaid.min.js");
+
+/// Mermaid's license, `LICENSE` of its package, byte for byte.
+pub const MERMAID_LICENSE: &[u8] = include_bytes!("../assets/mermaid/LICENSE");
+
+/// The mark of a diagram in the page's HTML. Only [`html_of`] writes it:
+/// a body's raw HTML is text, so a page that holds it draws a diagram.
+const DIAGRAM: &str = "<pre class=\"mermaid\">";
+
+/// The path of Mermaid's script under the token.
+fn script_path() -> String {
+    format!("mermaid-{MERMAID_VERSION}.min.js")
+}
+
+/// The path of Mermaid's license under the token.
+fn license_path() -> String {
+    format!("mermaid-{MERMAID_VERSION}.LICENSE")
+}
 
 /// The largest note a form sends, in bytes.
 const LARGEST_FORM: u64 = 64 * 1024;
@@ -197,11 +229,26 @@ pub fn escape(text: &str) -> String {
     written
 }
 
-/// The HTML of Markdown events: each raw HTML as text, and each image as
-/// its words, so a body loads nothing and runs nothing.
+/// Whether a fenced code block's info string names Mermaid's language.
+fn is_diagram(kind: &CodeBlockKind<'_>) -> bool {
+    matches!(kind, CodeBlockKind::Fenced(info) if info.split_whitespace().next() == Some("mermaid"))
+}
+
+/// The HTML of Markdown events: each raw HTML as text, each image as its
+/// words, and each `mermaid` code block as [`DIAGRAM`] with its source as
+/// text, so a body loads nothing and runs nothing.
 fn html_of(events: &[Event<'static>]) -> String {
     let mut image = 0usize;
+    let mut diagram = false;
     let safe = events.iter().cloned().filter_map(|event| match event {
+        Event::Start(Tag::CodeBlock(kind)) if is_diagram(&kind) => {
+            diagram = true;
+            Some(Event::Html(CowStr::Borrowed(DIAGRAM)))
+        }
+        Event::End(TagEnd::CodeBlock) if diagram => {
+            diagram = false;
+            Some(Event::Html(CowStr::Borrowed("</pre>\n")))
+        }
         Event::Html(raw) | Event::InlineHtml(raw) => Some(Event::Text(raw)),
         Event::Start(Tag::Image { .. }) => {
             image += 1;
@@ -256,15 +303,26 @@ fn actor_words(actor: &Actor) -> String {
     }
 }
 
-/// The whole document around `main`, with its title and its style.
+/// The whole document around `main`, with its title and its style, and
+/// Mermaid's script and license where `main` draws a diagram.
 fn document(title: &str, entry: u64, base: &str, main: &str) -> String {
+    let mermaid = if main.contains(DIAGRAM) {
+        format!(
+            "<footer class=\"hint\">Diagrams drawn by Mermaid {MERMAID_VERSION}, under its <a href=\"{base}/{}\">license</a>.</footer>\n\
+             <script src=\"{base}/{}\"></script>\n",
+            license_path(),
+            script_path()
+        )
+    } else {
+        String::new()
+    };
     format!(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
          <meta name=\"referrer\" content=\"no-referrer\">\n\
          <title>{} · Boom</title>\n<style>{STYLE}</style>\n</head>\n<body>\n\
          <header class=\"bar\"><a href=\"{base}/\">Boom · narratives</a><span>entry {entry}</span></header>\n\
-         <main>\n{main}</main>\n</body>\n</html>\n",
+         <main>\n{main}</main>\n{mermaid}</body>\n</html>\n",
         escape(title)
     )
 }
@@ -314,6 +372,10 @@ ul.list .title{font:600 1.05rem system-ui,sans-serif}
 .p table,.box table{border-collapse:collapse;margin:.5rem 0;font:15px/1.45 system-ui,sans-serif}
 .p th,.p td,.box th,.box td{border:1px solid var(--line);padding:.35rem .7rem;text-align:left;vertical-align:top}
 .p th,.box th{background:var(--card);font-weight:600}
+pre.mermaid{background:#fff;color:#1d1d1f;border-color:#dcdce2}
+pre.mermaid[data-processed]{font:inherit;text-align:center}
+pre.mermaid svg{max-width:100%;height:auto}
+footer.hint{max-width:46rem;margin:0 auto;padding:0 1rem 2rem}
 ";
 
 /// The binding of a version in words.
@@ -740,10 +802,11 @@ fn decoded(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// A response: its status, its HTML or none, and a place to go to.
+/// A response: its status, its type, its bytes, and a place to go to.
 struct Reply {
     status: u16,
-    html: String,
+    content_type: &'static str,
+    body: Cow<'static, [u8]>,
     location: Option<String>,
 }
 
@@ -751,7 +814,8 @@ impl Reply {
     fn page(html: String) -> Reply {
         Reply {
             status: 200,
-            html,
+            content_type: "text/html; charset=utf-8",
+            body: Cow::Owned(html.into_bytes()),
             location: None,
         }
     }
@@ -759,10 +823,19 @@ impl Reply {
     fn words(status: u16, words: &str) -> Reply {
         Reply {
             status,
-            html: format!(
+            ..Reply::page(format!(
                 "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>Boom</title></head><body><p>{}</p></body></html>\n",
                 escape(words)
-            ),
+            ))
+        }
+    }
+
+    /// A file that boom holds in its binary.
+    fn held(content_type: &'static str, bytes: &'static [u8]) -> Reply {
+        Reply {
+            status: 200,
+            content_type,
+            body: Cow::Borrowed(bytes),
             location: None,
         }
     }
@@ -799,6 +872,12 @@ impl Server {
         }
         let rest = rest.trim_start_matches('/');
         match (method, rest.strip_prefix("n/")) {
+            ("GET" | "HEAD", None) if rest == script_path() => {
+                Reply::held("text/javascript; charset=utf-8", MERMAID_SCRIPT)
+            }
+            ("GET" | "HEAD", None) if rest == license_path() => {
+                Reply::held("text/plain; charset=utf-8", MERMAID_LICENSE)
+            }
             ("GET" | "HEAD", None) if rest.is_empty() => {
                 self.read(|conn| list_page(conn, &self.context))
             }
@@ -865,11 +944,11 @@ impl Server {
         match written {
             Ok(_) => Reply {
                 status: 303,
-                html: String::new(),
                 location: Some(format!(
                     "{}/n/{name}@{version}#p{paragraph}",
                     self.context.base
                 )),
+                ..Reply::page(String::new())
             },
             Err(Failure::Refused(why)) => {
                 Reply::words(400, &format!("The note was not written: {why}"))
@@ -884,7 +963,7 @@ impl Server {
 /// The headers of each response.
 fn headers(reply: &Reply) -> Vec<tiny_http::Header> {
     let mut fields = vec![
-        ("Content-Type", "text/html; charset=utf-8".to_owned()),
+        ("Content-Type", reply.content_type.to_owned()),
         ("Content-Security-Policy", POLICY.to_owned()),
         ("Cache-Control", "no-store".to_owned()),
         ("Referrer-Policy", "no-referrer".to_owned()),
@@ -1019,9 +1098,16 @@ pub fn serve(path: &Path, options: &Options, env: &Env) -> Result<(), Failure> {
                 .read_to_end(&mut body);
         }
         let reply = served.answer(&method, &url, &fields, &body);
-        let response =
-            tiny_http::Response::from_string(reply.html.clone()).with_status_code(reply.status);
-        let mut response = response;
+        let length = reply.body.len();
+        let mut response = tiny_http::Response::new(
+            tiny_http::StatusCode(reply.status),
+            Vec::new(),
+            std::io::Cursor::new(reply.body.clone()),
+            Some(length),
+            None,
+        )
+        // Each length is known: the response gives it, never chunks.
+        .with_chunked_threshold(usize::MAX);
         for header in headers(&reply) {
             response.add_header(header);
         }
@@ -1050,6 +1136,22 @@ mod tests {
     fn a_time_in_words() {
         assert_eq!(time_words(0), "1970-01-01 00:00 UTC");
         assert_eq!(time_words(1_763_424_000), "2025-11-18 00:00 UTC");
+    }
+
+    /// narrative-page, "The pinned script".
+    #[test]
+    fn the_pinned_script() {
+        use sha2::Digest as _;
+        assert_eq!(
+            crate::hex(&sha2::Sha256::digest(MERMAID_SCRIPT)),
+            MERMAID_SHA256
+        );
+        let script = String::from_utf8_lossy(MERMAID_SCRIPT);
+        assert!(
+            script.contains(&format!("\"{MERMAID_VERSION}\"")),
+            "the script names no version {MERMAID_VERSION}"
+        );
+        assert!(String::from_utf8_lossy(MERMAID_LICENSE).starts_with("The MIT License"));
     }
 
     #[test]

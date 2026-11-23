@@ -184,9 +184,12 @@ claims that hold.
   in the page, or with `boom note <name>@<version> --paragraph <n>
   "<words>"`. A note is an entry of the log with the person's name and
   no signature, because a note binds nothing. boom computes the page
-  from the log for each request, and no file holds it. The page runs no
-  script and loads nothing from another host. Each path of the page
-  starts with a token that only the line that boom prints holds.
+  from the log for each request, and no file holds it. The page loads
+  nothing from another host. A `mermaid` code block in a body shows as a
+  picture, drawn by Mermaid's script, which boom holds in its binary and
+  serves itself. The page runs no other script, and a reader with no
+  script reads the block's source. Each path of the page starts with a
+  token that only the line that boom prints holds.
 - **A new version answers each open note.** A note stays open until a
   later version of its narrative answers it, with `--answers
   <note>=<words>`. boom refuses a new version that leaves a note open,

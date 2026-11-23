@@ -238,6 +238,27 @@ fn a_paragraphs_fingerprint() {
     );
 }
 
+/// narratives, "A diagram in a body is its source".
+#[test]
+fn a_diagram_is_a_paragraph() {
+    let place = Place::new();
+    place.made();
+    let block = "```mermaid\nflowchart LR\n  a --> b\n```";
+    let body = format!("# The steps\n\n{block}\n");
+    let answer = place.narrative(NAME, TITLE, &body, &[]);
+    let shown = place.show(&format!("{NAME}@{}", version(&answer)));
+    let paragraphs = shown["paragraphs"].as_array().unwrap();
+    let kinds: Vec<&str> = paragraphs
+        .iter()
+        .map(|p| p["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["heading", "code"], "{shown}");
+    assert_eq!(
+        paragraphs[1]["fingerprint"],
+        boom::sha256_hex(block.as_bytes())[..12]
+    );
+}
+
 #[test]
 fn a_design_accepted_with_one_touch() {
     let place = Place::new();
