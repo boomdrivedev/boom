@@ -311,6 +311,9 @@ ul.list{list-style:none;padding:0}
 ul.list li{padding:.6rem 0;border-bottom:1px solid var(--line)}
 ul.list .title{font:600 1.05rem system-ui,sans-serif}
 .quote{border-left:2px solid var(--line);padding-left:.6rem;color:var(--soft)}
+.p table,.box table{border-collapse:collapse;margin:.5rem 0;font:15px/1.45 system-ui,sans-serif}
+.p th,.p td,.box th,.box td{border:1px solid var(--line);padding:.35rem .7rem;text-align:left;vertical-align:top}
+.p th,.box th{background:var(--card);font-weight:600}
 ";
 
 /// The binding of a version in words.
