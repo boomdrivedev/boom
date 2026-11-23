@@ -181,7 +181,9 @@ claims that hold.
   paragraphs of the body from 1, and `boom show <name>@<version> --json`
   gives each paragraph with its fingerprint. A person accepts a
   narrative with the key, as each claim, and one `boom accept` can take
-  a narrative with the claims that it includes. No one checks a
+  a narrative with the claims that it includes. A narrative binds one
+  level: the whole system, one repository or one context. It names no
+  book and no chapter, so many views can hold it. No one checks a
   narrative, and no hook gives one.
 - **A person reads a narrative on a page and writes notes on it.**
   `boom page <name>` serves the page of the narrative on `127.0.0.1` and
@@ -202,6 +204,20 @@ claims that hold.
   <note>=<words>`. boom refuses a new version that leaves a note open,
   and names each one. `boom show <name>` gives each note with its
   paragraph, its words, and `open` or its answer.
+- **boom computes the design book.** An outline is a claim that holds
+  the order of a view: `boom propose outline <name> "<title>" --view
+  book --narrative <name> ...` names the narratives of the book in
+  order, each at the version that it meant. An outline binds the whole
+  system, and a person accepts it with the key. A store has one book.
+  boom computes the book from the log: Part I gives the narratives of
+  the whole system, then a section for each context of two repositories
+  or more; Part II gives a chapter for each repository, with a section
+  for each of its contexts. Inside each, the outline sets the order, and
+  a narrative that the outline does not hold comes last, marked.
+  `boom show <outline>` gives the book in words, and `boom page` with no
+  name gives it as a page, each narrative a link to its own page, which
+  links to the narratives before it and after it. `boom page --view
+  <outline>` gives the view of that outline.
 
 ```sh
 boom init --person ada --key ~/.ssh/id_ed25519_sk
@@ -223,6 +239,9 @@ boom page shop-end-to-end
 boom note shop-end-to-end@<version> --paragraph 3 "Say what a refund is."
 boom propose narrative shop-end-to-end "The shop, end to end" --body design.md \
   --amends <version> --answers "<note>=Paragraph 4 says it now." --provenance run-5
+boom propose outline shop-design-book "The design book of the shop" --view book \
+  --narrative shop-end-to-end --provenance run-6
+boom page
 boom log
 ```
 
@@ -245,7 +264,7 @@ standard input and answers with the JSON of Claude Code, or nothing.
   line each, with its statement. The decisions, the assumptions and the
   contexts come as a count and their names. A menu names `boom show`,
   `boom query --path` and `boom search`. A claim that binds only a
-  context does not come, and no narrative comes.
+  context does not come, and no narrative or outline comes.
 - Before an edit, `boom hook pre-tool-use` reads the `Write`, `Edit` or
   `MultiEdit`. It stops a write that holds an old word of an accepted
   term, and the agent reads the term to write in its place. At the
@@ -322,8 +341,8 @@ tag.
 ## What it will do
 
 - **Views computed.** boom computes the rules for a scope, the decision
-  records in MADR, the design book in mdBook and the context map from
-  the ledger. It writes none of them into a
+  records in MADR and the context map from the ledger, as it computes
+  the design book. It writes none of them into a
   repository: a repository's agents get its rules from `boom query`
   (records 0005 and 0008).
 - **Checked at the merge.** `boom check` reads a change against the

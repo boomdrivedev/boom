@@ -65,9 +65,18 @@ each request, where a person reads it and writes a note on a paragraph.
 no signature. A note stays open until a later version answers it with
 `--answers <note>=<words>`, and boom refuses a version that leaves one
 open. No tool of `boom mcp` writes a note or serves a page.
-The views it renders, a rules page, decision
-records, a design book and a context map, and `boom check` are not built
-yet.
+A narrative binds one level: the whole system, one repository or one
+context. An outline is a claim of the kind `outline` that holds the
+order of a view, `--view book`, with `--narrative`, each at the version
+it meant; it binds the whole system, a person accepts it with the key,
+and a store has one book. Boom computes the design book from the log:
+Part I the narratives of the whole system and the contexts of two
+repositories or more, Part II a chapter for each repository with its
+contexts, each in the outline's order, then the narratives that it does
+not hold, marked. `boom show <outline>` gives the book, `boom page` with
+no name serves it, and `boom page --view <outline>` serves the view of
+an outline. The other views, a rules page, decision records and a
+context map, and `boom check` are not built yet.
 
 ## The family
 
