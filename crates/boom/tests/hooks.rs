@@ -1074,3 +1074,59 @@ fn session_start_gives_no_narrative() {
         assert!(!text.contains(absent), "{absent}: {text}");
     }
 }
+
+#[test]
+fn session_start_gives_no_outline() {
+    let place = Place::new();
+    let ada = place.made();
+    let shop = "https://github.com/example/shop";
+    place.repo_added(&ada, "shop", shop);
+    let folder = place.repository("shop", Some(shop));
+    accepted(
+        &place,
+        &ada,
+        &[
+            "propose",
+            "invariant",
+            "refund-within-payment",
+            "A refund never exceeds the payment.",
+            "--system",
+        ],
+    );
+    let narrative = version(&place.narrative(
+        "shop-end-to-end",
+        "The shop, end to end",
+        support::NARRATIVE,
+        &["--repository", "shop"],
+    ));
+    place.accepted("shop-end-to-end", &narrative, &ada);
+    accepted(
+        &place,
+        &ada,
+        &[
+            "propose",
+            "outline",
+            "shop-design-book",
+            "The design book of the shop",
+            "--view",
+            "book",
+            "--narrative",
+            "shop-end-to-end",
+        ],
+    );
+    let answer = answer(&hook(
+        &place,
+        "session-start",
+        &started("s-1", &folder, "startup"),
+    ));
+    let text = answer["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        text.contains("A refund never exceeds the payment."),
+        "{text}"
+    );
+    for absent in ["shop-design-book", "outline", "The design book"] {
+        assert!(!text.contains(absent), "{absent}: {text}");
+    }
+}

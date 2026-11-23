@@ -658,3 +658,47 @@ fn a_narrative_with_its_includes() {
     assert_eq!(answer["includes"], json!([edge]));
     assert_eq!(last_claim(&place)["includes"], json!([edge]));
 }
+
+#[test]
+fn an_outline_with_its_narratives() {
+    let place = Place::new();
+    place.made();
+    let end_to_end = place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &[],
+    )["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let records = place.narrative(
+        "change-records",
+        "Boom's change record",
+        support::NARRATIVE,
+        &[],
+    )["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let answer = place.json(&[
+        "propose",
+        "outline",
+        "boomdrive-design-book",
+        "The design book of Boomdrive",
+        "--view",
+        "book",
+        "--narrative",
+        "change-records",
+        "--narrative",
+        "boom-end-to-end",
+        "--provenance",
+        "run-1",
+    ]);
+    let edges = json!([
+        format!("change-records@{records}"),
+        format!("boom-end-to-end@{end_to_end}")
+    ]);
+    assert_eq!(answer["narratives"], edges);
+    assert_eq!(last_claim(&place)["narratives"], edges);
+}

@@ -226,13 +226,22 @@ fn a_tools_arguments_are_its_commands() {
                 "origin",
                 "paths",
                 "includes",
-                "answers"
+                "answers",
+                "view",
+                "narratives"
             ]),
             names(&["kind", "name", "statement"])
         )
     );
     for edge in [
-        "source", "changes", "origin", "contexts", "paths", "includes", "answers",
+        "source",
+        "changes",
+        "origin",
+        "contexts",
+        "paths",
+        "includes",
+        "answers",
+        "narratives",
     ] {
         assert_eq!(properties_of(propose)[edge]["type"], "array", "{edge}");
         assert_eq!(
@@ -250,7 +259,8 @@ fn a_tools_arguments_are_its_commands() {
             "assumption",
             "term",
             "context",
-            "narrative"
+            "narrative",
+            "outline"
         ])
     );
     assert_eq!(properties["replaces"]["type"], "array");
@@ -801,4 +811,37 @@ fn the_instructions_name_the_note() {
     );
     assert!(instructions.contains("boom page"), "{instructions}");
     assert!(instructions.contains("boom note"), "{instructions}");
+}
+
+#[test]
+fn an_outline_proposed_through_its_tool() {
+    let place = Place::new();
+    place.made();
+    place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &[],
+    );
+    let result = place.call(
+        "propose",
+        json!({
+            "kind": "outline",
+            "name": "boomdrive-design-book",
+            "statement": "The design book of Boomdrive",
+            "view": "book",
+            "narratives": ["boom-end-to-end"],
+            "provenance": "run-1",
+        }),
+    );
+    assert_eq!(result["isError"], false, "{result}");
+    let answer = text(&result);
+    assert_eq!(answer["kind"], "outline");
+    assert_eq!(answer["status"], "proposed");
+    let last = place.log().pop().unwrap();
+    assert_eq!(last["act"], "proposed");
+    let signed: Value = serde_json::from_str(last["signed"].as_str().unwrap()).unwrap();
+    assert_eq!(signed["claim"]["kind"], "outline");
+    let held = signed["claim"]["narratives"][0].as_str().unwrap();
+    assert!(held.starts_with("boom-end-to-end@"), "{held}");
 }

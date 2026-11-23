@@ -1,5 +1,7 @@
 //! `boom page`: the page where a person reads a narrative with the claims
-//! that it includes, and writes a note on a paragraph (narrative-page).
+//! that it includes, and writes a note on a paragraph, and the page of the
+//! design book, which links to the page of each narrative
+//! (narrative-page; views).
 //!
 //! Boom serves the page on `127.0.0.1`, each path under a token of 128
 //! random bits that only the line boom prints holds. Each response is
@@ -66,8 +68,11 @@ const LARGEST_FORM: u64 = 64 * 1024;
 /// What `boom page` was asked to serve.
 #[derive(Debug, Clone)]
 pub struct Options {
-    /// The narrative, `<name>` or `<name>@<version>`; none for the list.
+    /// The narrative, `<name>` or `<name>@<version>`; none for a view.
     pub target: Option<String>,
+    /// The outline whose view is served; with no target and no outline,
+    /// the design book.
+    pub view: Option<String>,
     /// The port; 0 for a free one.
     pub port: u16,
     /// Whether to open the URL in the browser.
@@ -321,7 +326,7 @@ fn document(title: &str, entry: u64, base: &str, main: &str) -> String {
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
          <meta name=\"referrer\" content=\"no-referrer\">\n\
          <title>{} · Boom</title>\n<style>{STYLE}</style>\n</head>\n<body>\n\
-         <header class=\"bar\"><a href=\"{base}/\">Boom · narratives</a><span>entry {entry}</span></header>\n\
+         <header class=\"bar\"><a href=\"{base}/\">Boom · the design book</a><span>entry {entry}</span></header>\n\
          <main>\n{main}</main>\n{mermaid}</body>\n</html>\n",
         escape(title)
     )
@@ -368,6 +373,10 @@ details.write button{font:600 13px system-ui,sans-serif;padding:.35rem .8rem;bor
 ul.list{list-style:none;padding:0}
 ul.list li{padding:.6rem 0;border-bottom:1px solid var(--line)}
 ul.list .title{font:600 1.05rem system-ui,sans-serif}
+.unheld{color:#b4452c;font:12px/1.5 system-ui,sans-serif}
+h3{font:600 .98rem/1.3 system-ui,sans-serif;margin:1.6rem 0 .3rem}
+h4{font:600 .9rem/1.3 system-ui,sans-serif;margin:1.2rem 0 .2rem;color:var(--soft)}
+nav.book{display:flex;justify-content:space-between;gap:1rem;margin:2.4rem 0 0;padding-top:1rem;border-top:1px solid var(--line);font:13px/1.5 system-ui,sans-serif}
 .quote{border-left:2px solid var(--line);padding-left:.6rem;color:var(--soft)}
 .p table,.box table{border-collapse:collapse;margin:.5rem 0;font:15px/1.45 system-ui,sans-serif}
 .p th,.p td,.box th,.box td{border:1px solid var(--line);padding:.35rem .7rem;text-align:left;vertical-align:top}
@@ -570,7 +579,40 @@ pub fn narrative_page(
             escape(&at)
         );
     }
+    main.push_str(&neighbors(conn, name, base)?);
     Ok(document(&shown.proposal.statement, entry, base, &main))
+}
+
+/// The links of a narrative that the design book gives: to the book, and
+/// to the narratives before it and after it in the book's order; nothing
+/// for a narrative that the book does not give (narrative-page, "A
+/// narrative's place in the book").
+fn neighbors(conn: &rusqlite::Connection, name: &str, base: &str) -> Result<String, Failure> {
+    let state = store::view_state(conn)?;
+    let book = crate::view::book(&state, None);
+    let order = book.order();
+    let Some(at) = order.iter().position(|entry| entry.narrative == name) else {
+        return Ok(String::new());
+    };
+    let link = |entry: &crate::view::Entry, rel: &str, words: &str| {
+        format!(
+            "<a rel=\"{rel}\" href=\"{base}/n/{}\">{words} {}</a>",
+            escape(&entry.narrative),
+            escape(&entry.title)
+        )
+    };
+    let before = at
+        .checked_sub(1)
+        .and_then(|before| order.get(before))
+        .map(|entry| link(entry, "prev", "←"))
+        .unwrap_or_default();
+    let after = order
+        .get(at + 1)
+        .map(|entry| link(entry, "next", "→"))
+        .unwrap_or_default();
+    Ok(format!(
+        "<nav class=\"book\"><span>{before}</span><a rel=\"contents\" href=\"{base}/\">the design book</a><span>{after}</span></nav>\n"
+    ))
 }
 
 /// The claim `name` of `state`, a narrative.
@@ -684,67 +726,124 @@ fn note_box(state: &State, note: &judge::Note, paragraph: Option<&str>) -> Strin
     html
 }
 
-/// The list of the narratives of the store, by what each binds, each
-/// with its status and its count of open notes (narrative-page, "The
-/// list of narratives").
-pub fn list_page(conn: &rusqlite::Connection, context: &Context) -> Result<String, Failure> {
-    let state = store::narratives(conn)?;
+/// The count of open notes in words.
+fn open_words(open: usize) -> String {
+    match open {
+        0 => "no open note".to_owned(),
+        1 => "1 open note".to_owned(),
+        n => format!("{n} open notes"),
+    }
+}
+
+/// The entries of a level of the book, each a link to its narrative's
+/// page with its title, `<name>@<version>`, status, open notes and mark.
+fn entries_html(entries: &[crate::view::Entry], base: &str) -> String {
+    if entries.is_empty() {
+        return String::new();
+    }
+    let mut html = String::from("<ul class=\"list\">\n");
+    for entry in entries {
+        let unheld = if entry.held {
+            String::new()
+        } else {
+            " · <span class=\"unheld\">not in the outline</span>".to_owned()
+        };
+        let _ = writeln!(
+            html,
+            "<li data-narrative=\"{name}\"><a class=\"title\" href=\"{base}/n/{name}\">{title}</a><div class=\"meta\"><code>{name}@{version}</code> · <span class=\"status\">{status}</span> · <span class=\"open\" data-open=\"{open}\">{open_words}</span>{unheld}</div></li>",
+            name = escape(&entry.narrative),
+            title = escape(&entry.title),
+            version = entry.version,
+            status = entry.status,
+            open = entry.open_notes,
+            open_words = open_words(entry.open_notes),
+        );
+    }
+    html.push_str("</ul>\n");
+    html
+}
+
+/// The page of the design book, computed from the outline `outline`, or
+/// from the outline of the view `book` where none is named: the outline's
+/// head, each part, chapter and section as a heading, and each narrative
+/// as a link to its page (narrative-page, "The design book on the page").
+pub fn book_page(
+    conn: &rusqlite::Connection,
+    outline: Option<&str>,
+    context: &Context,
+) -> Result<String, Failure> {
+    let state = store::view_state(conn)?;
+    if let Some(name) = outline {
+        outline_claim(&state, name)?;
+    }
+    let book = crate::view::book(&state, outline);
     let (entry, _) = store::head_entry(conn)?;
     let base = &context.base;
-    let mut groups: std::collections::BTreeMap<String, Vec<String>> = Default::default();
-    for claim in state
-        .claims
-        .values()
-        .filter(|claim| claim.kind == Kind::Narrative)
-    {
-        let Some(newest) = claim.versions.last() else {
-            continue;
-        };
-        let shown = claim
-            .standing
-            .as_deref()
-            .and_then(|standing| claim.version(standing))
-            .unwrap_or(newest);
-        let open = state.open_notes(&claim.name).len();
-        let open_words = match open {
-            0 => "no open note".to_owned(),
-            1 => "1 open note".to_owned(),
-            n => format!("{n} open notes"),
-        };
-        let item = format!(
-            "<li><a class=\"title\" href=\"{base}/n/{name}\">{title}</a><div class=\"meta\"><code>{name}@{version}</code> · <span class=\"status\">{status}</span> · <span class=\"open\" data-open=\"{open}\">{open_words}</span></div></li>\n",
-            name = escape(&claim.name),
-            title = escape(&shown.proposal.statement),
-            version = shown.proposal.version,
-            status = shown.status.as_str(),
-        );
-        let repositories = if shown.repositories.is_empty() && shown.contexts.is_empty() {
-            vec!["the whole system".to_owned()]
-        } else if shown.repositories.is_empty() {
-            crate::context::names(&shown.contexts)
-                .into_iter()
-                .map(|name| format!("the context {name}"))
-                .collect()
-        } else {
-            shown.repositories.clone()
-        };
-        for repository in repositories {
-            groups.entry(repository).or_default().push(item.clone());
+    let mut main = String::new();
+    let title = match &book.outline {
+        Some(head) => {
+            let count = state
+                .named(&head.name)
+                .first()
+                .and_then(|claim| claim.version(&head.version))
+                .map_or(0, |version| version.proposal.narratives.len());
+            let _ = writeln!(
+                main,
+                "<h1>{}</h1>\n<p class=\"meta\">outline <code>{}@{}</code> · <span class=\"status\">{}</span> · {count} narratives</p>",
+                escape(&head.title),
+                escape(&head.name),
+                head.version,
+                head.status
+            );
+            if head.body.is_some() {
+                main.push_str(&markdown(&body_text(conn, head.body.as_deref())?));
+            }
+            head.title.clone()
+        }
+        None => {
+            main.push_str("<h1>The design book</h1>\n<p class=\"hint\">No outline orders this book, so each narrative is given by name, marked as not in the outline. An agent proposes the outline with <code>boom propose outline &lt;name&gt; \"&lt;title&gt;\" --view book --narrative &lt;name&gt; ...</code>, and a person accepts it.</p>\n");
+            "The design book".to_owned()
+        }
+    };
+    let _ = writeln!(main, "<h2>{}</h2>", crate::view::PART_I);
+    main.push_str(&entries_html(&book.system.narratives, base));
+    for section in &book.system.sections {
+        let _ = writeln!(main, "<h3>{}</h3>", escape(&section.context));
+        main.push_str(&entries_html(&section.narratives, base));
+    }
+    if book.system.narratives.is_empty() && book.system.sections.is_empty() {
+        main.push_str("<p class=\"hint\">No narrative binds the whole system.</p>\n");
+    }
+    let _ = writeln!(main, "<h2>{}</h2>", crate::view::PART_II);
+    for chapter in &book.repositories {
+        let _ = writeln!(main, "<h3>{}</h3>", escape(&chapter.repository));
+        main.push_str(&entries_html(&chapter.narratives, base));
+        for section in &chapter.sections {
+            let _ = writeln!(main, "<h4>{}</h4>", escape(&section.context));
+            main.push_str(&entries_html(&section.narratives, base));
         }
     }
-    let mut main = String::from("<h1>Narratives</h1>\n");
-    if groups.is_empty() {
-        main.push_str("<p class=\"hint\">This store holds no narrative: an agent proposes one with <code>boom propose narrative &lt;name&gt; \"&lt;title&gt;\" --body &lt;file&gt;</code>.</p>\n");
+    if book.repositories.is_empty() {
+        main.push_str("<p class=\"hint\">No narrative binds a repository.</p>\n");
     }
-    for (repository, items) in groups {
-        let _ = writeln!(
-            main,
-            "<h2>{}</h2>\n<ul class=\"list\">\n{}</ul>",
-            escape(&repository),
-            items.concat()
-        );
+    Ok(document(&title, entry, base, &main))
+}
+
+/// The claim `name` of `state`, an outline.
+fn outline_claim<'a>(state: &'a State, name: &str) -> Result<&'a Claim, Failure> {
+    let claim = state
+        .named(name)
+        .into_iter()
+        .next()
+        .ok_or_else(|| Failure::refused(format!("no claim has the name {name}")))?;
+    if claim.kind != Kind::Outline {
+        return Err(Failure::refused(format!(
+            "--view names an outline: {name} is {} {}",
+            crate::claim::article(claim.kind),
+            claim.kind.as_str()
+        )));
     }
-    Ok(document("Narratives", entry, base, &main))
+    Ok(claim)
 }
 
 // The server
@@ -879,7 +978,10 @@ impl Server {
                 Reply::held("text/plain; charset=utf-8", MERMAID_LICENSE)
             }
             ("GET" | "HEAD", None) if rest.is_empty() => {
-                self.read(|conn| list_page(conn, &self.context))
+                self.read(|conn| book_page(conn, None, &self.context))
+            }
+            ("GET" | "HEAD", None) if rest.starts_with("v/") && !rest[2..].contains('/') => {
+                self.read(|conn| book_page(conn, Some(&rest[2..]), &self.context))
             }
             ("GET" | "HEAD", Some(target)) if !target.contains('/') => {
                 let (name, version) = match target.split_once('@') {
@@ -986,10 +1088,23 @@ pub fn serve(path: &Path, options: &Options, env: &Env) -> Result<(), Failure> {
     let name = options
         .target
         .as_deref()
-        .map(|target| target.split_once('@').map_or(target, |(name, _)| name));
+        .map(|target| target.split_once('@').map_or(target, |(name, _)| name))
+        .or(options.view.as_deref());
     let state = store.state_for(&Scope::names(name))?;
-    let shown = match &options.target {
-        Some(target) => {
+    let shown = match (&options.target, &options.view) {
+        (Some(_), Some(_)) => {
+            return Err(Failure::refused(
+                "boom page takes a narrative or --view <outline>, and not both",
+            ))
+        }
+        (None, Some(view)) => {
+            let claim = outline_claim(&state, view)?;
+            let version = crate::view::shown(claim)
+                .map(|version| version.proposal.version.clone())
+                .unwrap_or_default();
+            format!("{view}@{version}")
+        }
+        (Some(target), None) => {
             let (name, version) = match target.split_once('@') {
                 Some((name, version)) => (name, Some(version)),
                 None => (target.as_str(), None),
@@ -1012,7 +1127,7 @@ pub fn serve(path: &Path, options: &Options, env: &Env) -> Result<(), Failure> {
             };
             format!("{name}@{version}")
         }
-        None => "the narratives of the store".to_owned(),
+        (None, None) => "the design book".to_owned(),
     };
     let person = match options.person.as_deref() {
         Some(given) => Some(person_of(&state, Some(given))?),
@@ -1031,9 +1146,10 @@ pub fn serve(path: &Path, options: &Options, env: &Env) -> Result<(), Failure> {
         .map(|address| address.port())
         .ok_or_else(|| Failure::not_run("boom page serves on no port of 127.0.0.1"))?;
     let base = format!("/{}", token()?);
-    let first = match &options.target {
-        Some(target) => format!("{base}/n/{target}"),
-        None => format!("{base}/"),
+    let first = match (&options.target, &options.view) {
+        (Some(target), _) => format!("{base}/n/{target}"),
+        (None, Some(view)) => format!("{base}/v/{view}"),
+        (None, None) => format!("{base}/"),
     };
     let url = format!("http://127.0.0.1:{port}{first}");
     let mut stdout = std::io::stdout();

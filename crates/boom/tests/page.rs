@@ -193,32 +193,165 @@ fn an_include_out_of_date_on_the_page() {
     );
 }
 
-#[test]
-fn the_list_of_narratives() {
-    let place = Place::new();
-    let v1 = one_narrative(&place, &[]);
+/// The HTML of the page of the design book, as the function gives it.
+fn book_html(place: &Place, outline: Option<&str>) -> String {
+    let context = Context {
+        base: "/t".to_owned(),
+        person: None,
+    };
+    Store::open(&place.store)
+        .unwrap()
+        .read(|conn| boom::page::book_page(conn, outline, &context))
+        .unwrap()
+}
+
+/// The item of the narrative `name` in `html`, a page of the book.
+fn item(html: &str, name: &str) -> String {
+    let start = html
+        .find(&format!("<li data-narrative=\"{name}\">"))
+        .unwrap_or_else(|| panic!("no item {name}: {html}"));
+    let rest = &html[start..];
+    rest[..rest.find("</li>").unwrap()].to_owned()
+}
+
+/// Proposes the outline of the book with `narratives`, giving its
+/// version.
+fn book_outline(place: &Place, narratives: &[&str]) -> String {
+    let mut args = vec![
+        "propose",
+        "outline",
+        BOOK,
+        "The design book of Boomdrive",
+        "--view",
+        "book",
+    ];
+    for held in narratives {
+        args.extend(["--narrative", held]);
+    }
+    args.extend(["--provenance", "run-1"]);
+    version(&place.json(&args))
+}
+
+const BOOK: &str = "boomdrive-design-book";
+const LOG: &str = "the-drives-log";
+const RECORDS: &str = "change-records";
+
+/// The store of "The book on the page": `the-drives-log` binds the whole
+/// system, `boom-end-to-end` binds `boom` with two open notes, and
+/// `change-records` binds `boom`; the outline holds the three in that
+/// order.
+fn book_store(place: &Place) {
+    let v1 = one_narrative(place, &[]);
     place.noted(&format!("{NAME}@{v1}"), 1, "One.");
     place.noted(&format!("{NAME}@{v1}"), 2, "Two.");
+    place.narrative(LOG, "The drive's log", "One log.\n", &["--system"]);
+    place.narrative(
+        RECORDS,
+        "Boom's change record",
+        "A record.\n",
+        &["--repository", "boom"],
+    );
+    book_outline(place, &[LOG, NAME, RECORDS]);
+}
+
+#[test]
+fn the_book_on_the_page() {
+    let place = Place::new();
+    book_store(&place);
+    let html = book_html(&place, None);
+    assert!(
+        html.contains("<h1>The design book of Boomdrive</h1>"),
+        "{html}"
+    );
+    assert!(html.contains(&format!("outline <code>{BOOK}@")), "{html}");
+    let part_one = html.find("<h2>Part I. The system</h2>").expect("Part I");
+    let part_two = html
+        .find("<h2>Part II. The repositories</h2>")
+        .expect("Part II");
+    let chapter = html.find("<h3>boom</h3>").expect("the chapter boom");
+    let log = html.find(&format!("data-narrative=\"{LOG}\"")).unwrap();
+    let end_to_end = html.find(&format!("data-narrative=\"{NAME}\"")).unwrap();
+    assert!(part_one < log && log < part_two && part_two < chapter && chapter < end_to_end);
+    let entry = item(&html, NAME);
+    assert!(entry.contains(&format!("href=\"/t/n/{NAME}\"")), "{entry}");
+    assert!(entry.contains("data-open=\"2\""), "{entry}");
+    assert!(entry.contains("2 open notes"), "{entry}");
+    assert!(!entry.contains("not in the outline"), "{entry}");
+}
+
+#[test]
+fn a_narrative_marked_on_the_page() {
+    let place = Place::new();
+    book_store(&place);
     place.narrative(
         "boom-for-a-reader",
         "Boom, for a reader",
         "A short one.\n",
         &["--repository", "boom"],
     );
-    let context = Context {
-        base: "/t".to_owned(),
-        person: None,
-    };
-    let html = Store::open(&place.store)
-        .unwrap()
-        .read(|conn| boom::page::list_page(conn, &context))
-        .unwrap();
-    let under = &html[html.find("<h2>boom</h2>").expect("a heading for boom")..];
-    let first = &under[under.find(TITLE).unwrap()..];
-    let first = &first[..first.find("</li>").unwrap()];
-    assert!(first.contains("data-open=\"2\""), "{first}");
-    assert!(first.contains("2 open notes"), "{first}");
-    assert!(under.contains("Boom, for a reader"), "{under}");
+    let html = book_html(&place, None);
+    let chapter = &html[html.find("<h3>boom</h3>").unwrap()..];
+    let last = chapter.rfind("<li data-narrative=").unwrap();
+    assert!(
+        chapter[last..].starts_with("<li data-narrative=\"boom-for-a-reader\">"),
+        "{chapter}"
+    );
+    assert!(
+        item(&html, "boom-for-a-reader").contains("not in the outline"),
+        "{html}"
+    );
+}
+
+#[test]
+fn no_outline() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    place.narrative(
+        "boom-for-a-reader",
+        "Boom, for a reader",
+        "A short one.\n",
+        &["--repository", "boom"],
+    );
+    let html = book_html(&place, None);
+    let chapter = &html[html.find("<h3>boom</h3>").expect("the chapter boom")..];
+    let first = chapter.find("boom-end-to-end").unwrap();
+    let second = chapter.find("boom-for-a-reader").unwrap();
+    assert!(first < second, "{chapter}");
+    for name in [NAME, "boom-for-a-reader"] {
+        assert!(item(&html, name).contains("not in the outline"), "{html}");
+    }
+    assert!(html.contains("boom propose outline"), "{html}");
+}
+
+#[test]
+fn the_narratives_around_one() {
+    let place = Place::new();
+    book_store(&place);
+    let html = html(&place, NAME, None, None);
+    let nav = &html[html.find("<nav class=\"book\">").expect("the book's links")..];
+    assert!(nav.contains("rel=\"contents\" href=\"/t/\""), "{nav}");
+    assert!(
+        nav.contains(&format!("rel=\"prev\" href=\"/t/n/{LOG}\"")),
+        "{nav}"
+    );
+    assert!(
+        nav.contains(&format!("rel=\"next\" href=\"/t/n/{RECORDS}\"")),
+        "{nav}"
+    );
+}
+
+#[test]
+fn the_first_narrative() {
+    let place = Place::new();
+    book_store(&place);
+    let html = html(&place, LOG, None, None);
+    let nav = &html[html.find("<nav class=\"book\">").expect("the book's links")..];
+    assert!(nav.contains("rel=\"contents\" href=\"/t/\""), "{nav}");
+    assert!(
+        nav.contains(&format!("rel=\"next\" href=\"/t/n/{NAME}\"")),
+        "{nav}"
+    );
+    assert!(!nav.contains("rel=\"prev\""), "{nav}");
 }
 
 #[test]
@@ -730,4 +863,53 @@ fn two_persons_and_no_person() {
     );
     let with_person = served(&place, &[NAME, "--person", "bo"]);
     assert!(with_person.page(NAME).body.contains("<form"));
+}
+
+#[test]
+fn the_design_book_served() {
+    let place = Place::new();
+    book_store(&place);
+    let page = served(&place, &[]);
+    assert!(
+        page.url.ends_with(&format!("/{}/", page.token)),
+        "{}",
+        page.url
+    );
+    let response = page.get(&format!("/{}/", page.token));
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert!(
+        response.body.contains("Part I. The system"),
+        "{}",
+        response.body
+    );
+}
+
+#[test]
+fn a_view_served() {
+    let place = Place::new();
+    book_store(&place);
+    let page = served(&place, &["--view", BOOK]);
+    assert!(page.url.ends_with(&format!("/v/{BOOK}")), "{}", page.url);
+    let response = page.get(&format!("/{}/v/{BOOK}", page.token));
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert!(
+        response
+            .body
+            .contains("<h1>The design book of Boomdrive</h1>"),
+        "{}",
+        response.body
+    );
+}
+
+#[test]
+fn a_view_that_is_not_an_outline() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let outcome = place.run(&["page", "--view", NAME, "--no-open"]);
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    assert!(
+        outcome.stderr.contains("--view names an outline"),
+        "{outcome:?}"
+    );
+    assert!(outcome.stdout.is_empty(), "{outcome:?}");
 }

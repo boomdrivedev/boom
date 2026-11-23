@@ -214,6 +214,15 @@ enum Command {
         /// version answers each open note of its narrative.
         #[arg(long = "answers", value_name = "NOTE=WORDS")]
         answers: Vec<String>,
+        /// For an outline, the view it computes: `book`, the design book.
+        #[arg(long, value_name = "VIEW")]
+        view: Option<String>,
+        /// For an outline, a narrative it holds, `<name>` or
+        /// `<name>@<version>` of a narrative of the store; any number of
+        /// times, in the view's order. A name stores its accepted version,
+        /// or its newest where none is accepted.
+        #[arg(long = "narrative", value_name = "NARRATIVE")]
+        narratives: Vec<String>,
     },
     /// Write a person's note on one paragraph of a version of a
     /// narrative: an entry with the person's name and no signature.
@@ -238,11 +247,15 @@ enum Command {
     },
     /// Serve the page of a narrative on 127.0.0.1, where a person reads it
     /// with the claims it includes and writes a note on a paragraph, and
-    /// open it in the browser; with no name, the list of the narratives.
+    /// open it in the browser; with no name, the design book.
     Page {
         /// The narrative, `<name>` for its newest version or
         /// `<name>@<version>`.
         target: Option<String>,
+        /// The view of an outline, `<name>` of an outline of the store, in
+        /// place of a narrative.
+        #[arg(long, value_name = "OUTLINE", conflicts_with = "target")]
+        view: Option<String>,
         /// The port; by default a free one.
         #[arg(long, value_name = "PORT", default_value_t = 0)]
         port: u16,
@@ -560,6 +573,7 @@ where
     }
     if let Command::Page {
         target,
+        view,
         port,
         no_open,
         idle,
@@ -579,6 +593,7 @@ where
         );
         let options = crate::page::Options {
             target: target.clone(),
+            view: view.clone(),
             port: *port,
             open: !*no_open,
             idle: std::time::Duration::from_secs(idle.saturating_mul(60)),
@@ -865,6 +880,8 @@ fn execute(
             paths,
             includes,
             answers,
+            view,
+            narratives,
         } => propose(
             &path?,
             Proposed {
@@ -884,6 +901,8 @@ fn execute(
                 paths,
                 includes,
                 answers,
+                view,
+                narratives,
             },
             key.as_deref(),
             keys,
@@ -1187,6 +1206,8 @@ struct Proposed {
     paths: Vec<String>,
     includes: Vec<String>,
     answers: Vec<String>,
+    view: Option<String>,
+    narratives: Vec<String>,
 }
 
 impl Proposed {
@@ -1369,6 +1390,10 @@ fn attachment(
     if proposed.kind == Kind::Context {
         return Ok(made(context::repositories(&proposed.paths), Vec::new()));
     }
+    // An outline binds the whole system, wherever it is proposed (views).
+    if proposed.kind == Kind::Outline {
+        return Ok(None);
+    }
     if !proposed.repositories.is_empty() || !proposed.contexts.is_empty() {
         let mut repositories = proposed.repositories.clone();
         repositories.sort();
@@ -1449,6 +1474,11 @@ fn propose(
                 "a context binds the repositories of its globs: boom propose context takes no --repository, --system or --context",
             ))
         }
+        Kind::Outline if !proposed.repositories.is_empty() || !proposed.contexts.is_empty() => {
+            return Err(Failure::refused(
+                "an outline binds the whole system: boom propose outline takes no --repository or --context",
+            ))
+        }
         Kind::Term if !proposed.contexts.is_empty() => {
             return Err(Failure::refused(
                 "a term binds one repository or the whole system, and never a context: boom propose term takes no --context",
@@ -1468,6 +1498,7 @@ fn propose(
     let declared = if !proposed.names_its_binding()
         && proposed.amends.is_none()
         && proposed.kind != Kind::Context
+        && proposed.kind != Kind::Outline
     {
         session_repository(path, None, env)?
     } else {
@@ -1509,6 +1540,38 @@ fn propose(
             }
         }
     }
+    if proposed.kind == Kind::Outline {
+        let mut held: Vec<&str> = Vec::with_capacity(proposed.narratives.len());
+        for given in &proposed.narratives {
+            let name = given
+                .split_once('@')
+                .map_or(given.as_str(), |(name, _)| name);
+            if held.contains(&name) {
+                return Err(Failure::refused(format!(
+                    "the outline holds {name} two times: --narrative names each narrative one time"
+                )));
+            }
+            held.push(name);
+        }
+    } else {
+        for (flag, given, what) in [
+            (
+                "narrative",
+                !proposed.narratives.is_empty(),
+                "holds narratives",
+            ),
+            ("view", proposed.view.is_some(), "names a view"),
+        ] {
+            if given {
+                return Err(Failure::refused(format!(
+                    "only an outline {what}: {} is proposed as {} {}, with --{flag}",
+                    proposed.name,
+                    crate::claim::article(proposed.kind),
+                    proposed.kind.as_str()
+                )));
+            }
+        }
+    }
     let answers = proposed
         .answers
         .iter()
@@ -1529,10 +1592,13 @@ fn propose(
                     .chain(&proposed.changes)
                     .chain(&proposed.contexts)
                     .chain(&proposed.includes)
+                    .chain(&proposed.narratives)
                     .map(|edge| edge.split_once('@').map_or(edge.as_str(), |(name, _)| name)),
             )
             .map(str::to_owned),
     );
+    // The judge reads each outline for the one book of a store (views).
+    scope.outlines = proposed.kind == Kind::Outline;
     scope
         .notes
         .extend(answers.iter().map(|answer| answer.note.clone()));
@@ -1579,19 +1645,21 @@ fn propose(
             None,
         );
         proposal.replaces = crate::claim::replaces(&proposed.replaces);
+        proposal.view.clone_from(&proposed.view);
         proposal.version = proposal.fingerprint(None);
         proposal
     };
     // The edges are part of its content, so a person signs them
     // (claim-edges, "The edges are part of the content").
-    let version_of = |attach: Option<&Attach>, edges: [Vec<String>; 3]| {
+    let version_of = |attach: Option<&Attach>, edges: [Vec<String>; 4]| {
         let mut proposal = version_without_edges(attach);
-        let [source, changes, includes] = edges;
+        let [source, changes, includes, narratives] = edges;
         if source.is_empty()
             && changes.is_empty()
             && origin.is_empty()
             && includes.is_empty()
             && answers.is_empty()
+            && narratives.is_empty()
         {
             return proposal;
         }
@@ -1600,6 +1668,7 @@ fn propose(
         proposal.origin = origin.clone();
         proposal.includes = includes;
         proposal.answers = answers.clone();
+        proposal.narratives = narratives;
         let term = (proposed.kind == Kind::Term)
             .then(|| judge::repositories(attach).first().map(String::as_str))
             .flatten();
@@ -1618,7 +1687,14 @@ fn propose(
         let source = resolve_edges(state, "source", &proposed.source)?;
         let changes = resolve_edges(state, "changes", &proposed.changes)?;
         let includes = resolve_edges(state, "includes", &proposed.includes)?;
-        let proposal = version_of(attach.as_ref(), [source, changes, includes]);
+        // An outline's narratives keep the order given, each one time
+        // (views).
+        let narratives = proposed
+            .narratives
+            .iter()
+            .map(|given| resolve_edge(state, "narrative", given))
+            .collect::<Result<Vec<_>, _>>()?;
+        let proposal = version_of(attach.as_ref(), [source, changes, includes, narratives]);
         made = Some(proposal.clone());
         Ok(Entry {
             at: env.clock.now(),
@@ -1665,6 +1741,12 @@ fn propose(
     for edge in &proposal.includes {
         words.push_str(&format!("includes: {edge}\n"));
     }
+    if let Some(view) = &proposal.view {
+        words.push_str(&format!("view: {view}\n"));
+    }
+    for edge in &proposal.narratives {
+        words.push_str(&format!("narrative: {edge}\n"));
+    }
     for answer in &proposal.answers {
         words.push_str(&format!(
             "answers: note {}: {}\n",
@@ -1691,6 +1773,8 @@ fn propose(
             "origin": proposal.origin.iter().map(origin_json).collect::<Vec<_>>(),
             "includes": proposal.includes,
             "answers": proposal.answers,
+            "view": proposal.view,
+            "narratives": proposal.narratives,
             "accept": accept,
         }),
         words,
@@ -2112,8 +2196,15 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
         object.insert("imported".into(), json!(imported));
         object.insert("history".into(), json!(history));
         let narrative = claim.kind == Kind::Narrative.as_str();
-        let (edges, edge_words) = edges_shown(conn, view, narrative)?;
+        let (edges, edge_words) = edges_shown(conn, view, &claim.kind)?;
         object.extend(edges);
+        let view_words = match &view.view {
+            Some(shown) => {
+                object.insert("view".into(), json!(shown));
+                format!("view: {shown}\n")
+            }
+            None => String::new(),
+        };
         let mut narrative_words = String::new();
         if narrative {
             let state = store::load_state_for(conn, &Scope::names([name]))?;
@@ -2187,6 +2278,7 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
             }
             words.push('\n');
         }
+        words.push_str(&view_words);
         words.push_str(&edge_words);
         words.push_str(&narrative_words);
         if let Some(body) = &body {
@@ -2212,15 +2304,20 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
 fn edges_shown(
     conn: &rusqlite::Connection,
     view: &store::VersionView,
-    narrative: bool,
+    kind: &str,
 ) -> Result<(serde_json::Map<String, Value>, String), Failure> {
     let mut object = serde_json::Map::new();
     let mut words = String::new();
     let mut kinds = vec![("source", &view.source), ("changes", &view.changes)];
-    if narrative {
+    if kind == Kind::Narrative.as_str() {
         // The claims a narrative includes, each at the version it meant
         // (narratives, "boom show gives a narrative").
         kinds.push(("includes", &view.includes));
+    }
+    if kind == Kind::Outline.as_str() {
+        // The narratives an outline holds, in its order, each at the
+        // version it meant (views, "boom show gives an outline").
+        kinds.push(("narratives", &view.narratives));
     }
     for (flag, edges) in kinds {
         let mut shown = Vec::with_capacity(edges.len());
@@ -2461,7 +2558,10 @@ fn claim_shown(
         words.push_str(&format!("replaces: {}\n", newest.replaces.join(", ")));
     }
     let narrative = claim.kind == Kind::Narrative.as_str();
-    let (newest_edges, newest_edge_words) = edges_shown(conn, newest, narrative)?;
+    if let Some(view) = &newest.view {
+        words.push_str(&format!("view: {view}\n"));
+    }
+    let (newest_edges, newest_edge_words) = edges_shown(conn, newest, &claim.kind)?;
     words.push_str(&newest_edge_words);
     let notes = if narrative {
         let state = store::load_state_for(conn, &Scope::names([claim.name.as_str()]))?;
@@ -2490,6 +2590,23 @@ fn claim_shown(
     } else {
         None
     };
+    // An outline's view as Boom computes it from the log, and the
+    // narratives of the book that it does not hold (views, "boom show
+    // gives an outline").
+    let book = if claim.kind == Kind::Outline.as_str() {
+        let state = store::view_state(conn)?;
+        let book = crate::view::book(&state, Some(&claim.name));
+        words.push('\n');
+        words.push_str(&book.words());
+        let unheld: Vec<&str> = book
+            .unheld()
+            .iter()
+            .map(|entry| entry.narrative.as_str())
+            .collect();
+        Some((json!(book), json!(unheld)))
+    } else {
+        None
+    };
     let mut newest_json = version_json(newest);
     newest_json.insert("statement".into(), json!(newest.statement));
     newest_json.insert("replaces".into(), json!(newest.replaces));
@@ -2507,6 +2624,7 @@ fn claim_shown(
         object.insert("repository".into(), json!(repository));
     }
     object.insert("accepted".into(), json!(claim.standing));
+    let held = newest_json.get("narratives").cloned();
     object.insert("newest".into(), Value::Object(newest_json));
     object.insert("versions".into(), Value::Array(versions));
     object.extend(resting);
@@ -2515,6 +2633,12 @@ fn claim_shown(
     }
     if let Some(notes) = notes {
         object.insert("notes".into(), notes);
+    }
+    if let Some((book, unheld)) = book {
+        object.insert("view".into(), json!(newest.view));
+        object.insert("narratives".into(), held.unwrap_or_default());
+        object.insert("book".into(), book);
+        object.insert("unheld".into(), unheld);
     }
     Ok((object, words))
 }
@@ -3261,6 +3385,7 @@ fn import(
             .collect(),
         imported: true,
         notes: std::collections::BTreeSet::new(),
+        outlines: false,
     };
     let mut judged = store.state_for(&scope)?;
     let mut entries = Vec::new();

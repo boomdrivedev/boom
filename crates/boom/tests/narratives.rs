@@ -362,3 +362,65 @@ fn a_narrative_is_found_by_its_words_and_queried_with_its_body() {
         boom::sha256_hex(NARRATIVE.as_bytes())
     );
 }
+
+// A narrative binds one level
+
+#[test]
+fn a_narrative_of_one_repository() {
+    let place = Place::new();
+    place.made();
+    place.narrative(NAME, TITLE, NARRATIVE, &["--repository", "boom"]);
+}
+
+/// The arguments of a proposal of the narrative with `extra`.
+fn narrative_args<'a>(file: &'a str, extra: &[&'a str]) -> Vec<&'a str> {
+    let mut args = vec!["propose", "narrative", NAME, TITLE, "--body", file];
+    args.extend(extra);
+    args.extend(["--provenance", "run-1"]);
+    args
+}
+
+#[test]
+fn a_narrative_of_two_repositories() {
+    let place = Place::new();
+    place.made();
+    let file = place.file("narrative.md", NARRATIVE);
+    place.refused(
+        &narrative_args(&file, &["--repository", "boom", "--repository", "sluice"]),
+        "a narrative binds one level",
+    );
+}
+
+#[test]
+fn a_narrative_of_a_repository_and_a_context() {
+    let place = Place::new();
+    place.made();
+    place.json(&[
+        "propose",
+        "context",
+        "sluice-host-process",
+        "The one process of sluice on a host.",
+        "--path",
+        "sluice:crates/sluice/src/host_process/**",
+        "--provenance",
+        "run-1",
+    ]);
+    let file = place.file("narrative.md", NARRATIVE);
+    place.refused(
+        &narrative_args(
+            &file,
+            &["--repository", "sluice", "--context", "sluice-host-process"],
+        ),
+        "a narrative binds one level",
+    );
+}
+
+#[test]
+fn an_amendment_keeps_one_level() {
+    let place = Place::new();
+    place.made();
+    let v1 = version(&place.narrative(NAME, TITLE, NARRATIVE, &["--repository", "boom"]));
+    let file = place.file("again.md", "Again.\n");
+    let answer = place.json(&narrative_args(&file, &["--amends", &v1]));
+    assert_eq!(answer["repositories"], json!(["boom"]));
+}
