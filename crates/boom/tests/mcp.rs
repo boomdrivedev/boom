@@ -224,12 +224,16 @@ fn a_tools_arguments_are_its_commands() {
                 "source",
                 "changes",
                 "origin",
-                "paths"
+                "paths",
+                "includes",
+                "answers"
             ]),
             names(&["kind", "name", "statement"])
         )
     );
-    for edge in ["source", "changes", "origin", "contexts", "paths"] {
+    for edge in [
+        "source", "changes", "origin", "contexts", "paths", "includes", "answers",
+    ] {
         assert_eq!(properties_of(propose)[edge]["type"], "array", "{edge}");
         assert_eq!(
             properties_of(propose)[edge]["items"]["type"],
@@ -240,7 +244,14 @@ fn a_tools_arguments_are_its_commands() {
     let properties = &propose["inputSchema"]["properties"];
     assert_eq!(
         properties["kind"]["enum"],
-        json!(["invariant", "decision", "assumption", "term", "context"])
+        json!([
+            "invariant",
+            "decision",
+            "assumption",
+            "term",
+            "context",
+            "narrative"
+        ])
     );
     assert_eq!(properties["replaces"]["type"], "array");
     assert_eq!(properties["replaces"]["items"]["type"], "string");
@@ -745,4 +756,49 @@ fn an_artifact_read_through_its_tool() {
             .contains("boom show takes a target or an artifact, and not both"),
         "{result}"
     );
+}
+
+#[test]
+fn a_note_asked_of_the_server() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let version = place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &[],
+    )["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let before = place.log();
+    let answers = place.mcp(&[
+        initialize(1),
+        request(
+            2,
+            "tools/call",
+            json!({"name": "note", "arguments": {
+                "target": format!("boom-end-to-end@{version}"),
+                "paragraph": "1",
+                "words": "A word.",
+            }}),
+        ),
+    ]);
+    assert_eq!(answers[1]["error"]["code"], -32602, "{answers:?}");
+    let message = answers[1]["error"]["message"].as_str().unwrap();
+    assert!(message.contains("note"), "{message}");
+    assert_eq!(place.log(), before);
+}
+
+#[test]
+fn the_instructions_name_the_note() {
+    let place = Place::new();
+    let answers = place.mcp(&[initialize(1)]);
+    let instructions = answers[0]["result"]["instructions"].as_str().unwrap();
+    assert!(
+        instructions.contains("Only a person writes a note"),
+        "{instructions}"
+    );
+    assert!(instructions.contains("boom page"), "{instructions}");
+    assert!(instructions.contains("boom note"), "{instructions}");
 }

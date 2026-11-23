@@ -320,3 +320,36 @@ fn an_entry_number_shows_the_version_it_names() {
     place.refused(&["show", "1"], "entry 1 names no version");
     place.refused(&["show", "9"], "the log has no entry 9");
 }
+
+#[test]
+fn a_note_is_an_entry() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let version = place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &[],
+    )["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let proposed = place.log().last().unwrap().clone();
+    place.noted(
+        &format!("boom-end-to-end@{version}"),
+        2,
+        "Say what a claim is.",
+    );
+    let log = place.log();
+    let at = log.len() - 1;
+    assert_eq!(log[at]["act"], "noted");
+    assert_eq!(log[at - 1]["act"], "proposed");
+    assert_eq!(log[at - 1], proposed, "the proposal is as it was");
+    let words = place.run(&["log"]).stdout;
+    assert!(
+        words.contains(&format!("noted boom-end-to-end@{version} by chuck")),
+        "{words}"
+    );
+    // The views agree with a replay of the whole log.
+    assert_eq!(place.json(&["verify"])["rebuilt"], serde_json::json!([]));
+}

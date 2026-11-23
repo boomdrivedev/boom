@@ -8,7 +8,8 @@
 //! person's entry, a signature that verifies by the key registered to
 //! that person before it, with presence (for the store's first entry,
 //! the key it registers); for an agent's, an act that is `proposed` and
-//! a provenance; then the act's own rules.
+//! a provenance; then the act's own rules. A person's note alone carries
+//! the person's name and no signature (narrative-notes).
 
 use std::collections::BTreeMap;
 
@@ -167,6 +168,30 @@ impl Claim {
     }
 }
 
+/// A person's note on one paragraph of a version of a narrative
+/// (narrative-notes).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Note {
+    /// Its name: [`crate::narrative::note_name`] of what it names.
+    pub name: String,
+    /// The narrative.
+    pub narrative: String,
+    /// The version it is on.
+    pub version: String,
+    /// The paragraph's number.
+    pub paragraph: u64,
+    /// The paragraph's fingerprint.
+    pub fingerprint: String,
+    /// Its words.
+    pub words: String,
+    /// The person who wrote it.
+    pub person: String,
+    /// When, in Unix seconds, as the maker's clock read.
+    pub at: u64,
+    /// The entry that holds it.
+    pub noted_in: u64,
+}
+
 /// The key of a claim among a state's claims: its name, and the
 /// repository of a term or nothing for the other kinds.
 pub type Key = (String, String);
@@ -196,9 +221,53 @@ pub struct State {
     pub first_owner: Option<String>,
     /// The repositories the store registers, by name.
     pub repositories: BTreeMap<String, Repository>,
+    /// The notes on the narratives, by name (narrative-notes).
+    pub notes: BTreeMap<String, Note>,
+    /// The fingerprints of the paragraphs of each body of a narrative, by
+    /// the fingerprint of the body: what the store read from its blobs,
+    /// for the judge to check a note against (narratives).
+    pub paragraphs: BTreeMap<String, Vec<String>>,
 }
 
 impl State {
+    /// The notes on the narrative `name`, in the order written.
+    pub fn notes_of(&self, name: &str) -> Vec<&Note> {
+        let mut notes: Vec<&Note> = self
+            .notes
+            .values()
+            .filter(|note| note.narrative == name)
+            .collect();
+        notes.sort_by_key(|note| note.noted_in);
+        notes
+    }
+
+    /// The version of its narrative that answers `note`, with the answer:
+    /// the first, in the order proposed, that a person did not reject.
+    /// None where the note is open.
+    pub fn answer_of(&self, note: &Note) -> Option<(&Version, &str)> {
+        let claim = self.named(&note.narrative).into_iter().next()?;
+        claim
+            .versions
+            .iter()
+            .filter(|version| version.status != Status::Rejected)
+            .find_map(|version| {
+                version
+                    .proposal
+                    .answers
+                    .iter()
+                    .find(|answer| answer.note == note.name)
+                    .map(|answer| (version, answer.words.as_str()))
+            })
+    }
+
+    /// The notes on the narrative `name` that no version answers.
+    pub fn open_notes(&self, name: &str) -> Vec<&Note> {
+        self.notes_of(name)
+            .into_iter()
+            .filter(|note| self.answer_of(note).is_none())
+            .collect()
+    }
+
     /// The person `key` is registered to.
     pub fn person_by_key(&self, key: &PublicKey) -> Option<&Person> {
         self.persons
@@ -232,9 +301,9 @@ impl State {
     /// `Some(repository)`, those whose standing version binds that
     /// repository, a context named in `contexts`, or the whole system;
     /// for `None`, every one. In the order invariants, decisions,
-    /// assumptions, terms and contexts, each kind by name and a term then
-    /// by its repository (claim-search; design 4; term-claims;
-    /// context-claims).
+    /// assumptions, terms, contexts and narratives, each kind by name and a
+    /// term then by its repository (claim-search; design 4; term-claims;
+    /// context-claims; narratives).
     pub fn standing_for(
         &self,
         repository: Option<&str>,
@@ -247,6 +316,7 @@ impl State {
             Kind::Assumption,
             Kind::Term,
             Kind::Context,
+            Kind::Narrative,
         ] {
             for claim in self.claims.values().filter(|claim| claim.kind == kind) {
                 let Some(version) = claim
@@ -412,6 +482,29 @@ fn check_form(act: &Act) -> Result<(), String> {
                 Ok(())
             }
         }
+        Act::Noted {
+            name,
+            version,
+            paragraph,
+            fingerprint,
+            words,
+        } => {
+            claim::edge(&format!("{name}@{version}")).map_err(|_| {
+                format!("a note names a version, <name>@<version>: {name}@{version} is not one")
+            })?;
+            if *paragraph == 0 {
+                return Err("a note names a paragraph by its number, from 1".to_owned());
+            }
+            if claim::edge(&format!("a@{fingerprint}")).is_err() {
+                return Err(format!(
+                    "a note names its paragraph's fingerprint, 12 hexadecimal characters: {fingerprint} is not"
+                ));
+            }
+            if words.trim().is_empty() {
+                return Err("a note holds words: this one is empty".to_owned());
+            }
+            Ok(())
+        }
     }
 }
 
@@ -501,6 +594,17 @@ fn check_person(
     signed: &str,
     proof: Proof<'_>,
 ) -> Result<(), String> {
+    if let Act::Noted { .. } = &entry.act {
+        // A note binds nothing: it is the person's name and no signature
+        // (narrative-notes, "Only a note counts with no signature").
+        if !state.persons.contains_key(name) {
+            return Err(format!("no person {name} is registered"));
+        }
+        return match proof {
+            Proof::Unsigned => Ok(()),
+            _ => Err("a note carries the person's name and no signature".to_owned()),
+        };
+    }
     let key = if state.persons.is_empty() {
         match &entry.act {
             Act::Registered { person, key, owner } if person == name && *owner => {
@@ -561,6 +665,7 @@ fn check_agent(act: &Act, provenance: &str, proof: Proof<'_>) -> Result<(), Stri
                 "only an owner sets a repository: a person's act needs their signature".to_owned(),
             )
         }
+        Act::Noted { .. } => return Err("only a person writes a note".to_owned()),
     }
     if provenance.trim().is_empty() {
         return Err("an agent's proposal names its provenance, with --provenance".to_owned());
@@ -640,6 +745,89 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
             remote,
             session,
         } => check_repository(state, &entry.actor, name, remote, *session),
+        Act::Noted {
+            name,
+            version,
+            paragraph,
+            fingerprint,
+            words,
+        } => {
+            let person = actor_name(&entry.actor).unwrap_or_default();
+            let meant = Meant {
+                name,
+                version,
+                paragraph: *paragraph,
+                fingerprint,
+            };
+            check_note(state, &meant, words, person)
+        }
+    }
+}
+
+/// What a note names: a version of a narrative, and one of its
+/// paragraphs by its number and its fingerprint.
+struct Meant<'a> {
+    name: &'a str,
+    version: &'a str,
+    paragraph: u64,
+    fingerprint: &'a str,
+}
+
+/// A note: on a version of a narrative whose body the store holds, on a
+/// paragraph it has, with that paragraph's fingerprint; the same note
+/// again, a repeat (narrative-notes, "A note names what it meant").
+fn check_note(
+    state: &State,
+    meant: &Meant<'_>,
+    words: &str,
+    person: &str,
+) -> Result<Verdict, String> {
+    let Meant {
+        name,
+        version,
+        paragraph,
+        fingerprint,
+    } = *meant;
+    let (claim, found) = find(state, name, version)?;
+    if claim.kind != Kind::Narrative {
+        return Err(format!(
+            "a note is on a narrative: {name} is {} {}",
+            claim::article(claim.kind),
+            claim.kind.as_str()
+        ));
+    }
+    let body = found.proposal.body.as_deref().unwrap_or_default();
+    let paragraphs = state
+        .paragraphs
+        .get(body)
+        .ok_or_else(|| format!("the store does not hold the body of {name}@{version}"))?;
+    let Some(held) = usize::try_from(paragraph - 1)
+        .ok()
+        .and_then(|at| paragraphs.get(at))
+    else {
+        return Err(format!(
+            "{name}@{version} has {}: it has no paragraph {paragraph}",
+            paragraphs_words(paragraphs.len())
+        ));
+    };
+    if held != fingerprint {
+        return Err(format!(
+            "paragraph {paragraph} of {name}@{version} has the fingerprint {held}, not {fingerprint}"
+        ));
+    }
+    let note = crate::narrative::note_name(name, version, paragraph, words, person);
+    if let Some(written) = state.notes.get(&note) {
+        return Ok(Verdict::Repeats(written.noted_in));
+    }
+    Ok(Verdict::Counts)
+}
+
+/// `n paragraphs`, or `1 paragraph`.
+pub fn paragraphs_words(count: usize) -> String {
+    if count == 1 {
+        "1 paragraph".to_owned()
+    } else {
+        format!("{count} paragraphs")
     }
 }
 
@@ -782,13 +970,77 @@ fn check_proposal(
         (None, _) => {}
     }
     // Each edge to a claim names a version the store holds (claim-edges).
-    for (flag, edges) in [("source", &proposal.source), ("changes", &proposal.changes)] {
+    for (flag, edges) in [
+        ("source", &proposal.source),
+        ("changes", &proposal.changes),
+        ("includes", &proposal.includes),
+    ] {
         for stored in edges {
             let (target, version) = claim::edge(stored)?;
-            find(state, target, version).map_err(|why| format!("--{flag} {stored}: {why}"))?;
+            let (found, _) =
+                find(state, target, version).map_err(|why| format!("--{flag} {stored}: {why}"))?;
+            if flag == "includes" && found.kind == Kind::Narrative {
+                return Err(format!(
+                    "a narrative includes claims of other kinds: --includes {stored} names a narrative"
+                ));
+            }
         }
     }
+    if proposal.kind == Kind::Narrative {
+        check_answers(state, proposal)?;
+    }
     Ok(Verdict::Counts)
+}
+
+/// The answers of a new version of a narrative: one to each open note of
+/// the narrative, and none to a note that does not exist, is of another
+/// narrative or is not open (narrative-notes, "A note is open until a
+/// version answers it").
+fn check_answers(state: &State, proposal: &Proposal) -> Result<(), String> {
+    let name = &proposal.name;
+    for answer in &proposal.answers {
+        let Some(note) = state.notes.get(&answer.note) else {
+            return Err(format!(
+                "--answers {}: no note has the name {}",
+                answer.note, answer.note
+            ));
+        };
+        if &note.narrative != name {
+            return Err(format!(
+                "--answers {}: the note {} is on the narrative {}, not on {name}",
+                answer.note, answer.note, note.narrative
+            ));
+        }
+        if let Some((version, _)) = state.answer_of(note) {
+            return Err(format!(
+                "--answers {}: the note {} is not open: {name}@{} answers it",
+                answer.note, answer.note, version.proposal.version
+            ));
+        }
+    }
+    let left: Vec<String> = state
+        .open_notes(name)
+        .into_iter()
+        .filter(|note| {
+            !proposal
+                .answers
+                .iter()
+                .any(|answer| answer.note == note.name)
+        })
+        .map(|note| {
+            format!(
+                "note {} on paragraph {} of {name}@{} ({}): {:?}",
+                note.name, note.paragraph, note.version, note.person, note.words
+            )
+        })
+        .collect();
+    if !left.is_empty() {
+        return Err(format!(
+            "a new version of {name} answers each open note, with --answers <note>=<words>; it leaves open {}",
+            left.join("; ")
+        ));
+    }
+    Ok(())
 }
 
 /// The rules an imported proposal is held to, after those every
@@ -1026,6 +1278,30 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
             rejected.decided_in = Some(seq);
             rejected.reason = Some(reason.clone());
         }
+        Act::Noted {
+            name,
+            version,
+            paragraph,
+            fingerprint,
+            words,
+        } => {
+            let person = actor.unwrap_or_default();
+            let note = crate::narrative::note_name(name, version, *paragraph, words, &person);
+            state.notes.insert(
+                note.clone(),
+                Note {
+                    name: note,
+                    narrative: name.clone(),
+                    version: version.clone(),
+                    paragraph: *paragraph,
+                    fingerprint: fingerprint.clone(),
+                    words: words.clone(),
+                    person,
+                    at: entry.at,
+                    noted_in: seq,
+                },
+            );
+        }
     }
 }
 
@@ -1044,14 +1320,33 @@ pub fn step(state: &mut State, seq: u64, signed: &str, signature: Option<&str>) 
 }
 
 /// Replays a log's entries, `(seq, signed, signature)` in order, through
-/// the judge: the state they build, and each entry's judgment.
+/// the judge: the state they build, and each entry's judgment. It reads
+/// no blob, so a note counts for nothing: [`replay_with`] reads them.
 pub fn replay<'a>(
     entries: impl IntoIterator<Item = (u64, &'a str, Option<&'a str>)>,
+) -> (State, Vec<(u64, Judgment)>) {
+    replay_with(entries, |_, _| {})
+}
+
+/// Replays a log's entries as [`replay`] does, calling `counted` with the
+/// state and each entry that counts, after it is applied: where the store
+/// reads the body of a narrative proposed, for the notes after it.
+pub fn replay_with<'a>(
+    entries: impl IntoIterator<Item = (u64, &'a str, Option<&'a str>)>,
+    mut counted: impl FnMut(&mut State, &Entry),
 ) -> (State, Vec<(u64, Judgment)>) {
     let mut state = State::default();
     let judgments = entries
         .into_iter()
-        .map(|(seq, signed, signature)| (seq, step(&mut state, seq, signed, signature)))
+        .map(|(seq, signed, signature)| {
+            let judgment = step(&mut state, seq, signed, signature);
+            if judgment.counted {
+                if let Ok(entry) = Entry::parse(signed) {
+                    counted(&mut state, &entry);
+                }
+            }
+            (seq, judgment)
+        })
         .collect();
     (state, judgments)
 }

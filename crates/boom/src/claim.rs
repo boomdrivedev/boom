@@ -2,8 +2,9 @@
 //! a version as the fingerprint of its content, the history a version
 //! that comes in from an import may carry (claim-versions; design 5),
 //! and the edges a version stores: its sources, the claims a decision
-//! changes, and its origins (claim-edges), and the globs of a context
-//! (context-claims).
+//! changes, and its origins (claim-edges), the globs of a context
+//! (context-claims), and the claims a narrative includes and the notes
+//! its version answers (narratives; narrative-notes).
 
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +24,10 @@ pub enum Kind {
     /// A part of the system that owns path globs, each in one repository
     /// (context-claims).
     Context,
+    /// An explanation in its author's words, with a title and a body of
+    /// Markdown text, that includes claims by name; a person judges it,
+    /// and no one checks it (narratives).
+    Narrative,
 }
 
 impl Kind {
@@ -34,6 +39,7 @@ impl Kind {
             Kind::Assumption => "assumption",
             Kind::Term => "term",
             Kind::Context => "context",
+            Kind::Narrative => "narrative",
         }
     }
 }
@@ -118,6 +124,64 @@ pub struct Proposal {
     /// written only where there is one (claim-edges).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub origin: Vec<Origin>,
+    /// For a narrative, the claims it includes, each `<name>@<version>`,
+    /// in the order given; written only where there is one (narratives).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub includes: Vec<String>,
+    /// For a narrative, the notes this version answers, each with its
+    /// answer, in the order given; written only where there is one
+    /// (narrative-notes).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answers: Vec<Answer>,
+}
+
+/// A note that a version of a narrative answers, and its answer
+/// (narrative-notes).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Answer {
+    /// The note's name, 12 hexadecimal characters.
+    pub note: String,
+    /// The answer, one line.
+    pub words: String,
+}
+
+impl Answer {
+    /// An answer read from `<note>=<words>`.
+    pub fn parse(given: &str) -> Result<Answer, String> {
+        let (note, words) = given.split_once('=').ok_or_else(|| {
+            format!("an answer names its note and its words, <note>=<words>: {given} does not")
+        })?;
+        let answer = Answer {
+            note: note.trim().to_owned(),
+            words: words.trim().to_owned(),
+        };
+        answer.check()?;
+        Ok(answer)
+    }
+
+    /// The form of an answer: a note's name, and one line of words.
+    pub fn check(&self) -> Result<(), String> {
+        if !hexadecimal(&self.note, 12) {
+            return Err(format!(
+                "an answer names a note by its name, 12 hexadecimal characters: {} is not",
+                self.note
+            ));
+        }
+        if self.words.contains(['\n', '\r']) {
+            return Err(format!(
+                "an answer is one line: the answer to {} holds a line break",
+                self.note
+            ));
+        }
+        if self.words.trim().is_empty() {
+            return Err(format!(
+                "an answer holds words: the answer to {} is empty",
+                self.note
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Where a version came from: a file boom keeps by the fingerprint of
@@ -295,6 +359,10 @@ struct Content<'a> {
     changes: &'a [String],
     #[serde(skip_serializing_if = "<[Origin]>::is_empty")]
     origin: &'a [Origin],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    includes: &'a [String],
+    #[serde(skip_serializing_if = "<[Answer]>::is_empty")]
+    answers: &'a [Answer],
 }
 
 impl Proposal {
@@ -322,6 +390,8 @@ impl Proposal {
             source: Vec::new(),
             changes: Vec::new(),
             origin: Vec::new(),
+            includes: Vec::new(),
+            answers: Vec::new(),
         };
         proposal.version = proposal.fingerprint(None);
         proposal
@@ -364,9 +434,10 @@ impl Proposal {
     /// The first 12 hexadecimal characters of the SHA-256 of its kind,
     /// name, statement, scenarios, body's fingerprint, base and, where
     /// it has them, its history, the repository of a term, given as
-    /// `repository`, the old words of a term, the globs of a context, and
-    /// its edges `source`, `changes` and `origin` (claim-versions;
-    /// claim-edges; context-claims).
+    /// `repository`, the old words of a term, the globs of a context, its
+    /// edges `source`, `changes`, `origin` and `includes`, and the answers
+    /// of a narrative (claim-versions; claim-edges; context-claims;
+    /// narratives).
     pub fn fingerprint(&self, repository: Option<&str>) -> String {
         let content = serde_json::to_string(&Content {
             kind: self.kind,
@@ -382,6 +453,8 @@ impl Proposal {
             source: &self.source,
             changes: &self.changes,
             origin: &self.origin,
+            includes: &self.includes,
+            answers: &self.answers,
         })
         .expect("a version's content is JSON");
         crate::sha256_hex(content.as_bytes())[..12].to_owned()
@@ -397,7 +470,8 @@ impl Proposal {
     /// binds, and only a term replaces words (term-claims). A context
     /// owns one glob at least, each one time and sorted, and binds the
     /// repositories of its globs; only a context owns globs
-    /// (context-claims).
+    /// (context-claims). A narrative has no scenarios and no history, and
+    /// only a narrative includes claims and answers notes (narratives).
     pub fn check(&self, repositories: &[String]) -> Result<(), String> {
         check_name(&self.name)?;
         check_statement(&self.statement)?;
@@ -430,8 +504,12 @@ impl Proposal {
                 self.kind.as_str()
             ));
         }
+        if self.kind == Kind::Narrative && (!self.scenarios.is_empty() || self.history.is_some()) {
+            return Err("a narrative has no scenarios and no history".to_owned());
+        }
         self.check_paths(repositories)?;
         self.check_edges()?;
+        self.check_narrative()?;
         let fingerprint = self.fingerprint(repository);
         if self.version != fingerprint {
             return Err(format!(
@@ -497,7 +575,11 @@ impl Proposal {
                 self.kind.as_str()
             ));
         }
-        for (flag, edges) in [("source", &self.source), ("changes", &self.changes)] {
+        for (flag, edges) in [
+            ("source", &self.source),
+            ("changes", &self.changes),
+            ("includes", &self.includes),
+        ] {
             for (at, stored) in edges.iter().enumerate() {
                 let (name, _) = edge(stored)?;
                 if name == self.name {
@@ -523,13 +605,51 @@ impl Proposal {
         }
         Ok(())
     }
+
+    /// What only a narrative has: the claims it includes, and the notes it
+    /// answers, each note one time and each answer in its form
+    /// (narratives; narrative-notes).
+    fn check_narrative(&self) -> Result<(), String> {
+        if self.kind != Kind::Narrative {
+            if !self.includes.is_empty() {
+                return Err(format!(
+                    "only a narrative includes claims: {} is {} {}",
+                    self.name,
+                    article(self.kind),
+                    self.kind.as_str()
+                ));
+            }
+            if !self.answers.is_empty() {
+                return Err(format!(
+                    "only a narrative answers notes: {} is {} {}",
+                    self.name,
+                    article(self.kind),
+                    self.kind.as_str()
+                ));
+            }
+            return Ok(());
+        }
+        for (at, answer) in self.answers.iter().enumerate() {
+            answer.check()?;
+            if self.answers[..at]
+                .iter()
+                .any(|before| before.note == answer.note)
+            {
+                return Err(format!(
+                    "a version answers each note one time: it answers {} twice",
+                    answer.note
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// The article of a kind's name, `an invariant` or `a term`.
 pub fn article(kind: Kind) -> &'static str {
     match kind {
         Kind::Invariant | Kind::Assumption => "an",
-        Kind::Decision | Kind::Term | Kind::Context => "a",
+        Kind::Decision | Kind::Term | Kind::Context | Kind::Narrative => "a",
     }
 }
 
@@ -643,13 +763,17 @@ pub fn check_statement(statement: &str) -> Result<(), String> {
 
 /// What a version in the new form needs for its kind: every kind a
 /// statement; a decision a body too, its context, options, outcome and
-/// consequences. An invariant's body and an assumption's are optional.
+/// consequences; a narrative a body, its Markdown text. An invariant's
+/// body and an assumption's are optional.
 pub fn check_kind(kind: Kind, body: Option<&str>) -> Result<(), String> {
     match (kind, body) {
         (Kind::Decision, None) => Err(
             "a decision needs a body: its context, options, outcome and consequences, with --body"
                 .to_owned(),
         ),
+        (Kind::Narrative, None) => {
+            Err("a narrative needs a body: its Markdown text, with --body".to_owned())
+        }
         _ => Ok(()),
     }
 }

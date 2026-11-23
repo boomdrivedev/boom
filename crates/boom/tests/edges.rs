@@ -632,3 +632,29 @@ fn views_of_the_form_before_the_edges_are_built_again() {
     let shown: Value = serde_json::from_str(&after).unwrap();
     assert_eq!(shown["source_of"][0]["version"], decision["version"]);
 }
+
+#[test]
+fn a_narrative_with_its_includes() {
+    let place = Place::new();
+    place.made();
+    let status = place.proposed(
+        "status-read-from-events",
+        "A record never holds its status.",
+    );
+    let narrative = place.file("narrative.md", support::NARRATIVE);
+    let answer = place.json(&[
+        "propose",
+        "narrative",
+        "boom-end-to-end",
+        "Boom, end to end",
+        "--body",
+        &narrative,
+        "--includes",
+        "status-read-from-events",
+        "--provenance",
+        "run-1",
+    ]);
+    let edge = format!("status-read-from-events@{status}");
+    assert_eq!(answer["includes"], json!([edge]));
+    assert_eq!(last_claim(&place)["includes"], json!([edge]));
+}

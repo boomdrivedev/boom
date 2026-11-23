@@ -147,6 +147,20 @@ pub enum Act {
         /// Why.
         reason: String,
     },
+    /// A person's note on one paragraph of a version of a narrative: an
+    /// entry with the person's name and no signature (narrative-notes).
+    Noted {
+        /// The narrative's name.
+        name: String,
+        /// The version.
+        version: String,
+        /// The paragraph's number, from 1.
+        paragraph: u64,
+        /// The paragraph's fingerprint, 12 hexadecimal characters.
+        fingerprint: String,
+        /// The note's words.
+        words: String,
+    },
 }
 
 impl Act {
@@ -158,6 +172,7 @@ impl Act {
             Act::Accepted { .. } => "accepted",
             Act::Rejected { .. } => "rejected",
             Act::Repository { .. } => "repository",
+            Act::Noted { .. } => "noted",
         }
     }
 
@@ -172,7 +187,9 @@ impl Act {
                 .iter()
                 .map(|named| (named.name.as_str(), named.version.as_str()))
                 .collect(),
-            Act::Rejected { name, version, .. } => vec![(name, version)],
+            Act::Rejected { name, version, .. } | Act::Noted { name, version, .. } => {
+                vec![(name, version)]
+            }
         }
     }
 
@@ -283,6 +300,20 @@ struct RepositoryPart {
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct NotedPart {
+    format: String,
+    act: String,
+    at: u64,
+    actor: Actor,
+    name: String,
+    version: String,
+    paragraph: u64,
+    fingerprint: String,
+    words: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RejectedPart {
     format: String,
     act: String,
@@ -372,6 +403,23 @@ impl Entry {
                 version: version.clone(),
                 reason: reason.clone(),
             }),
+            Act::Noted {
+                name,
+                version,
+                paragraph,
+                fingerprint,
+                words,
+            } => serde_json::to_string(&NotedPart {
+                format,
+                act,
+                at,
+                actor,
+                name: name.clone(),
+                version: version.clone(),
+                paragraph: *paragraph,
+                fingerprint: fingerprint.clone(),
+                words: words.clone(),
+            }),
         };
         written.expect("an entry's fields are all JSON")
     }
@@ -460,8 +508,22 @@ impl Entry {
                     },
                 })
             }
+            Some("noted") => {
+                let part: NotedPart = serde_json::from_str(signed).map_err(form)?;
+                Ok(Entry {
+                    at: part.at,
+                    actor: part.actor,
+                    act: Act::Noted {
+                        name: part.name,
+                        version: part.version,
+                        paragraph: part.paragraph,
+                        fingerprint: part.fingerprint,
+                        words: part.words,
+                    },
+                })
+            }
             Some(other) => Err(format!(
-                "its act is {other}, none of registered, proposed, accepted and rejected"
+                "its act is {other}, none of registered, proposed, accepted, rejected, repository and noted"
             )),
             None => Err("it names no act".to_owned()),
         }

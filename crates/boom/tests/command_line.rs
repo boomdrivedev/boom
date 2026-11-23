@@ -244,3 +244,47 @@ fn a_kind_it_does_not_take() {
         "{outcome:?}"
     );
 }
+
+#[test]
+fn a_note_answered_as_json() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let version = place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &[],
+    )["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let target = format!("boom-end-to-end@{version}");
+    let outcome = place.run(&["note", &target, "--paragraph", "1", "A word.", "--json"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(outcome.stdout.lines().count(), 1, "{outcome:?}");
+    let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();
+    assert_eq!(answer["format"], "boom-note/1");
+    assert_eq!(answer["note"].as_str().unwrap().len(), 12);
+}
+
+#[test]
+fn the_commands() {
+    let output = Command::new(env!("CARGO_BIN_EXE_boom"))
+        .arg("--help")
+        .output()
+        .expect("the binary runs");
+    let help = String::from_utf8(output.stdout).unwrap();
+    for command in [
+        "init", "register", "propose", "accept", "reject", "show", "log", "verify", "import",
+        "repo", "terms", "note", "page", "hook", "mcp",
+    ] {
+        assert!(
+            help.lines()
+                .any(|line| line.trim_start().starts_with(&format!("{command} "))),
+            "{command}: {help}"
+        );
+    }
+    let place = Place::new();
+    place.made();
+    place.refused(&["page", "--json"], "boom page takes no --json");
+}

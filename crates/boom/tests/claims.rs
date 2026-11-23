@@ -485,3 +485,88 @@ fn a_name_shows_its_newest_version_in_full_then_the_others() {
         "{words}"
     );
 }
+
+#[test]
+fn one_more_include() {
+    let place = Place::new();
+    place.made();
+    place.proposed(
+        "status-read-from-events",
+        "A record never holds its status.",
+    );
+    place.proposed("events-are-appended", "boom appends an event.");
+    let first = place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &["--includes", "status-read-from-events"],
+    );
+    let second = place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &[
+            "--includes",
+            "status-read-from-events",
+            "--includes",
+            "events-are-appended",
+        ],
+    );
+    assert_ne!(first["version"], second["version"]);
+}
+
+#[test]
+fn a_version_from_before_narratives() {
+    let place = Place::new();
+    let ada = place.made();
+    let money = place.proposed("money-has-currency", "Every amount names its currency.");
+    place.accepted("money-has-currency", &money, &ada);
+    let body = place.decision_body();
+    let decision = place.json(&[
+        "propose",
+        "decision",
+        "amounts-in-cents",
+        "Amounts are in cents.",
+        "--body",
+        &body,
+        "--source",
+        "money-has-currency",
+        "--provenance",
+        "run-1",
+    ])["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // Each entry written as a boom before narratives wrote it: no
+    // `includes` and no `answers`.
+    for entry in place.log() {
+        let signed = entry["signed"].as_str().unwrap();
+        assert!(!signed.contains("\"includes\""), "{signed}");
+        assert!(!signed.contains("\"answers\""), "{signed}");
+    }
+    // Views as the release before narratives wrote them: form 7, with no
+    // table of notes; then none at all.
+    let before = place.run(&["show", "amounts-in-cents", "--json"]).stdout;
+    place
+        .sqlite()
+        .execute_batch("DROP TABLE notes; UPDATE views_head SET form = 7;")
+        .unwrap();
+    assert_eq!(
+        place.run(&["show", "amounts-in-cents", "--json"]).stdout,
+        before
+    );
+    place
+        .sqlite()
+        .execute_batch("DROP TABLE versions; DROP TABLE views_head;")
+        .unwrap();
+    for (name, version) in [
+        ("money-has-currency", &money),
+        ("amounts-in-cents", &decision),
+    ] {
+        assert_eq!(
+            place.show(&format!("{name}@{version}"))["version"],
+            *version
+        );
+    }
+    assert_eq!(place.json(&["verify"])["rebuilt"], json!([]));
+}

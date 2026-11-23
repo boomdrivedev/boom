@@ -203,6 +203,64 @@ enum Command {
         /// times. Only a context owns globs.
         #[arg(long = "path", value_name = "GLOB")]
         paths: Vec<String>,
+        /// For a narrative, a claim it includes, `<name>` or
+        /// `<name>@<version>` of a claim of the store; any number of times.
+        /// A name stores its accepted version, or its newest where none is
+        /// accepted.
+        #[arg(long = "includes", value_name = "CLAIM")]
+        includes: Vec<String>,
+        /// For a narrative, the answer of this version to an open note,
+        /// `<note>=<words>`, in one line; any number of times. A new
+        /// version answers each open note of its narrative.
+        #[arg(long = "answers", value_name = "NOTE=WORDS")]
+        answers: Vec<String>,
+    },
+    /// Write a person's note on one paragraph of a version of a
+    /// narrative: an entry with the person's name and no signature.
+    Note {
+        /// The version, `<name>@<version>`.
+        target: String,
+        /// The paragraph's number, as `boom show <name>@<version>` gives it.
+        #[arg(long, value_name = "N")]
+        paragraph: u64,
+        /// The note's words.
+        words: String,
+        /// The person who writes it; by default the one person the store
+        /// registers.
+        #[arg(long, value_name = "NAME")]
+        person: Option<String>,
+        /// Refused: a note carries the person's name and no signature.
+        #[arg(long, hide = true)]
+        key: Option<PathBuf>,
+        /// Refused: only a person writes a note.
+        #[arg(long, hide = true, value_name = "TEXT")]
+        provenance: Option<String>,
+    },
+    /// Serve the page of a narrative on 127.0.0.1, where a person reads it
+    /// with the claims it includes and writes a note on a paragraph, and
+    /// open it in the browser; with no name, the list of the narratives.
+    Page {
+        /// The narrative, `<name>` for its newest version or
+        /// `<name>@<version>`.
+        target: Option<String>,
+        /// The port; by default a free one.
+        #[arg(long, value_name = "PORT", default_value_t = 0)]
+        port: u16,
+        /// Print the URL and open no browser.
+        #[arg(long)]
+        no_open: bool,
+        /// Stop after this many minutes with no request.
+        #[arg(
+            long,
+            value_name = "MINUTES",
+            default_value_t = 60,
+            value_parser = clap::value_parser!(u64).range(1..)
+        )]
+        idle: u64,
+        /// The person who writes the notes of the page; by default the one
+        /// person the store registers.
+        #[arg(long, value_name = "NAME")]
+        person: Option<String>,
     },
     /// Accept one or more versions, as a person, in one entry that their
     /// security key signs one time: every version, or none.
@@ -500,6 +558,42 @@ where
     if let Command::Mcp = cli.command {
         return mcp(cli.json, cli.store.as_deref(), env);
     }
+    if let Command::Page {
+        target,
+        port,
+        no_open,
+        idle,
+        person,
+    } = &cli.command
+    {
+        if cli.json {
+            return failed(
+                false,
+                Failure::refused("boom page takes no --json: it serves a page until it stops"),
+            );
+        }
+        let path = store::resolve(
+            cli.store.as_deref(),
+            env.xdg_data_home.as_deref(),
+            env.home.as_deref(),
+        );
+        let options = crate::page::Options {
+            target: target.clone(),
+            port: *port,
+            open: !*no_open,
+            idle: std::time::Duration::from_secs(idle.saturating_mul(60)),
+            person: person.clone(),
+        };
+        return match path.and_then(|path| crate::page::serve(&path, &options, env)) {
+            Ok(()) => Outcome {
+                bytes: None,
+                code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+            Err(failure) => failed(false, failure),
+        };
+    }
     if let Command::Hook { what } = &cli.command {
         let path = store::resolve(
             cli.store.as_deref(),
@@ -769,6 +863,8 @@ fn execute(
             changes,
             origin,
             paths,
+            includes,
+            answers,
         } => propose(
             &path?,
             Proposed {
@@ -786,11 +882,34 @@ fn execute(
                 changes,
                 origin,
                 paths,
+                includes,
+                answers,
             },
             key.as_deref(),
             keys,
             env,
         ),
+        Command::Note {
+            target,
+            paragraph,
+            words,
+            person,
+            key,
+            provenance,
+        } => {
+            if key.is_some() {
+                return Err(Failure::refused(
+                    "a note carries the person's name and no signature: boom note takes no --key",
+                ));
+            }
+            if provenance.is_some() {
+                return Err(Failure::refused(
+                    "only a person writes a note: boom note takes no --provenance",
+                ));
+            }
+            note(&path?, &target, paragraph, &words, person.as_deref(), env)
+        }
+        Command::Page { .. } => unreachable!("boom page serves before a command answers"),
         Command::Accept { targets, key } => accept(&path?, &targets, key.as_deref(), keys, env),
         Command::Reject {
             target,
@@ -1066,6 +1185,8 @@ struct Proposed {
     changes: Vec<String>,
     origin: Vec<String>,
     paths: Vec<String>,
+    includes: Vec<String>,
+    answers: Vec<String>,
 }
 
 impl Proposed {
@@ -1307,6 +1428,12 @@ fn propose(
                 ))
             })?;
             if std::str::from_utf8(&bytes).is_err() {
+                if proposed.kind == Kind::Narrative {
+                    return Err(Failure::refused(format!(
+                        "the body of a narrative is UTF-8 text: {} is not",
+                        file.display()
+                    )));
+                }
                 return Err(Failure::refused(format!(
                     "a body is text: {} is not UTF-8",
                     file.display()
@@ -1354,6 +1481,26 @@ fn propose(
             proposed.kind.as_str()
         )));
     }
+    if proposed.kind != Kind::Narrative {
+        for (flag, given, what) in [
+            ("includes", &proposed.includes, "includes claims"),
+            ("answers", &proposed.answers, "answers notes"),
+        ] {
+            if !given.is_empty() {
+                return Err(Failure::refused(format!(
+                    "only a narrative {what}: {} is proposed as {} {}, with --{flag}",
+                    proposed.name,
+                    crate::claim::article(proposed.kind),
+                    proposed.kind.as_str()
+                )));
+            }
+        }
+    }
+    let answers = proposed
+        .answers
+        .iter()
+        .map(|given| crate::claim::Answer::parse(given).map_err(Failure::Refused))
+        .collect::<Result<Vec<_>, _>>()?;
     let (origin, files) = origins(&proposed.origin)?;
     let signer = key.map(|key| keys.signer(key)).transpose()?;
     // The claims the edges and the contexts name are read with the
@@ -1368,10 +1515,14 @@ fn propose(
                     .iter()
                     .chain(&proposed.changes)
                     .chain(&proposed.contexts)
+                    .chain(&proposed.includes)
                     .map(|edge| edge.split_once('@').map_or(edge.as_str(), |(name, _)| name)),
             )
             .map(str::to_owned),
     );
+    scope
+        .notes
+        .extend(answers.iter().map(|answer| answer.note.clone()));
     if let (Some(base), false) = (&proposed.amends, proposed.names_its_binding()) {
         let bound = store.read(|conn| store::contexts_of(conn, &proposed.name, base))?;
         scope
@@ -1422,14 +1573,22 @@ fn propose(
     };
     // The edges are part of its content, so a person signs them
     // (claim-edges, "The edges are part of the content").
-    let version_of = |attach: Option<&Attach>, source: Vec<String>, changes: Vec<String>| {
+    let version_of = |attach: Option<&Attach>, edges: [Vec<String>; 3]| {
         let mut proposal = version_without_edges(attach);
-        if source.is_empty() && changes.is_empty() && origin.is_empty() {
+        let [source, changes, includes] = edges;
+        if source.is_empty()
+            && changes.is_empty()
+            && origin.is_empty()
+            && includes.is_empty()
+            && answers.is_empty()
+        {
             return proposal;
         }
         proposal.source = source;
         proposal.changes = changes;
         proposal.origin = origin.clone();
+        proposal.includes = includes;
+        proposal.answers = answers.clone();
         let term = (proposed.kind == Kind::Term).then(|| {
             judge::repositories(attach)
                 .first()
@@ -1449,7 +1608,8 @@ fn propose(
         let attach = attachment(&proposed, declared.as_deref(), state)?;
         let source = resolve_edges(state, "source", &proposed.source)?;
         let changes = resolve_edges(state, "changes", &proposed.changes)?;
-        let proposal = version_of(attach.as_ref(), source, changes);
+        let includes = resolve_edges(state, "includes", &proposed.includes)?;
+        let proposal = version_of(attach.as_ref(), [source, changes, includes]);
         made = Some(proposal.clone());
         Ok(Entry {
             at: env.clock.now(),
@@ -1493,6 +1653,15 @@ fn propose(
         &proposal.changes,
         &proposal.origin,
     ));
+    for edge in &proposal.includes {
+        words.push_str(&format!("includes: {edge}\n"));
+    }
+    for answer in &proposal.answers {
+        words.push_str(&format!(
+            "answers: note {}: {}\n",
+            answer.note, answer.words
+        ));
+    }
     if let Some(accept) = &accept {
         words.push_str(&format!("a person accepts it with: {accept}\n"));
     }
@@ -1511,9 +1680,46 @@ fn propose(
             "source": proposal.source,
             "changes": proposal.changes,
             "origin": proposal.origin.iter().map(origin_json).collect::<Vec<_>>(),
+            "includes": proposal.includes,
+            "answers": proposal.answers,
             "accept": accept,
         }),
         words,
+    })
+}
+
+/// `boom note`: a person's note on one paragraph of a version of a
+/// narrative, with the person's name and no signature (narrative-notes).
+fn note(
+    path: &Path,
+    target: &str,
+    paragraph: u64,
+    words: &str,
+    person: Option<&str>,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    let (name, version) = version_target("note", target)?;
+    let mut store = Store::open(path)?;
+    let written =
+        crate::page::write_note(&mut store, name, version, paragraph, words, person, env)?;
+    let mut lines = format!(
+        "note {} on paragraph {paragraph} of {name}@{version}, by {}, by entry {}\n",
+        written.note, written.person, written.entry
+    );
+    lines.push_str("It stays open until a version of the narrative answers it.\n");
+    Ok(Answer {
+        json: json!({
+            "format": "boom-note/1",
+            "note": written.note,
+            "narrative": name,
+            "version": version,
+            "paragraph": paragraph,
+            "fingerprint": written.fingerprint,
+            "person": written.person,
+            "words": words,
+            "entry": written.entry,
+        }),
+        words: lines,
     })
 }
 
@@ -1896,8 +2102,37 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
         object.insert("body".into(), json!(body));
         object.insert("imported".into(), json!(imported));
         object.insert("history".into(), json!(history));
-        let (edges, edge_words) = edges_shown(conn, view)?;
+        let narrative = claim.kind == Kind::Narrative.as_str();
+        let (edges, edge_words) = edges_shown(conn, view, narrative)?;
         object.extend(edges);
+        let mut narrative_words = String::new();
+        if narrative {
+            let state = store::load_state_for(conn, &Scope::names([name]))?;
+            let paragraphs = crate::narrative::paragraphs(body.as_deref().unwrap_or_default());
+            object.insert(
+                "paragraphs".into(),
+                Value::Array(
+                    paragraphs
+                        .iter()
+                        .map(|paragraph| {
+                            json!({
+                                "number": paragraph.number,
+                                "fingerprint": paragraph.fingerprint,
+                                "kind": paragraph.kind,
+                            })
+                        })
+                        .collect(),
+                ),
+            );
+            let (answers, answer_words) = answers_shown(view);
+            object.insert("answers".into(), answers);
+            let (notes, note_words) = notes_shown(&state, name, Some(version));
+            object.insert("notes".into(), notes);
+            narrative_words = format!(
+                "paragraphs: {}\n{answer_words}{note_words}",
+                paragraphs.len()
+            );
+        }
         let (bindings, binding_words) = bindings_shown(conn, view)?;
         object.insert("bindings".into(), bindings);
         let mut words = format!(
@@ -1944,6 +2179,7 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
             words.push('\n');
         }
         words.push_str(&edge_words);
+        words.push_str(&narrative_words);
         if let Some(body) = &body {
             words.push('\n');
             words.push_str(body);
@@ -1967,10 +2203,17 @@ fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, F
 fn edges_shown(
     conn: &rusqlite::Connection,
     view: &store::VersionView,
+    narrative: bool,
 ) -> Result<(serde_json::Map<String, Value>, String), Failure> {
     let mut object = serde_json::Map::new();
     let mut words = String::new();
-    for (flag, edges) in [("source", &view.source), ("changes", &view.changes)] {
+    let mut kinds = vec![("source", &view.source), ("changes", &view.changes)];
+    if narrative {
+        // The claims a narrative includes, each at the version it meant
+        // (narratives, "boom show gives a narrative").
+        kinds.push(("includes", &view.includes));
+    }
+    for (flag, edges) in kinds {
         let mut shown = Vec::with_capacity(edges.len());
         for stored in edges.iter() {
             let (name, version) = stored.split_once('@').unwrap_or((stored, ""));
@@ -2208,8 +2451,17 @@ fn claim_shown(
     if !newest.replaces.is_empty() {
         words.push_str(&format!("replaces: {}\n", newest.replaces.join(", ")));
     }
-    let (newest_edges, newest_edge_words) = edges_shown(conn, newest)?;
+    let narrative = claim.kind == Kind::Narrative.as_str();
+    let (newest_edges, newest_edge_words) = edges_shown(conn, newest, narrative)?;
     words.push_str(&newest_edge_words);
+    let notes = if narrative {
+        let state = store::load_state_for(conn, &Scope::names([claim.name.as_str()]))?;
+        let (notes, note_words) = notes_shown(&state, &claim.name, None);
+        words.push_str(&note_words);
+        Some(notes)
+    } else {
+        None
+    };
     if let Some(body) = &newest_body {
         words.push_str(&format!("\n{}", body));
         if !body.ends_with('\n') {
@@ -2252,7 +2504,65 @@ fn claim_shown(
     if let Some(bound) = bound {
         object.insert("bound".into(), bound);
     }
+    if let Some(notes) = notes {
+        object.insert("notes".into(), notes);
+    }
     Ok((object, words))
+}
+
+/// The answers of a version of a narrative to the notes before it, as
+/// `boom show <name>@<version>` gives them.
+fn answers_shown(view: &store::VersionView) -> (Value, String) {
+    let mut words = String::new();
+    for answer in &view.answers {
+        words.push_str(&format!(
+            "answers: note {}: {}\n",
+            answer.note, answer.words
+        ));
+    }
+    (json!(view.answers), words)
+}
+
+/// The notes on the narrative `name`, or on its version `version` alone,
+/// in the order written: each with its paragraph, its person and its
+/// words, and `open` or the version that answers it with its answer
+/// (narrative-notes).
+fn notes_shown(state: &State, name: &str, version: Option<&str>) -> (Value, String) {
+    let mut shown = Vec::new();
+    let mut words = String::new();
+    for note in state.notes_of(name) {
+        if version.is_some_and(|version| version != note.version) {
+            continue;
+        }
+        let answer = state.answer_of(note);
+        words.push_str(&format!(
+            "note {} on paragraph {} of {name}@{}, by {}: {}\n",
+            note.name, note.paragraph, note.version, note.person, note.words
+        ));
+        match answer {
+            Some((by, answer)) => words.push_str(&format!(
+                "  answered by {name}@{}: {answer}\n",
+                by.proposal.version
+            )),
+            None => words.push_str("  open\n"),
+        }
+        shown.push(json!({
+            "note": note.name,
+            "version": note.version,
+            "paragraph": note.paragraph,
+            "fingerprint": note.fingerprint,
+            "person": note.person,
+            "words": note.words,
+            "at": note.at,
+            "entry": note.noted_in,
+            "status": if answer.is_some() { "answered" } else { "open" },
+            "answer": answer.map(|(by, answer)| json!({
+                "version": by.proposal.version,
+                "words": answer,
+            })),
+        }));
+    }
+    (Value::Array(shown), words)
 }
 
 /// What the entry that proposed a version says of where it came from
@@ -2941,6 +3251,7 @@ fn import(
             .filter_map(|record| record.name.clone())
             .collect(),
         imported: true,
+        notes: std::collections::BTreeSet::new(),
     };
     let mut judged = store.state_for(&scope)?;
     let mut entries = Vec::new();
