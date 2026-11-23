@@ -848,6 +848,79 @@ fn a_form_from_another_site() {
     assert_eq!(place.log(), before);
 }
 
+/// The value of the attribute `name` of the first element of `html` that
+/// holds it.
+fn attribute<'a>(html: &'a str, name: &str) -> &'a str {
+    let start = html
+        .find(&format!(" {name}=\""))
+        .unwrap_or_else(|| panic!("no {name}: {html}"))
+        + name.len()
+        + 3;
+    let rest = &html[start..];
+    &rest[..rest.find('"').unwrap()]
+}
+
+/// The `Origin` that a browser sends with a form that a page of `own`
+/// posts to `own`, under the page's referrer policy `policy` (Fetch,
+/// "append a request `Origin` header"): `null` under `no-referrer`, and
+/// `own` under each other policy, as `own` is `http://127.0.0.1:<port>`,
+/// an origin that the browser trusts.
+fn origin_of_the_form(policy: &str, own: &str) -> String {
+    match policy {
+        "no-referrer" => "null".to_owned(),
+        _ => own.to_owned(),
+    }
+}
+
+/// narrative-page, "A note sent from the page's form".
+#[test]
+fn a_note_sent_from_the_pages_form() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let page = served(&place, &[NAME]);
+    let shown = page.page(NAME);
+    let policy = shown.header("Referrer-Policy").unwrap().to_owned();
+    let html = shown.body;
+    let meta = &html[html.find("<meta name=\"referrer\"").unwrap()..];
+    assert_eq!(attribute(meta, "content"), policy, "{html}");
+    let form = paragraph(&html, 3);
+    let action = attribute(&form, "action").to_owned();
+    assert_eq!(
+        attribute(&form[form.find("name=\"paragraph\"").unwrap()..], "value"),
+        "3"
+    );
+    let origin = origin_of_the_form(&policy, &format!("http://{}", page.host()));
+    let response = send(
+        page.port,
+        "POST",
+        &action,
+        &[("Host", &page.host()), ("Origin", &origin)],
+        "paragraph=3&words=Say+what+a+drive+is.",
+    );
+    assert_eq!(response.status, 303, "{policy}: {}", response.body);
+    let last = place.log().last().unwrap().clone();
+    assert_eq!(last["act"], "noted");
+    let location = response.header("Location").unwrap();
+    let (path, at) = location.split_once('#').unwrap();
+    assert_eq!(at, "p3");
+    assert!(paragraph(&page.get(path).body, 3).contains(DRIVE));
+}
+
+/// narrative-page, "A form of another site with no referrer".
+#[test]
+fn a_form_of_another_site_with_no_referrer() {
+    let place = Place::new();
+    let v1 = one_narrative(&place, &[]);
+    let page = served(&place, &[NAME]);
+    let before = place.log();
+    let target = format!("{NAME}@{v1}");
+    for origin in ["null", "http://localhost", "http://127.0.0.1"] {
+        let response = page.post(&target, origin, "paragraph=3&words=Hello");
+        assert_eq!(response.status, 403, "{origin}");
+    }
+    assert_eq!(place.log(), before);
+}
+
 #[test]
 fn two_persons_and_no_person() {
     let place = Place::new();

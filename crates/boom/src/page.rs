@@ -34,6 +34,13 @@ use crate::Failure;
 pub const POLICY: &str =
     "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; form-action 'self'";
 
+/// The referrer policy of each response and of each page: a request to
+/// another host gets no URL of the page, so no token leaves it, and the
+/// page's own form keeps its origin, which a `POST` of a note must name.
+/// Under `no-referrer` a browser sends `Origin: null` with that form,
+/// which boom refuses.
+pub const REFERRER_POLICY: &str = "same-origin";
+
 /// The version of Mermaid that boom holds: the package `mermaid` at this
 /// version gives `crates/boom/assets/mermaid/` (narrative-page, "boom
 /// serves Mermaid's script from itself").
@@ -324,7 +331,7 @@ fn document(title: &str, entry: u64, base: &str, main: &str) -> String {
     format!(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
-         <meta name=\"referrer\" content=\"no-referrer\">\n\
+         <meta name=\"referrer\" content=\"{REFERRER_POLICY}\">\n\
          <title>{} · Boom</title>\n<style>{STYLE}</style>\n</head>\n<body>\n\
          <header class=\"bar\"><a href=\"{base}/\">Boom · the design book</a><span>entry {entry}</span></header>\n\
          <main>\n{main}</main>\n{mermaid}</body>\n</html>\n",
@@ -1068,7 +1075,7 @@ fn headers(reply: &Reply) -> Vec<tiny_http::Header> {
         ("Content-Type", reply.content_type.to_owned()),
         ("Content-Security-Policy", POLICY.to_owned()),
         ("Cache-Control", "no-store".to_owned()),
-        ("Referrer-Policy", "no-referrer".to_owned()),
+        ("Referrer-Policy", REFERRER_POLICY.to_owned()),
         ("X-Content-Type-Options", "nosniff".to_owned()),
     ];
     if let Some(location) = &reply.location {
