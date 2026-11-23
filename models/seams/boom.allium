@@ -1,0 +1,40 @@
+-- allium: 3
+-- Boom at its seams: the plan's approval, signed, and the change record
+-- that construction writes. Boom reads no other tool.
+
+entity Approval {
+    hash: String
+    plan: String
+    signed_by: String
+}
+
+-- The ledger's copy of one OpenSpec change. No person accepts it.
+entity ChangeRecord {
+    version: String
+    change: String
+    -- The approval it comes from, by hash.
+    approval: String
+}
+
+rule PlanApproved {
+    when: PersonApproves(plan, person, hash)
+    ensures: Approval.created(hash: hash, plan: plan, signed_by: person)
+}
+
+-- Every change comes from an approved plan.
+rule ChangeRecorded {
+    when: RecordChange(change, approval, version)
+    requires: exists Approval{hash: approval}
+    ensures: ChangeRecord.created(version: version, change: change, approval: approval)
+}
+
+actor Person {
+    identified_by: Approval where signed_by != ""
+}
+
+surface BoomCommand {
+    facing person: Person
+    provides:
+        PersonApproves(plan, person, hash)
+        RecordChange(change, approval, version)
+}
