@@ -37,6 +37,11 @@ in
     # frontmatter, and only experimentally; astro check reads them
     # (site:typecheck).
     "site/**/*.astro"
+    # Mermaid's script and license, the files of its package byte for
+    # byte, which boom holds in its binary; a test holds the script to its
+    # SHA-256 (narrative-page).
+    "crates/boom/assets/mermaid/mermaid.min.js"
+    "crates/boom/assets/mermaid/LICENSE"
     # Empty markers that keep OpenSpec's empty directories in the tree.
     "**/.gitkeep"
     # OpenSpec's marker of the harness its skills were written for, one

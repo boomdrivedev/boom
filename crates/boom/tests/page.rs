@@ -9,7 +9,7 @@ use std::net::TcpStream;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use boom::page::{Context, POLICY};
+use boom::page::{Context, MERMAID_VERSION, POLICY};
 use boom::store::Store;
 use serde_json::Value;
 use support::{Place, NARRATIVE};
@@ -253,6 +253,72 @@ fn nothing_from_another_host() {
     assert!(!html.contains("//"), "{html}");
 }
 
+/// A body with a diagram, `a --> b`, between two paragraphs of text.
+const DIAGRAM: &str = "Before.\n\n```mermaid\nflowchart LR\n  a --> b\n```\n\nAfter.\n";
+
+/// narrative-page, "The page draws a diagram".
+#[test]
+fn a_diagram_in_a_body() {
+    let place = Place::new();
+    place.made_by("chuck");
+    place.narrative(NAME, TITLE, DIAGRAM, &[]);
+    let html = html(&place, NAME, None, Some("chuck"));
+    assert!(
+        paragraph(&html, 2).contains("<pre class=\"mermaid\">flowchart LR\n  a --&gt; b\n</pre>"),
+        "{html}"
+    );
+    assert_eq!(html.matches("<script").count(), 1, "{html}");
+    assert!(
+        html.contains(&format!(
+            "<script src=\"/t/mermaid-{MERMAID_VERSION}.min.js\"></script>"
+        )),
+        "{html}"
+    );
+    assert!(
+        html.contains(&format!("href=\"/t/mermaid-{MERMAID_VERSION}.LICENSE\"")),
+        "{html}"
+    );
+    assert_eq!(MERMAID_VERSION, "11.17.2");
+}
+
+/// narrative-page, "The page draws a diagram".
+#[test]
+fn a_body_with_no_diagram() {
+    let place = Place::new();
+    place.made_by("chuck");
+    place.narrative(NAME, TITLE, "Before.\n\n```rust\nfn main() {}\n```\n", &[]);
+    let html = html(&place, NAME, None, Some("chuck"));
+    assert!(html.contains("language-rust"), "{html}");
+    assert!(!html.contains("<pre class=\"mermaid\">"), "{html}");
+    assert!(!html.contains("mermaid-"), "{html}");
+    assert!(!html.to_lowercase().contains("<script"), "{html}");
+}
+
+/// narrative-page, "The page runs nothing from a body or another host".
+#[test]
+fn a_script_in_a_diagram() {
+    let place = Place::new();
+    place.made_by("chuck");
+    place.narrative(
+        NAME,
+        TITLE,
+        "```mermaid\nflowchart LR\n  a[\"<script>alert(1)</script>\"] --> b\n```\n",
+        &[],
+    );
+    let html = html(&place, NAME, None, Some("chuck"));
+    assert!(
+        html.contains("a[\"&lt;script&gt;alert(1)&lt;/script&gt;\"] --&gt; b"),
+        "{html}"
+    );
+    assert_eq!(html.to_lowercase().matches("<script").count(), 1, "{html}");
+    assert!(
+        html.contains(&format!(
+            "<script src=\"/t/mermaid-{MERMAID_VERSION}.min.js\">"
+        )),
+        "{html}"
+    );
+}
+
 // The server, through the binary.
 
 /// A run of `boom page`, killed when the test ends.
@@ -318,11 +384,13 @@ fn served(place: &Place, args: &[&str]) -> Served {
     }
 }
 
-/// A response: its status, its headers and its body.
+/// A response: its status, its headers and its body, as text and as
+/// bytes.
 struct Response {
     status: u16,
     headers: Vec<(String, String)>,
     body: String,
+    bytes: Vec<u8>,
 }
 
 impl Response {
@@ -353,9 +421,15 @@ fn send(port: u16, method: &str, path: &str, headers: &[(&str, &str)], body: &st
     request.push_str("\r\n");
     request.push_str(body);
     stream.write_all(request.as_bytes()).unwrap();
-    let mut raw = String::new();
-    stream.read_to_string(&mut raw).unwrap();
-    let (head, body) = raw.split_once("\r\n\r\n").unwrap_or((&raw, ""));
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).unwrap();
+    let split = raw
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .unwrap_or(raw.len());
+    let head = String::from_utf8_lossy(&raw[..split]).into_owned();
+    let bytes = raw.get(split + 4..).unwrap_or_default().to_vec();
+    let body = String::from_utf8_lossy(&bytes).into_owned();
     let mut lines = head.lines();
     let status = lines
         .next()
@@ -372,7 +446,8 @@ fn send(port: u16, method: &str, path: &str, headers: &[(&str, &str)], body: &st
     Response {
         status,
         headers,
-        body: body.to_owned(),
+        body,
+        bytes,
     }
 }
 
@@ -418,6 +493,72 @@ fn the_page_served() {
         response.body
     );
     assert_eq!(response.header("Content-Security-Policy"), Some(POLICY));
+}
+
+/// The bytes of a file of Mermaid's in the crate.
+fn mermaid_file(name: &str) -> Vec<u8> {
+    std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/mermaid")
+            .join(name),
+    )
+    .unwrap()
+}
+
+/// narrative-page, "boom serves Mermaid's script from itself".
+#[test]
+fn the_script_served() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let page = served(&place, &[NAME]);
+    let response = page.get(&format!("/{}/mermaid-11.17.2.min.js", page.token));
+    assert_eq!(response.status, 200);
+    assert!(
+        response
+            .header("Content-Type")
+            .is_some_and(|value| value.starts_with("text/javascript")),
+        "{:?}",
+        response.headers
+    );
+    assert_eq!(
+        response.header("Content-Length"),
+        Some(mermaid_file("mermaid.min.js").len().to_string().as_str())
+    );
+    assert!(response.bytes == mermaid_file("mermaid.min.js"));
+}
+
+/// narrative-page, "boom serves Mermaid's script from itself".
+#[test]
+fn the_license_served() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let page = served(&place, &[NAME]);
+    let response = page.get(&format!("/{}/mermaid-11.17.2.LICENSE", page.token));
+    assert_eq!(response.status, 200);
+    assert!(
+        response
+            .header("Content-Type")
+            .is_some_and(|value| value.starts_with("text/plain")),
+        "{:?}",
+        response.headers
+    );
+    assert_eq!(response.bytes, mermaid_file("LICENSE"));
+}
+
+/// narrative-page, "boom serves Mermaid's script from itself".
+#[test]
+fn the_script_with_no_token() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let page = served(&place, &[NAME]);
+    for path in [
+        "/mermaid-11.17.2.min.js".to_owned(),
+        format!("/{}/mermaid-11.17.2.min.js", "0".repeat(32)),
+    ] {
+        let response = page.get(&path);
+        assert_eq!(response.status, 404, "{path}");
+        assert!(response.bytes.len() < 1024, "{path}");
+    }
 }
 
 #[test]
