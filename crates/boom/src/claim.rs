@@ -18,8 +18,8 @@ pub enum Kind {
     Decision,
     /// Something taken as true and not checked.
     Assumption,
-    /// A word and its meaning in one repository, with the old words it
-    /// replaces (term-claims).
+    /// A word and its meaning in one repository or the whole system, with
+    /// the old words it replaces (term-claims).
     Term,
     /// A part of the system that owns path globs, each in one repository
     /// (context-claims).
@@ -398,19 +398,20 @@ impl Proposal {
     }
 
     /// A version of a term: its word, its meaning, its body, its base,
-    /// the one repository it binds and the old words it replaces, kept
-    /// as [`replaces`] keeps them (term-claims).
+    /// the one repository it binds, or none for the whole system, and the
+    /// old words it replaces, kept as [`replaces`] keeps them
+    /// (term-claims).
     pub fn term(
         name: &str,
         statement: &str,
         body: Option<String>,
         base: Option<String>,
-        repository: &str,
+        repository: Option<&str>,
         replaced: &[String],
     ) -> Proposal {
         let mut proposal = Proposal::new(Kind::Term, name, statement, Vec::new(), body, base, None);
         proposal.replaces = replaces(replaced);
-        proposal.version = proposal.fingerprint(Some(repository));
+        proposal.version = proposal.fingerprint(repository);
         proposal
     }
 
@@ -434,7 +435,7 @@ impl Proposal {
     /// The first 12 hexadecimal characters of the SHA-256 of its kind,
     /// name, statement, scenarios, body's fingerprint, base and, where
     /// it has them, its history, the repository of a term, given as
-    /// `repository`, the old words of a term, the globs of a context, its
+    /// `repository` and none for a term of the whole system, the old words of a term, the globs of a context, its
     /// edges `source`, `changes`, `origin` and `includes`, and the answers
     /// of a narrative (claim-versions; claim-edges; context-claims;
     /// narratives).
@@ -467,7 +468,8 @@ impl Proposal {
     /// form: a decision needs a body. A version with a history has no
     /// base, and names as its successor another claim (design 6). A
     /// term binds one repository of `repositories`, the ones its entry
-    /// binds, and only a term replaces words (term-claims). A context
+    /// binds, or the whole system where they are none, and only a term
+    /// replaces words (term-claims). A context
     /// owns one glob at least, each one time and sorted, and binds the
     /// repositories of its globs; only a context owns globs
     /// (context-claims). A narrative has no scenarios and no history, and
@@ -482,9 +484,9 @@ impl Proposal {
         }
         let repository = match (self.kind, repositories) {
             (Kind::Term, [one]) => Some(one.as_str()),
-            (Kind::Term, _) => {
+            (Kind::Term, [_, _, ..]) => {
                 return Err(format!(
-                    "a term binds one repository, and only one: {} binds {}",
+                    "a term binds one repository or the whole system: {} binds {}",
                     self.name,
                     crate::repository::words(repositories)
                 ))

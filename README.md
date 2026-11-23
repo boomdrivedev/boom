@@ -48,11 +48,16 @@ claims that hold.
   base and the claims that rest on the claim. `boom show --artifact
   <fingerprint>` writes the bytes of a file that boom keeps. boom builds
   the graph from the edges when asked, and keeps no graph.
-- **A term is a word and its meaning in one repository.** `boom propose
-  term <word> <meaning> --repository <name>` proposes one, and each
-  `--replaces <old word>` names an old word that the term replaces. A
-  term binds one repository, and only one, so one word can have a term
-  in each repository, with a meaning for each. A person signs the old
+- **A term is a word and its meaning in one repository or the whole
+  system.** `boom propose term <word> <meaning> --repository <name>`
+  proposes one for a repository, and `--system` for the whole system.
+  Each `--replaces <old word>` names an old word that the term replaces.
+  A term binds one repository or the whole system, and never a context,
+  so one word can have a term in each repository, with a meaning for
+  each. Where one word has a term of the whole system and a term of a
+  repository, the term of the repository stands in that repository, and
+  the term of the whole system stands in each other repository. An
+  amendment of a term binds what its base binds. A person signs the old
   words with the term. boom keeps them in the log alone: `boom show`
   gives them to the person who accepts, and `boom query` and `boom
   search` never give them. No list of old words goes into a repository.
@@ -137,7 +142,9 @@ claims that hold.
   <file>...` names each old word of an accepted term in each file, with
   its line and the term that replaces it, and exits 2 where it finds
   one. It finds the repository of each file as `boom query` finds the
-  repository of a session. It matches an old word in another form, case
+  repository of a session, and checks the file against the terms that
+  stand there: those of the repository, and those of the whole system.
+  It matches an old word in another form, case
   or accent, an old word of two words in their order, and the words of
   a name in code, such as `RefundTotal`, but never an old word inside a
   longer word. An old word with a hyphen, such as `refund-total`,

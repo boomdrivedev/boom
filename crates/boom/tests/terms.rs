@@ -106,13 +106,15 @@ fn a_term_proposed() {
 }
 
 #[test]
-fn a_term_binds_one_repository() {
+fn a_term_binds_one_repository_or_the_whole_system() {
     let place = Place::new();
     place.made();
-    // No repository named, in a folder of no registered repository.
+    // No repository named and no --system, in a folder of no registered
+    // repository.
+    let before = place.log().len();
     place.refused(
         &["propose", "term", "owner", OWNER, "--provenance", "run-1"],
-        "a term binds one repository",
+        "a term binds one repository or the whole system",
     );
     place.refused(
         &[
@@ -127,20 +129,9 @@ fn a_term_binds_one_repository() {
             "--provenance",
             "run-1",
         ],
-        "a term binds one repository",
+        "a term binds one repository or the whole system",
     );
-    place.refused(
-        &[
-            "propose",
-            "term",
-            "owner",
-            OWNER,
-            "--system",
-            "--provenance",
-            "run-1",
-        ],
-        "a term binds one repository",
-    );
+    assert_eq!(place.log().len(), before, "boom appends nothing");
 }
 
 #[test]
@@ -335,7 +326,7 @@ fn one_word_in_two_repositories() {
             "--provenance",
             "run-3",
         ],
-        "a term amends a version of its own repository",
+        "a term amends a version of its own binding",
     );
 }
 
@@ -1139,4 +1130,311 @@ fn the_task_names_the_entry_it_read() {
         "{}",
         text(&ran.stdout)
     );
+}
+
+// A term of the whole system
+
+const LINK: &str = "One step back along a lineage.";
+const TIE: &str = "A tie between two records of one store.";
+
+/// A store whose owner ada accepted the term `link` of the whole system,
+/// which replaces `hop`; gives ada's key and the version.
+fn link_accepted(place: &Place) -> (String, String) {
+    let ada = place.made();
+    let version = proposed(place, "link", LINK, &["--system", "--replaces", "hop"]);
+    place.accepted("link", &version, &ada);
+    (ada, version)
+}
+
+/// The names and statements of the claims that `boom query` gives for
+/// `repository`.
+fn queried(place: &Place, repository: &str) -> Vec<(String, String)> {
+    let answer = place.json(&["query", "--repository", repository]);
+    answer["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|claim| {
+            (
+                claim["name"].as_str().unwrap().to_owned(),
+                claim["statement"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_term_of_the_whole_system() {
+    let place = Place::new();
+    place.made();
+    let outcome = term(&place, "link", LINK, &["--system", "--replaces", "hop"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    let shown = place.show("link");
+    assert_eq!(shown["kind"], "term");
+    assert!(shown.get("repository").is_none(), "{shown}");
+    assert_eq!(shown["versions"].as_array().unwrap().len(), 1);
+    assert_eq!(shown["newest"]["status"], "proposed");
+    assert_eq!(shown["newest"]["repositories"], json!([]));
+    assert_eq!(shown["newest"]["contexts"], json!([]));
+    assert_eq!(shown["newest"]["replaces"], json!(["hop"]));
+}
+
+#[test]
+fn an_amendment_of_a_term_of_the_whole_system() {
+    let place = Place::new();
+    place.made();
+    let version = proposed(&place, "link", LINK, &["--system"]);
+    let amended = place.json(&[
+        "propose",
+        "term",
+        "link",
+        "One step back along a lineage, by hash.",
+        "--amends",
+        &version,
+        "--provenance",
+        "run-2",
+    ]);
+    assert_eq!(amended["repositories"], json!([]), "{amended}");
+    assert_eq!(place.show("link")["versions"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn an_amendment_across_bindings() {
+    let place = Place::new();
+    place.made();
+    let system = proposed(&place, "link", LINK, &["--system"]);
+    let before = place.log().len();
+    place.refused(
+        &[
+            "propose",
+            "term",
+            "link",
+            TIE,
+            "--amends",
+            &system,
+            "--repository",
+            "boom",
+            "--provenance",
+            "run-2",
+        ],
+        "the term link@",
+    );
+    let refused = place.run(&[
+        "propose",
+        "term",
+        "link",
+        TIE,
+        "--amends",
+        &system,
+        "--repository",
+        "boom",
+        "--provenance",
+        "run-2",
+    ]);
+    assert!(
+        refused.stderr.contains(
+            "binds the whole system, and a term amends a version of its own binding, not boom"
+        ),
+        "{refused:?}"
+    );
+    let boom = proposed(&place, "link", TIE, &["--repository", "boom"]);
+    place.refused(
+        &[
+            "propose",
+            "term",
+            "link",
+            LINK,
+            "--amends",
+            &boom,
+            "--system",
+            "--provenance",
+            "run-3",
+        ],
+        "binds boom, and a term amends a version of its own binding, not the whole system",
+    );
+    assert_eq!(
+        place.log().len(),
+        before + 1,
+        "boom appends the term of boom only"
+    );
+}
+
+#[test]
+fn a_term_of_the_whole_system_with_the_name_of_an_invariant() {
+    let place = Place::new();
+    place.made();
+    place.proposed("billing", "Every bill names its order.");
+    let before = place.log().len();
+    place.refused(
+        &[
+            "propose",
+            "term",
+            "billing",
+            "The act of sending a bill.",
+            "--system",
+            "--provenance",
+            "run-1",
+        ],
+        "the name billing is taken by the invariant billing",
+    );
+    assert_eq!(place.log().len(), before);
+}
+
+#[test]
+fn a_word_of_the_whole_system_and_of_a_repository() {
+    let place = Place::new();
+    let (_, system) = link_accepted(&place);
+    let boom = proposed(&place, "link", TIE, &["--repository", "boom"]);
+    let both = place.show("link");
+    let terms = both["terms"].as_array().unwrap();
+    assert_eq!(terms.len(), 2, "{both}");
+    assert!(terms[0].get("repository").is_none(), "{both}");
+    assert_eq!(terms[0]["accepted"], json!(system));
+    assert_eq!(terms[1]["repository"], "boom");
+    assert_eq!(terms[1]["newest"]["version"], json!(boom));
+    let one = place.json(&["show", "link", "--repository", "boom"]);
+    assert_eq!(one["repository"], "boom");
+}
+
+#[test]
+fn the_term_of_the_whole_system_in_a_repository() {
+    let place = Place::new();
+    link_accepted(&place);
+    assert_eq!(
+        queried(&place, "sluice"),
+        [("link".to_owned(), LINK.to_owned())]
+    );
+    let query = place.run(&["query", "--repository", "sluice", "--json"]);
+    assert!(!query.stdout.contains("hop"), "{query:?}");
+}
+
+#[test]
+fn a_repository_with_its_own_term() {
+    let place = Place::new();
+    let (ada, _) = link_accepted(&place);
+    let boom = proposed(&place, "link", TIE, &["--repository", "boom"]);
+    place.accepted("link", &boom, &ada);
+    assert_eq!(
+        queried(&place, "boom"),
+        [("link".to_owned(), TIE.to_owned())]
+    );
+    assert_eq!(
+        queried(&place, "sluice"),
+        [("link".to_owned(), LINK.to_owned())]
+    );
+    let words = place.run(&["query", "--repository", "boom"]);
+    assert!(words.stdout.starts_with("Boom: 1 claim"), "{words:?}");
+}
+
+#[test]
+fn searched_in_a_repository_and_in_all() {
+    let place = Place::new();
+    let (ada, system) = link_accepted(&place);
+    let boom = proposed(&place, "link", TIE, &["--repository", "boom"]);
+    place.accepted("link", &boom, &ada);
+    let versions = |answer: &Value| -> Vec<String> {
+        answer["claims"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|claim| claim["version"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let in_boom = place.json(&["search", "link", "--repository", "boom"]);
+    assert_eq!(versions(&in_boom), std::slice::from_ref(&boom), "{in_boom}");
+    let in_all = place.json(&["search", "link", "--all"]);
+    let mut all = versions(&in_all);
+    all.sort();
+    let mut both = vec![system, boom];
+    both.sort();
+    assert_eq!(all, both, "{in_all}");
+}
+
+/// Two registered repositories, `boom` and `sluice`, each with a file
+/// `x.md` that holds `text`; gives the two files.
+fn two_repositories_with(place: &Place, ada: &str, text: &str) -> (String, String) {
+    place.repo_added(ada, "boom", "git@github.com:boomdrivedev/boom.git");
+    place.repo_added(ada, "sluice", "git@github.com:boomdrivedev/sluice.git");
+    let a = place.repository("a", Some("https://github.com/boomdrivedev/boom"));
+    let b = place.repository("b", Some("https://github.com/boomdrivedev/sluice"));
+    std::fs::write(a.join("x.md"), text).unwrap();
+    std::fs::write(b.join("x.md"), text).unwrap();
+    (path_arg(&a.join("x.md")), path_arg(&b.join("x.md")))
+}
+
+#[test]
+fn a_term_of_the_whole_system_in_each_repository() {
+    let place = Place::new();
+    let (ada, version) = link_accepted(&place);
+    let (x, y) = two_repositories_with(&place, &ada, "One hop back.\n");
+    let outcome = check(&place, &[&x, &y], "");
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    for file in [&x, &y] {
+        assert!(
+            outcome.stderr.contains(&format!(
+                "{file}:1: \"hop\" is replaced by link in the whole system: {LINK}"
+            )),
+            "{outcome:?}"
+        );
+    }
+    let json = check(&place, &[&y, "--json"], "");
+    let answer: Value = serde_json::from_str(&json.stdout).unwrap();
+    assert_eq!(
+        answer["refused"]["found"],
+        json!([{
+            "file": y,
+            "line": 1,
+            "word": "hop",
+            "written": "hop",
+            "term": "link",
+            "version": version,
+            "meaning": LINK,
+            "repository": null,
+        }])
+    );
+}
+
+#[test]
+fn a_repository_with_its_own_term_for_the_word() {
+    let place = Place::new();
+    let (ada, _) = link_accepted(&place);
+    let boom = proposed(
+        &place,
+        "link",
+        TIE,
+        &["--repository", "boom", "--replaces", "tie"],
+    );
+    place.accepted("link", &boom, &ada);
+    let (x, y) = two_repositories_with(&place, &ada, "A hop and a tie.\n");
+    let outcome = check(&place, &[&x], "");
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    assert!(
+        outcome
+            .stderr
+            .contains("\"tie\" is replaced by link in boom"),
+        "{outcome:?}"
+    );
+    assert!(!outcome.stderr.contains("\"hop\""), "{outcome:?}");
+    // sluice has no term of its own: the term of the whole system stands.
+    let outcome = check(&place, &[&y], "");
+    assert!(
+        outcome
+            .stderr
+            .contains("\"hop\" is replaced by link in the whole system"),
+        "{outcome:?}"
+    );
+    assert!(!outcome.stderr.contains("\"tie\""), "{outcome:?}");
+}
+
+#[test]
+fn a_word_that_no_term_replaces() {
+    let place = Place::new();
+    let (ada, _) = link_accepted(&place);
+    let (x, _) = two_repositories_with(
+        &place,
+        &ada,
+        "Each entry holds the hash chain of the log.\n",
+    );
+    let outcome = check(&place, &[&x], "");
+    assert_eq!(outcome.code, 0, "{outcome:?}");
 }

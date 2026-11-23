@@ -196,6 +196,11 @@ pub struct Note {
 /// repository of a term or nothing for the other kinds.
 pub type Key = (String, String);
 
+/// What a term binds, in words: its repository, or the whole system.
+pub fn binding_words(repository: Option<&str>) -> String {
+    repository.map_or_else(|| "the whole system".to_owned(), str::to_owned)
+}
+
 /// The key of the claim `name`, a term of `repository` where one is
 /// given.
 pub fn key(name: &str, repository: Option<&str>) -> Key {
@@ -297,10 +302,27 @@ impl State {
         self.claims.get_mut(&key)
     }
 
+    /// Whether a standing term of `repository` with the word of `claim`,
+    /// a term of the whole system, stands over it there (term-claims,
+    /// "The term of a repository stands over the term of the whole
+    /// system"). For no repository, nothing stands over it.
+    fn stands_over(&self, claim: &Claim, repository: Option<&str>) -> bool {
+        let Some(repository) = repository else {
+            return false;
+        };
+        claim.kind == Kind::Term
+            && claim.repository.is_none()
+            && self
+                .claims
+                .get(&key(&claim.name, Some(repository)))
+                .is_some_and(|own| own.kind == Kind::Term && own.standing.is_some())
+    }
+
     /// Each claim that stands with its standing version: for
     /// `Some(repository)`, those whose standing version binds that
-    /// repository, a context named in `contexts`, or the whole system;
-    /// for `None`, every one. In the order invariants, decisions,
+    /// repository, a context named in `contexts`, or the whole system,
+    /// less each term of the whole system that a term of the repository
+    /// stands over; for `None`, every one. In the order invariants, decisions,
     /// assumptions, terms, contexts and narratives, each kind by name and a
     /// term then by its repository (claim-search; design 4; term-claims;
     /// context-claims; narratives).
@@ -327,7 +349,7 @@ impl State {
                     continue;
                 };
                 let bound = repository.is_none_or(|repository| version.binds(repository, contexts));
-                if bound {
+                if bound && !self.stands_over(claim, repository) {
                     standing.push((claim, version));
                 }
             }
@@ -432,7 +454,7 @@ fn check_form(act: &Act) -> Result<(), String> {
                 match claim.kind {
                     Kind::Term => {
                         return Err(format!(
-                            "a term binds one repository, and never a context: {} binds {}",
+                            "a term binds one repository or the whole system, and never a context: {} binds {}",
                             claim.name,
                             crate::repository::words(bound)
                         ))
@@ -948,10 +970,14 @@ fn check_proposal(
     match (&proposal.base, claim) {
         (Some(base), Some(claim)) if claim.version(base).is_some() => {}
         (Some(base), _) => {
-            if let (Some(term), Some(other)) = (term, state.holding(name, base)) {
+            if let Some(other) = state
+                .holding(name, base)
+                .filter(|other| proposal.kind == Kind::Term && other.kind == Kind::Term)
+            {
                 return Err(format!(
-                    "the term {name}@{base} binds {}, and a term amends a version of its own repository, not {term}",
-                    other.repository.as_deref().unwrap_or_default()
+                    "the term {name}@{base} binds {}, and a term amends a version of its own binding, not {}",
+                    binding_words(other.repository.as_deref()),
+                    binding_words(term)
                 ));
             }
             return Err(format!("the claim {name} has no version {base}"));
