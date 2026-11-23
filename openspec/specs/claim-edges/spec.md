@@ -13,7 +13,7 @@ the truth (`a-link-remembers-the-version-it-meant`,
 
 ### Requirement: A version stores its edges
 
-The entry of a version SHALL store its edges. `amends` is its base. `source` is the claims that it rests on. `changes` is the claims that a decision changes. `origin` is the files and the commits that the version came from. No other record SHALL store an edge of a version. Boom SHALL refuse `changes` on a version that is not a decision. Boom SHALL keep each edge one time, in the order given.
+The entry of a version SHALL store its edges. `amends` is its base. `source` is the claims that it rests on. `changes` is the claims that a decision changes. `origin` is the files and the commits that the version came from. `includes` is the claims that a narrative includes. No other record SHALL store an edge of a version. Boom SHALL refuse `changes` on a version that is not a decision, and `includes` on a version that is not a narrative. Boom SHALL keep each edge one time, in the order given.
 
 #### Scenario: A decision with its edges
 
@@ -29,6 +29,11 @@ The entry of a version SHALL store its edges. `amends` is its base. `source` is 
 
 - **WHEN** an agent proposes a claim with `--source flume-has-a-resident` two times
 - **THEN** the entry of the proposal holds one edge `source` to `flume-has-a-resident`
+
+#### Scenario: A narrative with its includes
+
+- **WHEN** the store holds `status-read-from-events`, and `boom propose narrative boom-end-to-end "Boom, end to end" --body narrative.md --includes status-read-from-events --provenance run-1` runs
+- **THEN** boom exits 0, and the entry of the proposal holds the edge `includes`
 
 ### Requirement: An edge to a claim names the version that it meant
 

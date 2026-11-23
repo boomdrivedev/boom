@@ -51,7 +51,7 @@ record 0011).
 #### Scenario: A tool's arguments are its command's
 
 - **WHEN** a client sends `tools/list`
-- **THEN** `propose` takes `kind` (one of `invariant`, `decision`, `assumption`, `term` and `context`), `name`, `statement`, `amends`, `body`, `source`, `changes`, `origin`, `provenance`, `repositories`, `contexts`, `system`, `replaces` and `paths`, and requires `kind`, `name` and `statement`. `source`, `changes`, `origin`, `contexts`, `replaces` and `paths` are arrays of strings. `propose` takes no `scenarios`. `show` takes `target`, `repository` and `artifact`, and requires none of them. `log` takes nothing. `query` takes `repository`, `if_declared` and `paths`, an array of strings. `search` takes `words`, an array of strings, required, and `repository`, `all` and `limit`. `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, and requires `dir`. `import_rules` takes the same, with `page` for `dir`
+- **THEN** `propose` takes `kind` (one of `invariant`, `decision`, `assumption`, `term`, `context` and `narrative`), `name`, `statement`, `amends`, `body`, `source`, `changes`, `origin`, `includes`, `answers`, `provenance`, `repositories`, `contexts`, `system`, `replaces` and `paths`, and requires `kind`, `name` and `statement`. `source`, `changes`, `origin`, `includes`, `answers`, `contexts`, `replaces` and `paths` are arrays of strings. `propose` takes no `scenarios`. `show` takes `target`, `repository` and `artifact`, and requires none of them. `log` takes nothing. `query` takes `repository`, `if_declared` and `paths`, an array of strings. `search` takes `words`, an array of strings, required, and `repository`, `all` and `limit`. `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, and requires `dir`. `import_rules` takes the same, with `page` for `dir`
 
 #### Scenario: Each command served or absent
 
@@ -198,3 +198,17 @@ The answer of `boom mcp` to `initialize` SHALL give instructions. They SHALL say
 
 - **WHEN** an agent proposes again the words of a version that a person accepted
 - **THEN** the answer gives the version as `accepted`, and `accept` as null
+
+### Requirement: No tool writes a note
+
+No tool SHALL write a note or serve a page. Boom SHALL name `note` and `page` as absent. The instructions of `boom mcp` SHALL say that only a person writes a note, on the page or with `boom note`.
+
+#### Scenario: A note asked of the server
+
+- **WHEN** an agent calls `note` with a version of a narrative, a paragraph and words
+- **THEN** boom answers with the JSON-RPC error `-32602` naming `note`, and the log is as it was
+
+#### Scenario: The instructions name the note
+
+- **WHEN** a client sends `initialize`
+- **THEN** the `instructions` of the result say that only a person writes a note, and name `boom page` and `boom note`
