@@ -1451,7 +1451,7 @@ fn propose(
         }
         Kind::Term if !proposed.contexts.is_empty() => {
             return Err(Failure::refused(
-                "a term binds one repository, and never a context: boom propose term takes no --context",
+                "a term binds one repository or the whole system, and never a context: boom propose term takes no --context",
             ))
         }
         Kind::Context => {}
@@ -1473,6 +1473,19 @@ fn propose(
     } else {
         None
     };
+    // A term binds the whole system only where --system says so: in a
+    // folder of no repository, a first term that names no binding is
+    // refused (term-claims).
+    if proposed.kind == Kind::Term
+        && !proposed.names_its_binding()
+        && proposed.amends.is_none()
+        && declared.is_none()
+    {
+        return Err(Failure::refused(format!(
+            "a term binds one repository or the whole system: {} names neither, and its folder is of no repository; name it with --repository or --system",
+            proposed.name
+        )));
+    }
     if !proposed.changes.is_empty() && proposed.kind != Kind::Decision {
         return Err(Failure::refused(format!(
             "only a decision changes claims: {} is proposed as {} {}, with --changes",
@@ -1550,9 +1563,7 @@ fn propose(
                 &proposed.statement,
                 body_fingerprint.clone(),
                 proposed.amends.clone(),
-                judge::repositories(attach)
-                    .first()
-                    .map_or("", String::as_str),
+                judge::repositories(attach).first().map(String::as_str),
                 &proposed.replaces,
             );
         }
@@ -1589,11 +1600,9 @@ fn propose(
         proposal.origin = origin.clone();
         proposal.includes = includes;
         proposal.answers = answers.clone();
-        let term = (proposed.kind == Kind::Term).then(|| {
-            judge::repositories(attach)
-                .first()
-                .map_or("", String::as_str)
-        });
+        let term = (proposed.kind == Kind::Term)
+            .then(|| judge::repositories(attach).first().map(String::as_str))
+            .flatten();
         proposal.version = proposal.fingerprint(term);
         proposal
     };

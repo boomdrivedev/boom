@@ -49,8 +49,8 @@ pub struct Term {
     pub version: String,
     /// Its meaning.
     pub meaning: String,
-    /// The repository it binds.
-    pub repository: String,
+    /// The repository it binds, or none for the whole system.
+    pub repository: Option<String>,
     /// The old words it replaces.
     pub replaces: Vec<String>,
 }
@@ -68,21 +68,20 @@ pub struct Found {
     pub term: usize,
 }
 
-/// The accepted terms of `repository` in `state`, by name.
+/// The accepted terms that stand for `repository` in `state`, by name:
+/// its own, and those of the whole system that no term of its own stands
+/// over (term-claims).
 pub fn accepted(state: &State, repository: &str) -> Vec<Term> {
     state
-        .claims
-        .values()
-        .filter(|claim| claim.kind == Kind::Term && claim.repository.as_deref() == Some(repository))
-        .filter_map(|claim| {
-            let version = claim.version(claim.standing.as_deref()?)?;
-            Some(Term {
-                name: claim.name.clone(),
-                version: version.proposal.version.clone(),
-                meaning: version.proposal.statement.clone(),
-                repository: repository.to_owned(),
-                replaces: version.proposal.replaces.clone(),
-            })
+        .standing_for(Some(repository), &[])
+        .into_iter()
+        .filter(|(claim, _)| claim.kind == Kind::Term)
+        .map(|(claim, version)| Term {
+            name: claim.name.clone(),
+            version: version.proposal.version.clone(),
+            meaning: version.proposal.statement.clone(),
+            repository: claim.repository.clone(),
+            replaces: version.proposal.replaces.clone(),
         })
         .collect()
 }
@@ -322,7 +321,7 @@ pub fn found_words(file: &str, found: &Found, terms: &[Term], text: Option<&str>
     format!(
         "{place}: {written} is replaced by {} in {}: {}\n",
         term.name.replace('-', " "),
-        term.repository,
+        crate::judge::binding_words(term.repository.as_deref()),
         term.meaning
     )
 }
@@ -337,21 +336,21 @@ mod tests {
                 name: "owner".to_owned(),
                 version: "aaaaaaaaaaaa".to_owned(),
                 meaning: "A person who grants roles and registers keys in a store.".to_owned(),
-                repository: "boom".to_owned(),
+                repository: Some("boom".to_owned()),
                 replaces: vec!["keeper".to_owned(), "warden".to_owned()], // boom: allow keeper
             },
             Term {
                 name: "run-log".to_owned(),
                 version: "bbbbbbbbbbbb".to_owned(),
                 meaning: "The log of a run.".to_owned(),
-                repository: "boom".to_owned(),
+                repository: Some("boom".to_owned()),
                 replaces: vec!["drive log".to_owned()],
             },
             Term {
                 name: "origin".to_owned(),
                 version: "cccccccccccc".to_owned(),
                 meaning: "The file or the commit that a claim came from.".to_owned(),
-                repository: "boom".to_owned(),
+                repository: Some("boom".to_owned()),
                 replaces: vec!["came-from".to_owned()], // boom: allow came-from
             },
         ]
