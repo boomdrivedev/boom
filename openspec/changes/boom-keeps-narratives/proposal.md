@@ -51,9 +51,9 @@ A note on the page goes back as a signal.
 - **An amendment answers the open notes.** `--answers <note>=<words>`
   answers a note. Boom refuses a new version of a narrative that leaves
   a note of the narrative open.
-- **A session sees the narratives.** `boom hook session-start` gives
-  the narratives of the repository by name, with the count of the open
-  notes of each, and its menu names `boom page <name>`.
+- **Session start gives no narrative.** The agent that revises a
+  narrative reads its open notes with `boom show <name>`, the tool
+  `show`, or the refusal of `boom propose ... --amends`.
 - **`boom mcp`** gives the kind `narrative`, `includes` and `answers` to
   the tool `propose`. It serves no `note` and no `page`.
 - After this change is released, an agent proposes `design/narrative.md`
@@ -80,8 +80,6 @@ A note on the page goes back as a signal.
 - `persons-acts`: a note is the act of a person with no signature.
 - `record-log`: a note is an entry of the log.
 - `command-line`: the commands `note` and `page`.
-- `session-context`: session start gives the narratives by name, with
-  their open notes, and the menu names `boom page`.
 - `agent-tools`: the tool `propose` takes the new kind and edges, and no
   tool writes a note or serves a page.
 
@@ -90,12 +88,11 @@ A note on the page goes back as a signal.
 - `crates/boom`: `claim.rs` (the kind, `includes`, `answers`),
   `entry.rs` and `judge.rs` (the act `noted`), a new module
   `narrative.rs` (the paragraphs and the notes), a new module `page.rs`
-  (the server and the HTML), `cli.rs`, `mcp.rs` and `hook.rs`, and their
-  tests. Two new dependencies, which `Cargo.lock` pins:
+  (the server and the HTML), `cli.rs`, `mcp.rs` and `hook.rs` (session start
+  gives no narrative), and their tests. Two new dependencies, which `Cargo.lock` pins:
   `pulldown-cmark`, to read the Markdown of a body, and `tiny_http`, to
   serve the page with no async runtime.
-- `plugins/claude-code`: no change to its files. Its tests see the new
-  menu line.
+- `plugins/claude-code`: no change.
 - The store: the new kind and the new act are entries of the same log.
   An older boom counts each such entry for nothing.
 - No new part of the repository, and no new moon project. The page is

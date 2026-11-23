@@ -48,8 +48,8 @@ This design keeps these claims of the store:
   a note is the act of a person, so no tool writes one.
 - `a-persons-act-in-boom-is-an-ssh-signature-by-a-security-key`: this
   design departs from it for the note alone, by the user's ruling of
-  2026-11-23. Decision 7 says how, and the open question 1 asks for the
-  amendment of that decision.
+  2026-11-23. Decision 7 says how, and who proposes the amendment of
+  that decision.
 - `names-use-the-domains-terms`: `narrative`, `paragraph`, `note`,
   `page`, `include` and `answer` are the words of the design of
   2026-11-01 and of Markdown. `serve` and `127.0.0.1` are the words of
@@ -86,16 +86,20 @@ This design keeps these claims of the store:
 - Images in a body, served from the artifacts of a version's origin.
   A later change can serve them on the page.
 - The terms check of a narrative's body when an agent proposes it.
-- A note as a signal of millpond, or a card on the rail. Turn 6 makes
-  the acts of the rail entries of the log. This change makes the note
-  an entry that an agent reads.
+- A note sent to an agent. Session start gives no narrative and no
+  open note. Only the agent that revises a narrative needs its open
+  notes, and each other session pays for the line in context. In
+  this change, the agent that revises a narrative reads the open notes
+  with `boom show <name>`, the tool `show`, or the refusal of
+  `boom propose ... --amends`. In turn 6, a note is a signal on the
+  rail, and the rail starts the work that revises the narrative.
 - The edit layer of `boom hook pre-tool-use`. It does not give the
   narratives of a context.
 - `boom render`, `boom sync` and `boom check`.
 
 ## Decisions
 
-### 1. A narrative is a kind of claim
+### 1. A narrative is a claim of the kind `narrative` (decided 11-23)
 
 `boom propose narrative <name> "<title>" --body <file>` proposes a
 narrative. A version holds these:
@@ -114,22 +118,12 @@ narrative. A version holds these:
 `--amends <version>` proposes the next version. Its fingerprint is the
 fingerprint of all of the above.
 
-Options:
-
-1. A sixth kind of claim, in the one name space and the one log
-   (recommended). Versions, amendments, origins, attachments, the
-   accept of many versions with one signature, `boom show`,
-   `boom search` and `boom verify` work for a narrative with no new
-   code. The 2026-11-01 design made the narrative its own record
-   because a narrative is not true or false of the code. Boom has no
-   check status yet, and decision 3 keeps a narrative out of each
-   check. Thus the separate record buys nothing now. The cost is a
-   word: the store calls each of its records a claim, and a narrative
-   is a claim of the kind `narrative` that no one checks.
-2. A record of its own, with its own act `narrated`, its own versions
-   and its own accept. It keeps the word "claim" for what can be true
-   or false. It writes a second copy of versions, amendments, accepts
-   and views.
+The narrative is in the one name space and the one log. Versions,
+amendments, origins, attachments, the accept of many versions with one
+signature, `boom show`, `boom search` and `boom verify` work for a
+narrative with no new code. The store calls each of its records a
+claim. A narrative is a claim of the kind `narrative`, and no one
+checks it (decision 3).
 
 ### 2. `includes`: the claims of a narrative, at the version it meant
 
@@ -158,7 +152,7 @@ Options:
    for each. An agent cannot then name a claim in passing without an
    edge.
 
-### 3. A person accepts a narrative, and no one checks it
+### 3. A person accepts a narrative with the key, and no one checks it (decided 11-23)
 
 A person accepts or rejects a version of a narrative with
 `boom accept` or `boom reject` and a security key, as for each claim.
@@ -168,20 +162,13 @@ one touch of the key accepts a design. Status comes from the log:
 an accepted narrative by its words, as it finds each claim.
 `boom query` gives it with the fingerprint of its body.
 
-Boom never checks a narrative. No hook gives a narrative as a rule. A
-later check status gives a narrative none.
+The key signs the accept of a claim, by the user's ruling of
+2026-11-23. An accepted narrative binds later work: agents and the
+planner read it as the design.
 
-Options:
-
-1. A signed accept (recommended). By the user's ruling of 2026-11-23,
-   the key signs the accept of a claim. An accepted narrative binds
-   later work: agents and the planner read it as the design, and the
-   claims that it includes come with it in one signature.
-2. No accept. The newest version that no one rejected is the
-   narrative, and the notes are its only judgment. An agent cannot then
-   tell a design that the person read from one that they did not.
-3. An accept with no signature, recorded with the person. This is a
-   second kind of accept beside the signed one.
+Boom never checks a narrative. No hook gives a narrative, and session
+start gives no line for one. A later check status gives a narrative
+none.
 
 ### 4. The paragraphs of a body
 
@@ -232,8 +219,7 @@ page's own. Each response has the header
 The page holds its style, loads nothing from another host, and runs no
 script. A note is a plain HTML form.
 
-**From a session.** The menu at session start names `boom page <name>`
-(decision 9). An agent runs `boom page <name> --no-open` in the
+**From a session.** An agent runs `boom page <name> --no-open` in the
 background of its harness and gives the person the URL of the line that
 boom prints. In Claude Code, the person clicks the URL in the pane. A
 person can also type `! boom page <name>` in the session.
@@ -341,17 +327,19 @@ Boom does not prove who wrote a note. The person's name in the entry is
 the name that the command or the page gave. An agent that runs a shell
 can write a note in a person's name. `boom mcp` serves no note tool, and
 the instructions of `boom mcp` say that only a person writes a note.
+The design agent of turn 6 proposes the amendment of
+`a-persons-act-in-boom-is-an-ssh-signature-by-a-security-key` with the
+other acts of the rail. Until then, this change cites the ruling of
+2026-11-23.
 
 Options:
 
 1. An unsigned entry with the person's name (recommended), as the
    ruling says.
-2. A signed note. Each note costs a touch of the key. The ruling keeps
-   the key for the acts that bind.
-3. A note outside the log, in a file of the page. A note is then no
+2. A note outside the log, in a file of the page. A note is then no
    act of the log, and an agent on another machine never sees it.
 
-### 8. An open note, and the version that answers it
+### 8. A new version answers each open note (decided 11-23)
 
 A note is open until a version of its narrative answers it and a
 person does not reject that version. A note is the signal of this
@@ -373,26 +361,10 @@ An agent finds the open notes in these places:
 - `boom show <name>`, and the tool `show`, which give each open note
   with its paragraph and its words.
 - The refusal of `boom propose ... --amends`.
-- The session start of its repository (decision 9).
 
-Options:
+No note is lost, and the person reads why each paragraph changed.
 
-1. Each new version answers every open note, each in its own words
-   (recommended). No note is lost, and the person reads why each
-   paragraph changed.
-2. A new version answers the notes that it chooses. A note can stay
-   open with no answer.
-3. A new version answers each note of its base by its existence alone,
-   with no words.
-
-### 9. A session and `boom mcp`
-
-`boom hook session-start` gives the narratives that stand for the
-repository after the decisions and the assumptions, as a count and a
-line `narrative <name>` for each. A narrative with open notes gives
-`narrative <name> (<count> open notes)`. The proposed versions of a
-narrative count their open notes too, because the agent that wrote one
-must answer them. The menu adds `boom page <name>`.
+### 9. `boom mcp`
 
 The tool `propose` of `boom mcp` takes the kind `narrative`, and
 `includes` and `answers` as arrays of strings. `boom mcp` names `note`
@@ -459,20 +431,4 @@ on `127.0.0.1`.
 - [The paragraph numbers of a long list] → Each item of a list at the
   top is one paragraph. A nested list is part of its item.
 - [Many open notes] → Each new version answers each of them. A version
-  that answers 30 notes has 30 `--answers`. The option that lets a version
-  leave a note open stays open (decision 8, option 2).
-
-## Open Questions
-
-1. **The amendment of the decision of persons' acts.** Decision 7
-   departs from
-   `a-persons-act-in-boom-is-an-ssh-signature-by-a-security-key` for
-   the note. Recommended: the design agent of turn 6 proposes its
-   amendment with the other acts of the rail, and this change cites
-   the ruling of 2026-11-23 until then.
-2. **The word "claim" for a narrative** (decision 1). Recommended: a
-   narrative is a claim of the kind `narrative`, as a term and a context
-   are.
-3. **Accept, or only read** (decision 3). Recommended: a signed accept.
-4. **Each note answered** (decision 8). Recommended: a new version
-   answers every open note.
+  that answers 30 notes has 30 `--answers`.

@@ -9,7 +9,7 @@ by its scenario, in the test file that its task names.
 - [ ] 1.1 Add `Kind::Narrative` to `claim.rs`. A narrative needs a body, and its body is UTF-8 text. `boom propose narrative` refuses `--changes`. Tests in `crates/boom/tests/narratives.rs` for the scenarios of `narratives`, "A narrative has a title and a body", and of `claim-versions`, "A claim and its name". Proved by `boom:test`
 - [ ] 1.2 Add the edge `includes` to `Proposal`, written only where there is one, and resolve each `--includes` as `--source` is resolved. Refuse it on a claim that is not a narrative, and refuse an include of a narrative. Tests in `narratives.rs` for "A narrative includes claims at the version it meant", and in `crates/boom/tests/edges.rs` for the new scenario of "A version stores its edges". Proved by `boom:test`
 - [ ] 1.3 Add `answers` to `Proposal`, written only where there is one, and add `includes` and `answers` to the content of a version. Tests in `crates/boom/tests/claims.rs` for "One more include" and "A version from before narratives": a store that this tree's main wrote gives each version the fingerprint that its entry names. Proved by `boom:test`
-- [ ] 1.4 Test the accept of two invariants and a narrative with one signature, and a session start that gives the narrative by name only. Tests in `narratives.rs` for "A narrative is judged by a person and never checked". Proved by `boom:test`
+- [ ] 1.4 Test the accept of two invariants and a narrative with one signature, and a session start that gives no line for the narrative. Tests in `narratives.rs` and `crates/boom/tests/hooks.rs` for "A narrative is judged by a person and never checked". Proved by `boom:test`
 
 ## 2. The paragraphs of a body
 
@@ -31,13 +31,12 @@ by its scenario, in the test file that its task names.
 - [ ] 4.4 A `POST` of the form of a paragraph appends the entry of `boom note` for the person of the page, and answers 303 to `#p<n>`. Refuse a `POST` whose `Origin` is not the page's own. Tests in `page.rs` for "A note written on the page". Proved by `boom:test`
 - [ ] 4.5 Add `boom note` and `boom page` to the commands of the command line. Tests in `command_line.rs` for "The commands". Proved by `boom:test`
 
-## 5. A session and `boom mcp`
+## 5. `boom mcp`
 
-- [ ] 5.1 `hook.rs`: the session layer gives the narratives as a count and a line for each, with `(<count> open notes)` where a version of the narrative has open notes, and the menu names `boom page <name>`. Tests in `crates/boom/tests/hooks.rs` for "Session start gives the narratives by name". Proved by `boom:test` and `claude-code:test`
-- [ ] 5.2 `mcp.rs`: the tool `propose` takes the kind `narrative`, `includes` and `answers`. `note` and `page` are named as absent. The instructions say that only a person writes a note. Tests in `crates/boom/tests/mcp.rs` for "Each tool is one of boom's commands" and "No tool writes a note". Proved by `boom:test`
+- [ ] 5.1 `mcp.rs`: the tool `propose` takes the kind `narrative`, `includes` and `answers`. `note` and `page` are named as absent. The instructions say that only a person writes a note. Tests in `crates/boom/tests/mcp.rs` for "Each tool is one of boom's commands" and "No tool writes a note". Proved by `boom:test`
 
 ## 6. The pages and the gate
 
 - [ ] 6.1 Write the narrative, `boom note` and `boom page` into `README.md` and `CLAUDE.md`, in Plain. Proved by `devenv shell -- moon run root:format root:terms`
 - [ ] 6.2 Run `boom terms check` on each file that the change writes, before each commit
-- [ ] 6.3 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `claude-code:test`, `nix:typecheck`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main -- moon run <task>`, then `sluice exec main` once the work is committed
+- [ ] 6.3 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `nix:typecheck`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main -- moon run <task>`, then `sluice exec main` once the work is committed

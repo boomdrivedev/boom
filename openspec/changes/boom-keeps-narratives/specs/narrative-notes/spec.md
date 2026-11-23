@@ -57,7 +57,7 @@ Boom SHALL refuse a note, and append nothing, if one of these is true:
 
 ### Requirement: A note's name
 
-The name of a note SHALL be the first 12 hexadecimal characters of the SHA-256 of the narrative's name, the version, the paragraph number, the words and the person. For the same note again, boom SHALL give the same name and append nothing.
+The name of a note SHALL be the first 12 hexadecimal characters of a SHA-256. The SHA-256 SHALL be of the narrative's name, the version, the paragraph number, the words and the person. For the same note again, boom SHALL give the same name and append nothing.
 
 #### Scenario: The same note twice
 
@@ -66,7 +66,7 @@ The name of a note SHALL be the first 12 hexadecimal characters of the SHA-256 o
 
 ### Requirement: Only a note counts with no signature
 
-The judge SHALL count an entry of a person with no signature only if its act is `noted` and the store registered the person before the entry. An entry of an agent with the act `noted` SHALL count for nothing.
+The judge SHALL count an entry of a person with no signature only if its act is `noted`. The store SHALL register the person before that entry. An entry of an agent with the act `noted` SHALL count for nothing.
 
 #### Scenario: An unsigned accept
 

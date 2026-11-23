@@ -4,7 +4,7 @@
 
 ### Requirement: A person's act is signed with the person present
 
-Except a note, an entry whose actor is a person SHALL carry an SSH signature, namespace `boom`, over the entry's signed part, by the key the store registered to that person before the entry, with the security key's user-presence flag set. boom SHALL verify it before it writes the entry and whenever it reads it.
+Except a note, an entry whose actor is a person SHALL carry an SSH signature, namespace `boom`, over the entry's signed part. The key SHALL be the key the store registered to that person before the entry, with the security key's user-presence flag set. boom SHALL verify it before it writes the entry and whenever it reads it.
 
 #### Scenario: Signed without presence
 
@@ -23,7 +23,7 @@ Except a note, an entry whose actor is a person SHALL carry an SSH signature, na
 
 ### Requirement: An agent proposes
 
-An entry with no signature SHALL be an agent's, except a note of a person, naming its session or run as provenance from `--provenance`, and SHALL only propose. An unsigned proposal with no provenance SHALL be refused. A person MAY propose by signing the proposal with `--key`.
+Except a note of a person, an entry with no signature SHALL be an agent's. It SHALL name its session or run as provenance from `--provenance`, and SHALL only propose. An unsigned proposal with no provenance SHALL be refused. A person MAY propose by signing the proposal with `--key`.
 
 #### Scenario: An agent's proposal
 

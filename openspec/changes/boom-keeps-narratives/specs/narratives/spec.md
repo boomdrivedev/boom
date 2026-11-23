@@ -84,17 +84,17 @@ The fingerprint of a paragraph SHALL be the first 12 hexadecimal characters of t
 
 ### Requirement: A narrative is judged by a person and never checked
 
-A person SHALL accept or reject a version of a narrative with `boom accept` or `boom reject` and a key, as for each claim. One `boom accept` SHALL take a narrative with the claims that it includes. No hook SHALL give a narrative as a rule.
+A person SHALL accept or reject a version of a narrative with `boom accept` or `boom reject` and a key, as for each claim. One `boom accept` SHALL take a narrative with the claims that it includes. No hook SHALL give a narrative. Session start SHALL give no line for a narrative.
 
 #### Scenario: A design accepted with one touch
 
 - **WHEN** an agent proposes two invariants and a narrative that includes them, and ada runs `boom accept` with the three versions and ada's key
 - **THEN** boom exits 0, the key signs one time, and the three versions are accepted
 
-#### Scenario: A narrative is no rule
+#### Scenario: Session start gives no narrative
 
-- **WHEN** a narrative and an invariant are accepted for `shop`, and a session starts in a worktree of `shop`
-- **THEN** the text gives the statement of the invariant as a rule, and gives the narrative by name only
+- **WHEN** a narrative with two open notes and an invariant are accepted for `shop`, and a session starts in a worktree of `shop`
+- **THEN** the text gives the statement of the invariant as a rule, and no line names the narrative or its notes
 
 ### Requirement: boom show gives a narrative
 

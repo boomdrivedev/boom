@@ -4,7 +4,7 @@
 
 ### Requirement: Every change is an entry appended
 
-Every change to a store SHALL be one entry appended to its log: a person registered, a version proposed, accepted or rejected, or a note written. An entry SHALL name its format, `boom-entry/1`, its act, its actor and the time it was made, and SHALL never be changed or removed by boom; no command edits or deletes one.
+Every change to a store SHALL be one entry appended to its log: a person registered, a version proposed, accepted or rejected, or a note written. An entry SHALL name its format, `boom-entry/1`, its act, its actor and the time it was made, and SHALL never be changed or removed by boom. No command edits or deletes one.
 
 #### Scenario: A proposal and its accept
 

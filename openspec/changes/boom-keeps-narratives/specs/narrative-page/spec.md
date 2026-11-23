@@ -115,7 +115,7 @@ With no name, the page SHALL give each narrative of the store, by repository, wi
 
 ### Requirement: A note written on the page
 
-Each paragraph SHALL have a form that sends a note on it. A `POST` of the form SHALL append the entry that `boom note` appends for the person of the page, and SHALL then send the browser to the page at `#p<n>`. The person of the page SHALL be `--person <name>`, or the one person that the store registers. Where boom knows no person of the page, the page SHALL give no form, and SHALL say how to start it with `--person`. Boom SHALL refuse a `POST` whose `Origin` is not the page's own.
+Each paragraph SHALL have a form that sends a note on it. A `POST` of the form SHALL append the entry that `boom note` appends for the person of the page. Boom SHALL then send the browser to the page at `#p<n>`. The person of the page SHALL be `--person <name>`, or the one person that the store registers. Where boom knows no person of the page, the page SHALL give no form, and SHALL say how to start it with `--person`. Boom SHALL refuse a `POST` whose `Origin` is not the page's own.
 
 #### Scenario: A note sent
 
