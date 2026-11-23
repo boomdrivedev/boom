@@ -12,7 +12,7 @@ No file and no commit holds it
 
 ### Requirement: boom page serves the page on the machine
 
-`boom page [<name>[@<version>]]` SHALL serve the page on `127.0.0.1`, on `--port <port>` or on a free port. Boom SHALL print one line, `Boom: page of <target> at <URL>`, and SHALL then open the URL in the browser, unless `--no-open`. Boom SHALL refuse a name that is not a narrative.
+`boom page [<name>[@<version>]] [--view <outline>]` SHALL serve the page on `127.0.0.1`, on `--port <port>` or on a free port. With no name and no `--view`, the page SHALL be the design book. Boom SHALL print one line, `Boom: page of <target> at <URL>`, and SHALL then open the URL in the browser, unless `--no-open`. Boom SHALL refuse a name that is not a narrative, a `--view` that is not an outline, and a name with `--view`.
 
 #### Scenario: The page served
 
@@ -23,6 +23,21 @@ No file and no commit holds it
 
 - **WHEN** `boom page status-read-from-events` runs
 - **THEN** boom exits 2 and says that `boom page` gives a narrative, and serves nothing
+
+#### Scenario: The design book served
+
+- **WHEN** `boom page --no-open --port <port>` runs
+- **THEN** boom prints `Boom: page of the design book at <URL>`, and a `GET` of that URL gives the page of the design book, with status 200
+
+#### Scenario: A view served
+
+- **WHEN** `boom page --view boomdrive-design-book --no-open` runs
+- **THEN** boom prints `Boom: page of boomdrive-design-book@<version> at <URL>`, and a `GET` of that URL gives the page of the design book
+
+#### Scenario: A view that is not an outline
+
+- **WHEN** `boom page --view boom-end-to-end` runs, and `boom-end-to-end` is a narrative
+- **THEN** boom exits 2 and says that `--view` names an outline, and serves nothing
 
 ### Requirement: Only the browser of the person reads the page
 
@@ -103,15 +118,6 @@ The page SHALL give each included claim after the first paragraph whose words na
 - **WHEN** a narrative includes a claim whose name no paragraph holds
 - **THEN** the page gives the claim after the body
 
-### Requirement: The list of narratives
-
-With no name, the page SHALL give each narrative of the store, by repository, with its status and its count of open notes.
-
-#### Scenario: The list of narratives
-
-- **WHEN** the store holds two narratives that bind `boom`, one with two open notes, and the page with no name is asked for
-- **THEN** the page gives both narratives under `boom`, and the count 2 for the first
-
 ### Requirement: A note written on the page
 
 Each paragraph SHALL have a form that sends a note on it. A `POST` of the form SHALL append the entry that `boom note` appends for the person of the page. Boom SHALL then send the browser to the page at `#p<n>`. The person of the page SHALL be `--person <name>`, or the one person that the store registers. Where boom knows no person of the page, the page SHALL give no form, and SHALL say how to start it with `--person`. Boom SHALL refuse a `POST` whose `Origin` is not the page's own.
@@ -144,3 +150,36 @@ The page SHALL give each raw HTML of a body as text. Each response SHALL have th
 
 - **WHEN** the page of a narrative is asked for
 - **THEN** its HTML holds no URL of another host, and the response has the policy header
+
+### Requirement: The design book on the page
+
+The page of the design book SHALL give the outline's title, body, `<name>@<version>` and status. It SHALL give each part, chapter and section of the book as a heading, in the book's order. Under each heading, it SHALL give each narrative with its title, `<name>@<version>`, status and count of open notes, as a link to its page. It SHALL mark each narrative that the outline does not hold. With no outline of the view `book`, it SHALL say how to propose one.
+
+#### Scenario: The book on the page
+
+- **WHEN** the outline holds `the-drives-log`, which binds the whole system, and `boom-end-to-end`, which binds `boom` and has two open notes, and the page with no name is asked for
+- **THEN** the page gives `Part I. The system` with `the-drives-log`, then `Part II. The repositories` with the chapter `boom` and `boom-end-to-end`, the count 2, and a link to the page of `boom-end-to-end`
+
+#### Scenario: A narrative marked on the page
+
+- **WHEN** a narrative binds `boom`, the outline does not hold it, and the page with no name is asked for
+- **THEN** the page gives the narrative last in the chapter `boom`, marked as not in the outline
+
+#### Scenario: No outline
+
+- **WHEN** the store holds two narratives that bind `boom` and no outline, and the page with no name is asked for
+- **THEN** the page gives both narratives in the chapter `boom` by name, each marked as not in the outline, and names `boom propose outline`
+
+### Requirement: A narrative's place in the book
+
+The page of a narrative that the design book gives SHALL link to the book, to the narrative before it in the book, and to the narrative after it. The book's order SHALL run through Part I, then each chapter of Part II.
+
+#### Scenario: The narratives around one
+
+- **WHEN** the book gives `the-drives-log`, `boom-end-to-end` and `change-records` in that order, and the page of `boom-end-to-end` is asked for
+- **THEN** the page links to the book, to `the-drives-log` as the one before, and to `change-records` as the one after
+
+#### Scenario: The first narrative
+
+- **WHEN** the page of `the-drives-log` is asked for
+- **THEN** the page links to the book and to `boom-end-to-end` as the one after, and gives no link to a narrative before
