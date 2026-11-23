@@ -14,10 +14,12 @@ each group in the order of the names (`narrative-page`, "The list of
 narratives"). No record holds an order of the author's. Nothing names
 a narrative that no view holds.
 
-On 2026-11-23 the store held five narratives: `boom-end-to-end`,
-`change-records` and `drive-architecture-model` bind `boom`,
-`the-merge-queues-flow` binds `sluice`, and `the-design-book` binds the
-whole system. `the-design-book@44f86caafa73` is an overview of the
+At entry 304 of 2026-11-23, the store holds nine narratives. Five bind
+the whole system: `the-design-book`, `what-boomdrive-delivers`,
+`the-drives-log`, `the-lineage` and `the-links-of-the-lineage`. Three
+bind `boom`: `boom-end-to-end`, `change-records` and
+`drive-architecture-model`. `the-merge-queues-flow` binds the context
+`sluice-host-process`, whose globs name `sluice`. `the-design-book@44f86caafa73` is an overview of the
 book. It names its chapters and the narratives of each chapter in its
 text, because Boom refuses it the narratives as edges.
 
@@ -176,8 +178,8 @@ names two repositories, two contexts, or a repository and a context,
 and says that a narrative binds one level. A narrative that explains
 two levels is two narratives.
 
-The narratives of the store of 2026-11-23 each bind one level, so the
-log needs no new entry.
+Each of the nine narratives of the store at entry 304 binds one level,
+so the log needs no new entry.
 
 ### 4. The design book
 
@@ -292,22 +294,32 @@ each request, on `127.0.0.1` under a token, with its own style.
 Boom · the design book                                          entry <n>
 ──────────────────────────────────────────────────────────────────────────
 The design book of Boomdrive
-outline boomdrive-design-book@<version> · proposed · 4 narratives
+outline boomdrive-design-book@<version> · proposed · 8 narratives
 
 Part I. The system
-  (no narrative binds the whole system yet)
+  What Boomdrive delivers, and the principles every tool is designed by
+    what-boomdrive-delivers@8d158a395205 · proposed · <n> open notes
+  The drive's log: one log that every tool writes, ...
+    the-drives-log@5c5f21576b54 · proposed · <n> open notes
+  The lineage: the steps from a capture to a promotion, ...
+    the-lineage@9225d0219a9c · proposed · <n> open notes
+  The links of the lineage: what each hop names, ...
+    the-links-of-the-lineage@5537731587b6 · proposed · <n> open notes
+  The design book of Boomdrive                       not in the outline
+    the-design-book@44f86caafa73 · proposed · <n> open notes
 
 Part II. The repositories
   boom
     The drive's architecture for continuous delivery: ...
       drive-architecture-model@92ee5a1452ac · proposed · <n> open notes
     Boom, end to end
-      boom-end-to-end@db46c78278b9 · proposed · <n> open notes
+      boom-end-to-end@47b6f1373fe6 · proposed · <n> open notes
     Boom's change record, and the work a new version of a claim makes stale
-      change-records@dc091e19672c · proposed · <n> open notes
+      change-records@b9a411d4b130 · proposed · <n> open notes
   sluice
-    Where the merge queue's lead time went on deneb, ...
-      the-merge-queues-flow@ee86d9063097 · proposed · <n> open notes
+    sluice-host-process
+      Where the merge queue's lead time went on deneb, ...
+        the-merge-queues-flow@1c70e0776366 · proposed · <n> open notes
 ```
 
 When the next version of `drive-architecture-model` binds the whole
@@ -332,11 +344,11 @@ goes three ways:
 - **The order.** Its Part I and Part II name narratives in an order. An
   agent proposes the outline `boomdrive-design-book`, "The design book
   of Boomdrive", `--view book`, with each narrative of that order that
-  the store holds: `drive-architecture-model`, `boom-end-to-end`,
-  `change-records` and `the-merge-queues-flow`. A narrative
-  that the text names and that no claim has yet, such as
-  `what-boomdrive-delivers`, joins the outline by an amendment when it
-  is proposed.
+  the store holds: `what-boomdrive-delivers`, `the-drives-log`,
+  `the-lineage`, `the-links-of-the-lineage`, `drive-architecture-model`,
+  `boom-end-to-end`, `change-records` and `the-merge-queues-flow`. A
+  narrative that the text names and that no claim has yet joins the
+  outline by an amendment when it is proposed.
 - **The parts.** "A part for each level" is now what Boom computes, and
   no record says it.
 - **What each chapter will cover.** This is the brief of each narrative
