@@ -32,6 +32,13 @@ The user ruled on 2026-11-23:
 3. "A Boom change: Boom computes views." The design book is the first
    view. A context map is another view over the same narratives.
 
+The user approved this design on 2026-11-23, with its five choices:
+the outline is a kind of claim (decision 1), the levels of a view come
+from the view (decision 1), contexts sit in the chapter of their
+repository (decision 4), faults are refused at the proposal and marked
+in the view (decision 5), and the book's page links to each narrative
+(decision 7).
+
 This design keeps these claims and rules:
 
 - `views-computed-from-the-ledger` (core.2): the book is computed from
@@ -130,21 +137,11 @@ The levels that a view covers come from the view, not from the
 outline: the book covers all three, and the context map covers the
 contexts. A version therefore holds no list of levels.
 
-Options:
-
-1. A claim of the kind `outline` (recommended). Versions, `--amends`,
-   the accept with the key, `boom show`, `boom search`, `boom verify`
-   and the one log work with no new code. A new order is a version that
-   a person accepts.
-2. A record of its own, a new entry type with its own versions. It
-   repeats each part of a claim's machinery, and a person still accepts
-   it with the key.
-3. No record: the book in the order of the names. This is the state
-   that the user rejected.
-4. A narrative that includes narratives, as the overview
-   `the-design-book` wanted. The narrative then knows its book, which
-   ruling 2 rejects, and Boom still cannot tell a chapter from a
-   reference.
+Decided on 2026-11-23: the outline is a claim of the kind `outline`,
+not a record of its own. Versions, `--amends`, the accept with the key,
+`boom show`, `boom search`, `boom verify` and the one log work with no
+new code, and a new order is a version that a person accepts. The
+levels that a view covers come from the view.
 
 ### 2. The edge `narratives`: the narratives in order, at the version meant
 
@@ -226,18 +223,10 @@ A narrative that the outline holds and whose shown version is rejected
 shows at its place with its status. A narrative whose every version is
 rejected and that the outline does not hold is not in the book.
 
-Options:
-
-1. Contexts as sections inside the chapter of their repository, and a
-   context of two repositories in Part I (recommended). A reader finds
-   a context where its code is. This follows points 1 and 7 of
-   `the-design-book-follows-the-three-binding-levels`.
-2. A third part for each context. A context is then far from its
-   repository, and a context of one repository gets a part with one
-   chapter.
-3. The outline names each level and the narratives in it. Each
-   narrative's place is then said two times, in its binding and in the
-   outline, and the two can disagree.
+Decided on 2026-11-23: a context is a section inside the chapter of
+its repository, and a context of two repositories or more is a section
+of Part I. A reader finds a context where its code is. This follows
+points 1 and 7 of `the-design-book-follows-the-three-binding-levels`.
 
 ### 5. The checks of a view
 
@@ -255,14 +244,10 @@ Boom names each fault of a view in one of two places:
 A claim never goes from the store, so a name that resolved at the
 proposal resolves on each later read.
 
-Options:
-
-1. Refusals at the proposal and marks in the view (recommended). A
-   fault that the author can fix at once is refused. A fault that comes
-   from another claim's later version is shown where a reader sees it.
-2. A command `boom views check` that exits 1 for a narrative that no
-   outline holds. No gate runs it yet, and the page and `boom show`
-   already give each such narrative.
+Decided on 2026-11-23: refusals at the proposal and marks in the
+view, with no command of its own that checks a view. A fault that the
+author can fix at once is refused. A fault that comes from another
+claim's later version is shown where a reader sees it.
 
 ### 6. The context map, the next view
 
@@ -328,14 +313,9 @@ Part II. The repositories
 When the next version of `drive-architecture-model` binds the whole
 system, it moves to Part I with no new outline.
 
-Options:
-
-1. The book is a page of entries, each a link to the narrative's page,
-   and a narrative's page links to its neighbors (recommended). A note
-   stays on the narrative's page, where its paragraph is.
-2. The whole book on one page, each body in full. The page grows with
-   every narrative, and a note form for each paragraph of each
-   narrative is on one page.
+Decided on 2026-11-23: the book is a page of entries, each a link to
+the narrative's page, and a narrative's page links to its neighbors. A
+note stays on the narrative's page, where its paragraph is.
 
 ### 8. `boom mcp`
 
@@ -406,4 +386,5 @@ no name gives the book from then on.
 
 ## Open Questions
 
-None. Each question is a decision above, with its options.
+None for this change. The options of decision 9 wait for the outline,
+which an agent proposes after the release.
