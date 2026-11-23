@@ -6,4 +6,4 @@
 ## 2. The browser and the gate
 
 - [x] 2.1 Send a note from the page's form in a browser, on a copy of the store, before and after the change
-- [ ] 2.2 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main`
+- [x] 2.2 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main`
