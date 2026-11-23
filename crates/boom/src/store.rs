@@ -646,6 +646,9 @@ pub struct Scope {
     /// The notes named, by their names, which an answer names
     /// (narrative-notes).
     pub notes: std::collections::BTreeSet<String>,
+    /// Whether every outline is needed too, which the judge reads for the
+    /// one design book of a store (views).
+    pub outlines: bool,
 }
 
 impl Scope {
@@ -655,6 +658,7 @@ impl Scope {
             names: names.into_iter().map(Into::into).collect(),
             imported: false,
             notes: std::collections::BTreeSet::new(),
+            outlines: false,
         }
     }
 
@@ -671,6 +675,7 @@ impl Scope {
                 } => {
                     scope.names.insert(claim.name.clone());
                     scope.imported |= imported.is_some();
+                    scope.outlines |= claim.kind == Kind::Outline;
                     // The claims its edges and its contexts name, for the
                     // judge to find the versions they meant (claim-edges;
                     // context-claims).
@@ -683,6 +688,7 @@ impl Scope {
                             .iter()
                             .chain(&claim.changes)
                             .chain(&claim.includes)
+                            .chain(&claim.narratives)
                             .chain(crate::judge::contexts(attach.as_ref()))
                             .filter_map(|edge| edge.split_once('@'))
                             .map(|(name, _)| name.to_owned()),
@@ -706,6 +712,7 @@ impl Scope {
         self.names.extend(other.names);
         self.imported |= other.imported;
         self.notes.extend(other.notes);
+        self.outlines |= other.outlines;
     }
 }
 
@@ -1448,6 +1455,7 @@ fn write_edges(
         ("source", &proposal.source),
         ("changes", &proposal.changes),
         ("includes", &proposal.includes),
+        ("narratives", &proposal.narratives),
     ] {
         for (position, stored) in edges.iter().enumerate() {
             let (target_name, target_version) = stored.split_once('@').unwrap_or((stored, ""));
@@ -1593,6 +1601,9 @@ pub fn load_state_for(conn: &Connection, scope: &Scope) -> Result<State, Failure
             [],
         )?;
     }
+    if scope.outlines {
+        load_claims(conn, &mut state, "WHERE kind = 'outline'", [])?;
+    }
     // The notes on each narrative named, and each note an answer names
     // (narrative-notes).
     for name in &scope.names {
@@ -1605,11 +1616,16 @@ pub fn load_state_for(conn: &Connection, scope: &Scope) -> Result<State, Failure
     Ok(state)
 }
 
-/// Each narrative of the store with its versions, and every note
-/// (narrative-page, "The list of narratives").
-pub fn narratives(conn: &Connection) -> Result<State, Failure> {
-    let mut state = load_persons(conn)?;
-    load_claims(conn, &mut state, "WHERE kind = 'narrative'", [])?;
+/// What the views of a store read: each narrative, each context and each
+/// outline with their versions, and every note; no other claim (views).
+pub fn view_state(conn: &Connection) -> Result<State, Failure> {
+    let mut state = State::default();
+    load_claims(
+        conn,
+        &mut state,
+        "WHERE kind IN ('narrative', 'context', 'outline')",
+        [],
+    )?;
     load_notes(conn, &mut state, "", [])?;
     Ok(state)
 }
@@ -1876,6 +1892,11 @@ pub struct VersionView {
     pub answers: Vec<crate::claim::Answer>,
     /// The globs of a context version (context-claims).
     pub paths: Vec<String>,
+    /// The view of an outline (views).
+    pub view: Option<String>,
+    /// The narratives an outline holds, each `<name>@<version>`, in order
+    /// (views).
+    pub narratives: Vec<String>,
     /// The repositories its proposal binds.
     pub repositories: Vec<String>,
     /// The contexts its proposal binds, each `<name>@<version>` of the
@@ -1978,6 +1999,8 @@ fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<Versio
             includes: proposal.includes,
             answers: proposal.answers,
             paths: proposal.paths,
+            view: proposal.view,
+            narratives: proposal.narratives,
             repositories: from_json(&repositories)?,
             contexts: from_json(&contexts)?,
             proposer: from_json(&proposer)?,

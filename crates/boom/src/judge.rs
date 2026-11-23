@@ -322,10 +322,10 @@ impl State {
     /// `Some(repository)`, those whose standing version binds that
     /// repository, a context named in `contexts`, or the whole system,
     /// less each term of the whole system that a term of the repository
-    /// stands over; for `None`, every one. In the order invariants, decisions,
-    /// assumptions, terms, contexts and narratives, each kind by name and a
-    /// term then by its repository (claim-search; design 4; term-claims;
-    /// context-claims; narratives).
+    /// stands over; for `None`, every one. In the order invariants,
+    /// decisions, assumptions, terms, contexts, narratives and outlines,
+    /// each kind by name and a term then by its repository (claim-search;
+    /// design 4; term-claims; context-claims; narratives; views).
     pub fn standing_for(
         &self,
         repository: Option<&str>,
@@ -339,6 +339,7 @@ impl State {
             Kind::Term,
             Kind::Context,
             Kind::Narrative,
+            Kind::Outline,
         ] {
             for claim in self.claims.values().filter(|claim| claim.kind == kind) {
                 let Some(version) = claim
@@ -1013,9 +1014,74 @@ fn check_proposal(
         }
     }
     if proposal.kind == Kind::Narrative {
+        check_level(proposal, attach)?;
         check_answers(state, proposal)?;
     }
+    if proposal.kind == Kind::Outline {
+        check_outline(state, proposal, attach)?;
+    }
     Ok(Verdict::Counts)
+}
+
+/// A narrative binds one level: the whole system, one repository or one
+/// context (narratives, "A narrative binds one level").
+fn check_level(proposal: &Proposal, attach: Option<&Attach>) -> Result<(), String> {
+    let bound = repositories(attach).len() + contexts(attach).len();
+    if bound > 1 {
+        let attach = attach.expect("a narrative that binds two binds something");
+        return Err(format!(
+            "a narrative binds one level, the whole system, one repository or one context: {} binds {}",
+            proposal.name,
+            crate::context::binds_words(&attach.repositories, &attach.contexts)
+        ));
+    }
+    Ok(())
+}
+
+/// An outline: it binds the whole system, each narrative it holds is a
+/// narrative of the store, and a first version of a book's outline waits
+/// until no other outline of the view `book` has a version that is not
+/// rejected (views).
+fn check_outline(
+    state: &State,
+    proposal: &Proposal,
+    attach: Option<&Attach>,
+) -> Result<(), String> {
+    if let Some(attach) = attach {
+        return Err(format!(
+            "an outline binds the whole system: {} binds {}",
+            proposal.name,
+            crate::context::binds_words(&attach.repositories, &attach.contexts)
+        ));
+    }
+    for stored in &proposal.narratives {
+        let (target, version) = claim::edge(stored)?;
+        let (found, _) =
+            find(state, target, version).map_err(|why| format!("--narrative {stored}: {why}"))?;
+        if found.kind != Kind::Narrative {
+            return Err(format!(
+                "an outline holds narratives: --narrative {stored} names {} {}",
+                claim::article(found.kind),
+                found.kind.as_str()
+            ));
+        }
+    }
+    if proposal.base.is_none() && proposal.view.as_deref() == Some(claim::BOOK) {
+        if let Some(other) = state.claims.values().find(|other| {
+            other.kind == Kind::Outline
+                && other.name != proposal.name
+                && other.versions.iter().any(|version| {
+                    version.status != Status::Rejected
+                        && version.proposal.view.as_deref() == Some(claim::BOOK)
+                })
+        }) {
+            return Err(format!(
+                "a store has one design book, and the outline {} is its outline: amend it, or reject each of its versions first",
+                other.name
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The answers of a new version of a narrative: one to each open note of

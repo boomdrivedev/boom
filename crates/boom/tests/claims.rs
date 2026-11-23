@@ -570,3 +570,30 @@ fn a_version_from_before_narratives() {
     }
     assert_eq!(place.json(&["verify"])["rebuilt"], json!([]));
 }
+
+#[test]
+fn an_outline_with_its_title() {
+    let place = Place::new();
+    place.made();
+    place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &[],
+    );
+    place.json(&[
+        "propose",
+        "outline",
+        "boomdrive-design-book",
+        "The design book of Boomdrive",
+        "--view",
+        "book",
+        "--narrative",
+        "boom-end-to-end",
+        "--provenance",
+        "run-1",
+    ]);
+    let shown = place.show("boomdrive-design-book");
+    assert_eq!(shown["kind"], "outline");
+    assert_eq!(shown["newest"]["body"], serde_json::Value::Null);
+}

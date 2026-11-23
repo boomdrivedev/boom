@@ -3,8 +3,9 @@
 //! that comes in from an import may carry (claim-versions; design 5),
 //! and the edges a version stores: its sources, the claims a decision
 //! changes, and its origins (claim-edges), the globs of a context
-//! (context-claims), and the claims a narrative includes and the notes
-//! its version answers (narratives; narrative-notes).
+//! (context-claims), the claims a narrative includes and the notes its
+//! version answers (narratives; narrative-notes), and the view of an
+//! outline and the narratives it holds (views).
 
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +29,10 @@ pub enum Kind {
     /// Markdown text, that includes claims by name; a person judges it,
     /// and no one checks it (narratives).
     Narrative,
+    /// The order of a view's narratives: a title, the view it computes and
+    /// the narratives it holds, in order; a person judges it, and no one
+    /// checks it (views).
+    Outline,
 }
 
 impl Kind {
@@ -40,6 +45,7 @@ impl Kind {
             Kind::Term => "term",
             Kind::Context => "context",
             Kind::Narrative => "narrative",
+            Kind::Outline => "outline",
         }
     }
 }
@@ -133,7 +139,18 @@ pub struct Proposal {
     /// (narrative-notes).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub answers: Vec<Answer>,
+    /// For an outline, the view it computes; written only where there is
+    /// one (views).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
+    /// For an outline, the narratives it holds, each `<name>@<version>`,
+    /// in the order given; written only where there is one (views).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub narratives: Vec<String>,
 }
+
+/// The one view that boom computes: the design book (views).
+pub const BOOK: &str = "book";
 
 /// A note that a version of a narrative answers, and its answer
 /// (narrative-notes).
@@ -363,6 +380,10 @@ struct Content<'a> {
     includes: &'a [String],
     #[serde(skip_serializing_if = "<[Answer]>::is_empty")]
     answers: &'a [Answer],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    view: Option<&'a str>,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    narratives: &'a [String],
 }
 
 impl Proposal {
@@ -392,6 +413,8 @@ impl Proposal {
             origin: Vec::new(),
             includes: Vec::new(),
             answers: Vec::new(),
+            view: None,
+            narratives: Vec::new(),
         };
         proposal.version = proposal.fingerprint(None);
         proposal
@@ -436,9 +459,9 @@ impl Proposal {
     /// name, statement, scenarios, body's fingerprint, base and, where
     /// it has them, its history, the repository of a term, given as
     /// `repository` and none for a term of the whole system, the old words of a term, the globs of a context, its
-    /// edges `source`, `changes`, `origin` and `includes`, and the answers
-    /// of a narrative (claim-versions; claim-edges; context-claims;
-    /// narratives).
+    /// edges `source`, `changes`, `origin` and `includes`, the answers
+    /// of a narrative, and the view and the narratives of an outline
+    /// (claim-versions; claim-edges; context-claims; narratives; views).
     pub fn fingerprint(&self, repository: Option<&str>) -> String {
         let content = serde_json::to_string(&Content {
             kind: self.kind,
@@ -456,6 +479,8 @@ impl Proposal {
             origin: &self.origin,
             includes: &self.includes,
             answers: &self.answers,
+            view: self.view.as_deref(),
+            narratives: &self.narratives,
         })
         .expect("a version's content is JSON");
         crate::sha256_hex(content.as_bytes())[..12].to_owned()
@@ -512,6 +537,7 @@ impl Proposal {
         self.check_paths(repositories)?;
         self.check_edges()?;
         self.check_narrative()?;
+        self.check_outline()?;
         let fingerprint = self.fingerprint(repository);
         if self.version != fingerprint {
             return Err(format!(
@@ -647,10 +673,74 @@ impl Proposal {
     }
 }
 
+impl Proposal {
+    /// What only an outline has: the view it computes, `book`, and the
+    /// narratives it holds, one at least, each `<name>@<version>` of
+    /// another claim and each narrative one time (views).
+    fn check_outline(&self) -> Result<(), String> {
+        if self.kind != Kind::Outline {
+            if !self.narratives.is_empty() {
+                return Err(format!(
+                    "only an outline holds narratives: {} is {} {}",
+                    self.name,
+                    article(self.kind),
+                    self.kind.as_str()
+                ));
+            }
+            if self.view.is_some() {
+                return Err(format!(
+                    "only an outline names a view: {} is {} {}",
+                    self.name,
+                    article(self.kind),
+                    self.kind.as_str()
+                ));
+            }
+            return Ok(());
+        }
+        if !self.scenarios.is_empty() || self.history.is_some() {
+            return Err("an outline has no scenarios and no history".to_owned());
+        }
+        match self.view.as_deref() {
+            None => {
+                return Err(format!(
+                    "an outline names its view, with --view {BOOK}: {} names none",
+                    self.name
+                ))
+            }
+            Some(BOOK) => {}
+            Some(other) => {
+                return Err(format!(
+                    "the view of an outline is {BOOK}: boom computes no view {other}"
+                ))
+            }
+        }
+        if self.narratives.is_empty() {
+            return Err(format!(
+                "an outline holds one narrative at least, with --narrative: {} holds none",
+                self.name
+            ));
+        }
+        let mut held: Vec<&str> = Vec::with_capacity(self.narratives.len());
+        for stored in &self.narratives {
+            let (name, _) = edge(stored)?;
+            if name == self.name {
+                return Err(format!(
+                    "a version names a version of its own claim with --amends, not with --narrative: {stored}"
+                ));
+            }
+            if held.contains(&name) {
+                return Err(format!("the outline holds {name} two times"));
+            }
+            held.push(name);
+        }
+        Ok(())
+    }
+}
+
 /// The article of a kind's name, `an invariant` or `a term`.
 pub fn article(kind: Kind) -> &'static str {
     match kind {
-        Kind::Invariant | Kind::Assumption => "an",
+        Kind::Invariant | Kind::Assumption | Kind::Outline => "an",
         Kind::Decision | Kind::Term | Kind::Context | Kind::Narrative => "a",
     }
 }
