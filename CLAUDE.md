@@ -54,7 +54,18 @@ registers, and the server holds no key (record 0011). boom is released
 by version: each landing on main with a new version is tagged
 `v<x.y.z>` on a release commit off main that writes the version, and
 boom's flake gives boom and its plugin from that tag at one version
-(record 0010, core.8). The views it renders, a rules page, decision
+(record 0010, core.8).
+A narrative is a claim of the kind `narrative`: a title and a body of
+Markdown, kept by its fingerprint, that includes claims with
+`--includes`, each at the version it meant. A person accepts it with
+the key, and no one checks it; no hook gives one. `boom page <name>`
+serves its page on `127.0.0.1` under a token, computed from the log for
+each request, where a person reads it and writes a note on a paragraph.
+`boom note` writes the same note: an entry with the person's name and
+no signature. A note stays open until a later version answers it with
+`--answers <note>=<words>`, and boom refuses a version that leaves one
+open. No tool of `boom mcp` writes a note or serves a page.
+The views it renders, a rules page, decision
 records, a design book and a context map, and `boom check` are not built
 yet.
 

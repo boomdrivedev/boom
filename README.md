@@ -6,7 +6,8 @@ the repository it works in. The views and `boom check` are designed,
 and the site shows what boom will do.
 
 A ledger of what a project has claimed about itself: its invariants,
-its decisions, its assumptions and its terms, each recorded with who proposed it,
+its decisions, its assumptions, its terms and the narratives that
+explain them, each recorded with who proposed it,
 who accepted it and what it replaced. Its rules for a scope, its
 decision records, its design book and its context map are views
 computed from the ledger, and `boom check` reads the work against the
@@ -163,7 +164,34 @@ claims that hold.
   rejects, registers a person or makes a store, no tool takes a `key`,
   and the server holds no key, so no call sets off a person's security
   key (record 0011). Its instructions, and `boom propose`'s answer,
-  give the `boom accept` a person runs in their own terminal.
+  give the `boom accept` a person runs in their own terminal. No tool
+  writes a note or serves a page: only a person writes a note.
+- **A design lives in boom as a narrative.** `boom propose narrative
+  <name> "<title>" --body <file>` proposes a narrative: a title of one
+  line and a body of Markdown text, which boom keeps by its
+  fingerprint. `--includes <name>` names a claim that the narrative
+  includes, and stores the version that it meant. boom numbers the
+  paragraphs of the body from 1, and `boom show <name>@<version> --json`
+  gives each paragraph with its fingerprint. A person accepts a
+  narrative with the key, as each claim, and one `boom accept` can take
+  a narrative with the claims that it includes. No one checks a
+  narrative, and no hook gives one.
+- **A person reads a narrative on a page and writes notes on it.**
+  `boom page <name>` serves the page of the narrative on `127.0.0.1` and
+  opens it in the browser. The page gives each paragraph with its
+  number, each included claim after the first paragraph that names it,
+  and each note at its paragraph. A person writes a note on a paragraph
+  in the page, or with `boom note <name>@<version> --paragraph <n>
+  "<words>"`. A note is an entry of the log with the person's name and
+  no signature, because a note binds nothing. boom computes the page
+  from the log for each request, and no file holds it. The page runs no
+  script and loads nothing from another host. Each path of the page
+  starts with a token that only the line that boom prints holds.
+- **A new version answers each open note.** A note stays open until a
+  later version of its narrative answers it, with `--answers
+  <note>=<words>`. boom refuses a new version that leaves a note open,
+  and names each one. `boom show <name>` gives each note with its
+  paragraph, its words, and `open` or its answer.
 
 ```sh
 boom init --person ada --key ~/.ssh/id_ed25519_sk
@@ -179,8 +207,20 @@ boom propose context shop-billing "The billing of the shop." \
 boom query --repository shop
 boom query --path shop:src/billing/refund.rs
 boom search amounts cents --repository shop
+boom propose narrative shop-end-to-end "The shop, end to end" --body design.md \
+  --includes money-has-currency --repository shop --provenance run-4
+boom page shop-end-to-end
+boom note shop-end-to-end@<version> --paragraph 3 "Say what a refund is."
+boom propose narrative shop-end-to-end "The shop, end to end" --body design.md \
+  --amends <version> --answers "<note>=Paragraph 4 says it now." --provenance run-5
 boom log
 ```
+
+An agent in a session runs `boom page <name> --no-open` in the
+background and gives the person the URL that boom prints. boom stops
+the page after 60 minutes with no request, or after the minutes that
+`--idle` names. With one person registered, a note is that person's;
+otherwise `--person <name>` names the person.
 
 `boom query` writes its words to standard output alone, so a harness
 can put them in an agent's context as they are. A person or a script
@@ -195,7 +235,7 @@ standard input and answers with the JSON of Claude Code, or nothing.
   line each, with its statement. The decisions, the assumptions and the
   contexts come as a count and their names. A menu names `boom show`,
   `boom query --path` and `boom search`. A claim that binds only a
-  context does not come.
+  context does not come, and no narrative comes.
 - Before an edit, `boom hook pre-tool-use` reads the `Write`, `Edit` or
   `MultiEdit`. It stops a write that holds an old word of an accepted
   term, and the agent reads the term to write in its place. At the
