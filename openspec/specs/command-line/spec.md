@@ -11,7 +11,7 @@ nothing, so an agent or another tool can call boom and read its answer
 
 ### Requirement: The commands
 
-Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import adr`, `import rules`, `repo add`, `repo set`, `repo show`, `terms check`, `hook session-start` and `hook pre-tool-use`. Each command SHALL take `--store <path>`. Each command other than `hook` SHALL take `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line that calls the engine of the library.
+Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import adr`, `import rules`, `repo add`, `repo set`, `repo show`, `terms check`, `note`, `page`, `hook session-start` and `hook pre-tool-use`. Each command SHALL take `--store <path>`. Each command other than `hook` and `page` SHALL take `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line that calls the engine of the library.
 
 #### Scenario: The version
 
@@ -47,6 +47,11 @@ Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log
 
 - **WHEN** `boom hook session-start --store <path>` runs with a `SessionStart` event on standard input, in a worktree of a registered repository with an accepted claim
 - **THEN** standard output is one JSON object with `systemMessage` and `hookSpecificOutput`, and boom exits 0
+
+#### Scenario: A note answered as JSON
+
+- **WHEN** `boom note <name>@<version> --paragraph 1 "<words>" --store <path> --json` runs on a store that registers one person
+- **THEN** standard output is one JSON object whose `format` is `boom-note/1`, with the name of the note, and boom exits 0
 
 ### Requirement: Exit codes
 
