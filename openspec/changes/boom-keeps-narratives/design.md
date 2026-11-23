@@ -46,10 +46,9 @@ This design keeps these claims of the store:
   point 5 says that Boom holds the narratives.
 - `boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign`:
   a note is the act of a person, so no tool writes one.
-- `a-persons-act-in-boom-is-an-ssh-signature-by-a-security-key`: this
-  design departs from it for the note alone, by the user's ruling of
-  2026-11-23. Decision 7 says how, and who proposes the amendment of
-  that decision.
+- `a-persons-act-in-boom-is-an-ssh-signature-by-a-security-key`: the
+  change proposes its amendment for the note, by the user's ruling of
+  2026-11-23. Decision 7 says how.
 - `names-use-the-domains-terms`: `narrative`, `paragraph`, `note`,
   `page`, `include` and `answer` are the words of the design of
   2026-11-01 and of Markdown. `serve` and `127.0.0.1` are the words of
@@ -318,19 +317,18 @@ Boom refuses a note, and appends nothing, in each of these cases:
 The judge counts an unsigned entry of a person for the act `noted`
 only. An unsigned `accepted` or `rejected` still counts for nothing.
 
-This departs from
-`a-persons-act-in-boom-is-an-ssh-signature-by-a-security-key`, which
-signs each act of a person. The user's ruling of 2026-11-23 keeps the
-key for the acts that bind later work. A note binds nothing: the next
-version answers it, and a person accepts that version with the key.
+The change proposes the amendment
+`a-persons-act-in-boom-is-an-ssh-signature-by-a-security-key@560f29e4bbe7`:
+a person's key signs the acts that bind later work, by the user's
+ruling of 2026-11-23. A note binds nothing: the next version
+answers it, and a person accepts that version with the key. The change
+also proposes
+`boom-keeps-its-records-in-a-database-on-each-machine-and-the-drive-orders-them-when-attached@2ecf312dc459`,
+whose point on a person's signature says the same.
 Boom does not prove who wrote a note. The person's name in the entry is
 the name that the command or the page gave. An agent that runs a shell
 can write a note in a person's name. `boom mcp` serves no note tool, and
 the instructions of `boom mcp` say that only a person writes a note.
-The design agent of turn 6 proposes the amendment of
-`a-persons-act-in-boom-is-an-ssh-signature-by-a-security-key` with the
-other acts of the rail. Until then, this change cites the ruling of
-2026-11-23.
 
 Options:
 

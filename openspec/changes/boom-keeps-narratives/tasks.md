@@ -39,4 +39,4 @@ by its scenario, in the test file that its task names.
 
 - [x] 6.1 Write the narrative, `boom note` and `boom page` into `README.md` and `CLAUDE.md`, in Plain. Proved by `devenv shell -- moon run root:format root:terms`
 - [x] 6.2 Run `boom terms check` on each file that the change writes, before each commit
-- [ ] 6.3 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `nix:typecheck`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main -- moon run <task>`, then `sluice exec main` once the work is committed
+- [x] 6.3 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `nix:typecheck`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main -- moon run <task>`, then `sluice exec main` once the work is committed
