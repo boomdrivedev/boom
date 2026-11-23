@@ -1,6 +1,6 @@
 {
   "name": "boom",
-  "version": "0.0.0",
+  "version": "0.14.0",
   "description": "Start each agent session in a registered repository with its rules in full and its other claims by name. Before the first edit of a file in a context, give the rules of that context. Stop a write that holds an old word of an accepted term. Say nothing anywhere else.",
   "author": { "name": "agentplot" },
   "homepage": "https://agentplot.github.io/boom",
