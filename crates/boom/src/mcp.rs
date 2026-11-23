@@ -80,6 +80,14 @@ pub(crate) const ABSENT: &[(&str, &str)] = &[
         "hook pre-tool-use",
         "the harness of an agent runs it before an edit, and an agent does not call a hook",
     ),
+    (
+        "note",
+        "a note is the act of a person, on the page or with boom note in their own terminal; only a person writes a note",
+    ),
+    (
+        "page",
+        "it serves a page until it is stopped, which no call of a tool can do; a person opens it with boom page",
+    ),
 ];
 
 /// The arguments of a served command no tool takes, with why (design
@@ -105,7 +113,10 @@ pub const INSTRUCTIONS: &str =
 what stands; none accepts, rejects or registers. Only a person accepts \
 or rejects, in their own terminal, signing with their security key: \
 boom accept <name>@<version> --key <key>, or boom reject \
-<name>@<version> --reason <why> --key <key>.";
+<name>@<version> --reason <why> --key <key>. Only a person writes a note \
+on a paragraph of a narrative, on the page that boom page serves or with \
+boom note; a new version of the narrative answers each open note, with \
+propose and its answers.";
 
 /// The tools that only read, as flume marks `status`.
 const READ_ONLY: &[&str] = &["show", "log", "query", "search"];

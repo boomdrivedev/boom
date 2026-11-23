@@ -188,11 +188,12 @@ pub fn edit_layer(
 }
 
 /// The claims whose accepted version binds the context `name`, in the
-/// order of [`State::standing_for`].
+/// order of [`State::standing_for`]; no narrative, which no hook gives.
 pub fn bound<'a>(state: &'a State, name: &str) -> Vec<Given<'a>> {
     state
         .standing_for(None, &[])
         .into_iter()
+        .filter(|(claim, _)| claim.kind != Kind::Narrative)
         .filter(|(_, version)| context::names(&version.contexts).contains(&name))
         .collect()
 }
@@ -393,7 +394,14 @@ pub fn session_start(
         if !delivered(&read.repositories, &repository) {
             return Ok(None);
         }
-        let claims = read.state.standing_for(Some(&repository), &[]);
+        // A narrative is read by a person and never given as a rule: session
+        // start gives no line for one (narratives).
+        let claims: Vec<Given<'_>> = read
+            .state
+            .standing_for(Some(&repository), &[])
+            .into_iter()
+            .filter(|(claim, _)| claim.kind != Kind::Narrative)
+            .collect();
         if claims.is_empty() {
             return Ok(None);
         }

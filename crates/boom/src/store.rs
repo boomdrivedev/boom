@@ -126,10 +126,22 @@ CREATE TABLE bindings (
     PRIMARY KEY (name, version, context)
 );
 CREATE INDEX bindings_context ON bindings (context);
+CREATE TABLE notes (
+    name TEXT PRIMARY KEY,
+    narrative TEXT NOT NULL,
+    version TEXT NOT NULL,
+    paragraph INTEGER NOT NULL,
+    fingerprint TEXT NOT NULL,
+    words TEXT NOT NULL,
+    person TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    noted_in INTEGER NOT NULL
+);
+CREATE INDEX notes_narrative ON notes (narrative);
 ";
 
 /// The views' tables, each dropped and made again by a rebuild.
-const VIEW_TABLES: [&str; 9] = [
+const VIEW_TABLES: [&str; 10] = [
     "views_head",
     "persons",
     "claims",
@@ -139,11 +151,12 @@ const VIEW_TABLES: [&str; 9] = [
     "edges",
     "paths",
     "bindings",
+    "notes",
 ];
 
 /// The views' form, kept in `views_head`. Views of another form are
 /// built again from the whole log.
-const VIEWS_FORM: i64 = 7;
+const VIEWS_FORM: i64 = 8;
 
 thread_local! {
     static ENTRIES_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -448,6 +461,7 @@ impl Store {
                 )?;
             }
             judge::apply(&mut state, seq, entry);
+            read_body_of(&tx, &mut state, entry);
             write_judgment(&tx, seq, &Judgment::counted())?;
             write_touched(&tx, &state, entry)?;
             write_head(&tx, seq, &hash)?;
@@ -474,7 +488,7 @@ impl Store {
             .iter()
             .map(|table| snapshot(&tx, table))
             .collect::<Result<Vec<_>, _>>()?;
-        let (state, judgments) = replay(&rows);
+        let (state, judgments) = replay(&tx, &rows);
         write_views(&tx, &state, &judgments, &rows)?;
         let mut rebuilt = Vec::new();
         for (table, was) in VIEW_TABLES.iter().zip(before) {
@@ -563,7 +577,7 @@ pub fn read_only<T>(
     } else {
         let rows = read_log(&tx)?;
         check_chain(path, &rows)?;
-        let (state, _) = replay(&rows);
+        let (state, _) = replay(&tx, &rows);
         let head = rows
             .last()
             .map_or((0, GENESIS.to_owned()), |row| (row.seq, row.hash.clone()));
@@ -629,6 +643,9 @@ pub struct Scope {
     pub names: std::collections::BTreeSet<String>,
     /// Whether every claim with an imported version is needed too.
     pub imported: bool,
+    /// The notes named, by their names, which an answer names
+    /// (narrative-notes).
+    pub notes: std::collections::BTreeSet<String>,
 }
 
 impl Scope {
@@ -637,6 +654,7 @@ impl Scope {
         Scope {
             names: names.into_iter().map(Into::into).collect(),
             imported: false,
+            notes: std::collections::BTreeSet::new(),
         }
     }
 
@@ -656,11 +674,15 @@ impl Scope {
                     // The claims its edges and its contexts name, for the
                     // judge to find the versions they meant (claim-edges;
                     // context-claims).
+                    scope
+                        .notes
+                        .extend(claim.answers.iter().map(|answer| answer.note.clone()));
                     scope.names.extend(
                         claim
                             .source
                             .iter()
                             .chain(&claim.changes)
+                            .chain(&claim.includes)
                             .chain(crate::judge::contexts(attach.as_ref()))
                             .filter_map(|edge| edge.split_once('@'))
                             .map(|(name, _)| name.to_owned()),
@@ -671,7 +693,7 @@ impl Scope {
                         .names
                         .extend(versions.iter().map(|named| named.name.clone()));
                 }
-                Act::Rejected { name, .. } => {
+                Act::Rejected { name, .. } | Act::Noted { name, .. } => {
                     scope.names.insert(name.clone());
                 }
                 Act::Repository { .. } => {}
@@ -683,6 +705,7 @@ impl Scope {
     fn join(&mut self, other: Scope) {
         self.names.extend(other.names);
         self.imported |= other.imported;
+        self.notes.extend(other.notes);
     }
 }
 
@@ -913,7 +936,7 @@ fn catch_up(conn: &Connection, path: &Path, mut scope: Scope) -> Result<State, F
     let Some((seq, hash, form)) = head(conn)?.filter(|(_, _, form)| *form == VIEWS_FORM) else {
         let rows = read_log(conn)?;
         check_chain(path, &rows)?;
-        let (state, judgments) = replay(&rows);
+        let (state, judgments) = replay(conn, &rows);
         write_views(conn, &state, &judgments, &rows)?;
         return Ok(state);
     };
@@ -933,6 +956,7 @@ fn catch_up(conn: &Connection, path: &Path, mut scope: Scope) -> Result<State, F
         write_judgment(conn, row.seq, &judgment)?;
         if judgment.counted {
             let entry = Entry::parse(&row.signed).map_err(Failure::not_run)?;
+            read_body_of(conn, &mut state, &entry);
             write_touched(conn, &state, &entry)?;
         }
         write_head(conn, row.seq, &row.hash)?;
@@ -955,7 +979,73 @@ fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), 
         }
         Act::Rejected { name, version, .. } => write_claim(conn, holding(state, name, version)),
         Act::Repository { name, .. } => write_repository(conn, &state.repositories[name]),
+        Act::Noted {
+            name,
+            version,
+            paragraph,
+            words,
+            ..
+        } => {
+            let person = match &entry.actor {
+                Actor::Person(person) => person.as_str(),
+                Actor::Agent { .. } => "",
+            };
+            let note = crate::narrative::note_name(name, version, *paragraph, words, person);
+            write_note(conn, &state.notes[&note])
+        }
     }
+}
+
+fn write_note(conn: &Connection, note: &judge::Note) -> Result<(), Failure> {
+    conn.execute(
+        "INSERT OR REPLACE INTO notes (name, narrative, version, paragraph, fingerprint, words, \
+         person, at, noted_in) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            note.name,
+            note.narrative,
+            note.version,
+            sql_int(note.paragraph),
+            note.fingerprint,
+            note.words,
+            note.person,
+            sql_int(note.at),
+            sql_int(note.noted_in)
+        ],
+    )?;
+    Ok(())
+}
+
+/// Reads into `state` the notes `filter` selects.
+fn load_notes<P: rusqlite::Params>(
+    conn: &Connection,
+    state: &mut State,
+    filter: &str,
+    params: P,
+) -> Result<(), Failure> {
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT name, narrative, version, paragraph, fingerprint, words, person, at, noted_in \
+         FROM notes {filter}"
+    ))?;
+    let rows = statement
+        .query_map(params, |row| {
+            let number = |at: usize| row.get::<_, i64>(at).map(|n| u64::try_from(n).unwrap_or(0));
+            Ok(judge::Note {
+                name: row.get(0)?,
+                narrative: row.get(1)?,
+                version: row.get(2)?,
+                paragraph: number(3)?,
+                fingerprint: row.get(4)?,
+                words: row.get(5)?,
+                person: row.get(6)?,
+                at: number(7)?,
+                noted_in: number(8)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for note in rows {
+        state.notes.insert(note.name.clone(), note);
+    }
+    Ok(())
 }
 
 /// The claim of `state` that holds `name@version`, an entry that counts
@@ -1023,11 +1113,58 @@ fn check_chain(path: &Path, rows: &[Row]) -> Result<(), Failure> {
     Ok(())
 }
 
-fn replay(rows: &[Row]) -> (State, Vec<(u64, Judgment)>) {
-    judge::replay(
+/// Replays `rows` through the judge, reading the body of each narrative
+/// proposed for the notes after it.
+fn replay(conn: &Connection, rows: &[Row]) -> (State, Vec<(u64, Judgment)>) {
+    judge::replay_with(
         rows.iter()
             .map(|row| (row.seq, row.signed.as_str(), row.signature.as_deref())),
+        |state, entry| read_body_of(conn, state, entry),
     )
+}
+
+/// Where `entry` proposes a version of a narrative, reads its body's
+/// paragraphs into `state`, for the judge to check a note on it.
+fn read_body_of(conn: &Connection, state: &mut State, entry: &Entry) {
+    if let Act::Proposed { claim, .. } = &entry.act {
+        if claim.kind == Kind::Narrative {
+            if let Some(body) = &claim.body {
+                read_paragraphs(conn, state, body);
+            }
+        }
+    }
+}
+
+/// Reads the paragraphs of the body `fingerprint` into `state`, where the
+/// store holds it as text; a body it does not hold has none, and a note on
+/// it is refused.
+fn read_paragraphs(conn: &Connection, state: &mut State, fingerprint: &str) {
+    if state.paragraphs.contains_key(fingerprint) {
+        return;
+    }
+    if let Some(text) = blob(conn, fingerprint)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+    {
+        state.paragraphs.insert(
+            fingerprint.to_owned(),
+            crate::narrative::fingerprints(&text),
+        );
+    }
+}
+
+/// Reads the paragraphs of each version of each narrative of `state`.
+fn read_all_paragraphs(conn: &Connection, state: &mut State) {
+    let bodies: Vec<String> = state
+        .claims
+        .values()
+        .filter(|claim| claim.kind == Kind::Narrative)
+        .flat_map(|claim| claim.versions.iter())
+        .filter_map(|version| version.proposal.body.clone())
+        .collect();
+    for body in bodies {
+        read_paragraphs(conn, state, &body);
+    }
 }
 
 /// Drops the views and writes them again from a replay of the log.
@@ -1049,6 +1186,9 @@ fn write_views(
     }
     for repository in state.repositories.values() {
         write_repository(conn, repository)?;
+    }
+    for note in state.notes.values() {
+        write_note(conn, note)?;
     }
     for (seq, judgment) in judgments {
         write_judgment(conn, *seq, judgment)?;
@@ -1304,7 +1444,11 @@ fn write_edges(
         "INSERT INTO edges (name, term, version, edge, position, target_name, target_version, \
          artifact, origin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
-    for (edge, edges) in [("source", &proposal.source), ("changes", &proposal.changes)] {
+    for (edge, edges) in [
+        ("source", &proposal.source),
+        ("changes", &proposal.changes),
+        ("includes", &proposal.includes),
+    ] {
         for (position, stored) in edges.iter().enumerate() {
             let (target_name, target_version) = stored.split_once('@').unwrap_or((stored, ""));
             insert.execute(params![
@@ -1428,6 +1572,8 @@ pub fn head_entry(conn: &Connection) -> Result<(u64, String), Failure> {
 pub fn load_state(conn: &Connection) -> Result<State, Failure> {
     let mut state = load_persons(conn)?;
     load_claims(conn, &mut state, "", [])?;
+    load_notes(conn, &mut state, "", [])?;
+    read_all_paragraphs(conn, &mut state);
     Ok(state)
 }
 
@@ -1447,6 +1593,24 @@ pub fn load_state_for(conn: &Connection, scope: &Scope) -> Result<State, Failure
             [],
         )?;
     }
+    // The notes on each narrative named, and each note an answer names
+    // (narrative-notes).
+    for name in &scope.names {
+        load_notes(conn, &mut state, "WHERE narrative = ?1", [name.as_str()])?;
+    }
+    for note in &scope.notes {
+        load_notes(conn, &mut state, "WHERE name = ?1", [note.as_str()])?;
+    }
+    read_all_paragraphs(conn, &mut state);
+    Ok(state)
+}
+
+/// Each narrative of the store with its versions, and every note
+/// (narrative-page, "The list of narratives").
+pub fn narratives(conn: &Connection) -> Result<State, Failure> {
+    let mut state = load_persons(conn)?;
+    load_claims(conn, &mut state, "WHERE kind = 'narrative'", [])?;
+    load_notes(conn, &mut state, "", [])?;
     Ok(state)
 }
 
@@ -1704,6 +1868,12 @@ pub struct VersionView {
     pub changes: Vec<String>,
     /// The files and commits it came from.
     pub origin: Vec<Origin>,
+    /// The claims a narrative includes, each `<name>@<version>`
+    /// (narratives).
+    pub includes: Vec<String>,
+    /// The notes a version of a narrative answers, with its answers
+    /// (narrative-notes).
+    pub answers: Vec<crate::claim::Answer>,
     /// The globs of a context version (context-claims).
     pub paths: Vec<String>,
     /// The repositories its proposal binds.
@@ -1805,6 +1975,8 @@ fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<Versio
             source: proposal.source,
             changes: proposal.changes,
             origin: proposal.origin,
+            includes: proposal.includes,
+            answers: proposal.answers,
             paths: proposal.paths,
             repositories: from_json(&repositories)?,
             contexts: from_json(&contexts)?,

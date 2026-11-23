@@ -537,3 +537,33 @@ fn one_accept_reads_as_an_accept_of_each_in_the_views_and_a_replay() {
         "accepts 3 versions",
     );
 }
+
+#[test]
+fn a_note_with_no_signature() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let version = place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &[],
+    )["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let signatures = place.keys.signatures();
+    let outcome = place.run(&[
+        "note",
+        &format!("boom-end-to-end@{version}"),
+        "--paragraph",
+        "2",
+        "Say what a claim is.",
+    ]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert_eq!(place.keys.signatures(), signatures, "no key signed");
+    let last = place.log().last().unwrap().clone();
+    assert_eq!(last["act"], "noted");
+    assert_eq!(last["actor"], serde_json::json!({"person": "chuck"}));
+    assert_eq!(last["signature"], serde_json::Value::Null);
+    assert_eq!(last["counted"], true);
+}

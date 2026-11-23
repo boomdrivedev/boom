@@ -1027,3 +1027,50 @@ fn the_plugin_stops_the_first_edit_in_a_context() {
     assert!(reason(&old).contains("\"drive log\""), "{old}");
     assert!(reason(&old).contains("run log in sluice"), "{old}");
 }
+
+#[test]
+fn session_start_gives_no_narrative() {
+    let place = Place::new();
+    let ada = place.made();
+    let shop = "https://github.com/example/shop";
+    place.repo_added(&ada, "shop", shop);
+    let folder = place.repository("shop", Some(shop));
+    accepted(
+        &place,
+        &ada,
+        &[
+            "propose",
+            "invariant",
+            "refund-within-payment",
+            "A refund never exceeds the payment.",
+            "--repository",
+            "shop",
+        ],
+    );
+    let narrative = version(&place.narrative(
+        "shop-end-to-end",
+        "The shop, end to end",
+        support::NARRATIVE,
+        &["--repository", "shop"],
+    ));
+    place.accepted("shop-end-to-end", &narrative, &ada);
+    let target = format!("shop-end-to-end@{narrative}");
+    place.noted(&target, 2, "Say what a claim is.");
+    place.noted(&target, 3, "Say who reads the status.");
+    let answer = answer(&hook(
+        &place,
+        "session-start",
+        &started("s-1", &folder, "startup"),
+    ));
+    let text = answer["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        text.contains("A refund never exceeds the payment."),
+        "{text}"
+    );
+    assert!(text.starts_with("Boom: 1 claim for shop"), "{text}");
+    for absent in ["shop-end-to-end", "narrative", "note", "Say what"] {
+        assert!(!text.contains(absent), "{absent}: {text}");
+    }
+}

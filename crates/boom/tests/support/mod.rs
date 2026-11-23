@@ -678,3 +678,43 @@ pub fn text(result: &serde_json::Value) -> serde_json::Value {
     assert_eq!(content[0]["type"], "text", "{result}");
     serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap()
 }
+
+/// A narrative's body: a heading, two paragraphs of text, the second
+/// naming `status-read-from-events`, and a list of two items.
+pub const NARRATIVE: &str = "# What Boom is\n\nBoom keeps claims.\n\nA record never holds its status: `status-read-from-events` says how.\n\n- An agent proposes.\n- A person accepts.\n";
+
+impl Place {
+    /// Makes the store with `person` its first and only owner, giving
+    /// their key.
+    pub fn made_by(&self, person: &str) -> String {
+        let key = self.key(person, 7);
+        let outcome = self.run(&["init", "--person", person, "--key", &key]);
+        assert_eq!(outcome.code, 0, "{outcome:?}");
+        key
+    }
+
+    /// An agent's proposal of the narrative `name` titled `title`, with
+    /// the body `body` and `extra`, giving its answer.
+    pub fn narrative(
+        &self,
+        name: &str,
+        title: &str,
+        body: &str,
+        extra: &[&str],
+    ) -> serde_json::Value {
+        let file = self.file(&format!("{name}.md"), body);
+        let mut args = vec!["propose", "narrative", name, title, "--body", &file];
+        args.extend(extra);
+        if !extra.contains(&"--provenance") {
+            args.extend(["--provenance", "run-1"]);
+        }
+        self.json(&args)
+    }
+
+    /// A note on paragraph `paragraph` of `target`, by the one person of
+    /// the store, giving its answer.
+    pub fn noted(&self, target: &str, paragraph: u64, words: &str) -> serde_json::Value {
+        let paragraph = paragraph.to_string();
+        self.json(&["note", target, "--paragraph", &paragraph, words])
+    }
+}

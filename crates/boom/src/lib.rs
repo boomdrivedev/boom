@@ -19,6 +19,8 @@ pub mod hook;
 pub mod import;
 pub mod judge;
 pub mod mcp;
+pub mod narrative;
+pub mod page;
 pub mod repository;
 pub mod search;
 pub mod sign;
