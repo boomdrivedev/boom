@@ -10,7 +10,7 @@ and for nothing else (`no-task-reads-markdown`).
 
 ### Requirement: boom terms check names each old word
 
-`boom terms check <file>...` SHALL read each file as text. For each file, it SHALL use the accepted terms of the repository of that file. It SHALL give each old word that a file holds. For each, it SHALL give the file, the line, the old word as written, and the term that replaces it. It SHALL append nothing. It SHALL exit 0 when it finds no old word, and 2 when it finds one.
+`boom terms check <file>...` SHALL read each file as text. For each file, it SHALL use the accepted terms that stand for the repository of that file: its own, and those of the whole system. It SHALL give each old word that a file holds. For each, it SHALL give the file, the line, the old word as written, and the term that replaces it. It SHALL append nothing. It SHALL exit 0 when it finds no old word, and 2 when it finds one.
 
 #### Scenario: An old word found
 
@@ -36,6 +36,26 @@ and for nothing else (`no-task-reads-markdown`).
 
 - **WHEN** the term `owner` that replaces `keeper` is accepted for `sluice` only, and `boom terms check notes.txt` runs on a file of `boom` that holds `keeper` <!-- boom: allow keeper -->
 - **THEN** boom exits 0
+
+#### Scenario: A term of the whole system in each repository
+
+- **WHEN** the term `link` that replaces `hop` is accepted for the whole system, and `boom terms check` runs on a file of `boom` and a file of `sluice`, each of which holds `hop`
+- **THEN** boom exits 2, and standard error names `hop` and `link` in the whole system for each file
+
+#### Scenario: A term of the whole system, as JSON
+
+- **WHEN** `boom terms check --json` runs on that file of `sluice`
+- **THEN** its `refused.found` holds `word` `hop`, `term` `link` and `repository` `null`
+
+#### Scenario: A repository with its own term for the word
+
+- **WHEN** the term `link` of the whole system replaces `hop`, the term `link` of `boom` replaces `tie`, both are accepted, and `boom terms check` runs on a file of `boom` that holds `hop` and `tie`
+- **THEN** boom exits 2, and standard error names `tie` with the term `link` of `boom`, and does not name `hop`
+
+#### Scenario: A word that no term replaces
+
+- **WHEN** the term `link` of the whole system is accepted with no old word `chain`, and a file of `boom` holds `the hash chain of the log`
+- **THEN** the check finds no old word
 
 ### Requirement: The repository of a file
 
