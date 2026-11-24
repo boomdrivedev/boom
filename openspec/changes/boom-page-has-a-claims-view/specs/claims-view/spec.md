@@ -112,7 +112,7 @@ Each view SHALL give each context as a section under its repository, headed by i
 
 ### Requirement: The proposed versions apart
 
-Each view SHALL give first, before its levels, under "Proposed, binding nothing", each proposed version of its kinds, grouped by the level that it binds, each in a frame of its own marked "proposed" in words, with `boom accept <name>@<version>`. At the head of that list, it SHALL give one `boom accept` that names each version of the list. It SHALL then give the accepted versions. No view SHALL give a rejected or a superseded version.
+Each view SHALL give first, before its levels, under "Proposed, binding nothing", each proposed version of its kinds, grouped by the level that it binds, each in a frame of its own marked "proposed" in words, with `boom accept <name>@<version>`. At the head of that list, it SHALL give one `boom accept` of the newest proposed version of each claim. It SHALL then give the accepted versions. No view SHALL give a rejected or a superseded version.
 
 #### Scenario: A proposed decision
 

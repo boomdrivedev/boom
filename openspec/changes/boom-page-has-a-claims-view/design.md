@@ -186,8 +186,8 @@ gives what waits, with the command that accepts it).
    proposed version of its kinds, grouped by the level that it binds,
    each in a dashed frame marked "proposed" in words, with
    `boom accept <name>@<version>` and, at the head of the list, one
-   `boom accept` with every version of it, which one touch of the key
-   signs. The sidebar gives each level's count of proposed versions.
+   `boom accept` with the newest proposed version of each claim of it,
+   which one touch of the key signs. The sidebar gives each level's count of proposed versions.
    Then the view gives its levels with the accepted versions, plain. No
    view gives a rejected or a superseded version: they show only in a
    claim's history.

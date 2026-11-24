@@ -471,7 +471,7 @@ nav.side .section{margin:.5rem 0 .15rem .7rem;font-size:13px;color:var(--soft)}
 nav.side ul{list-style:none;margin:0;padding:0}
 nav.side li{margin:0}
 nav.side li a{display:block;padding:.2rem .5rem;border-radius:5px;color:var(--ink);text-decoration:none}
-nav.side .in li a{padding-left:1.2rem}
+nav.side .in li a,nav.side li.in>a{padding-left:1.2rem}
 nav.side li a:hover{background:var(--card)}
 nav.side li a[aria-current]{background:var(--claim);box-shadow:inset 3px 0 0 var(--claim-edge);font-weight:600}
 nav.side .unheld{display:block;font-size:11px}

@@ -291,6 +291,28 @@ pub fn view_page(
             .filter(|at| seen.insert(*at))
             .collect()
     };
+    // The one command names the newest proposed version of each claim:
+    // `boom accept` takes one version of a claim.
+    let newest: Vec<(&str, &str)> = {
+        let mut by_claim: BTreeMap<&str, (u64, &str)> = BTreeMap::new();
+        for (claim, version) in levels.iter().flat_map(|level| &level.proposed) {
+            let entry = by_claim
+                .entry(claim.name.as_str())
+                .or_insert((version.proposed_in, version.proposal.version.as_str()));
+            if version.proposed_in > entry.0 {
+                *entry = (version.proposed_in, version.proposal.version.as_str());
+            }
+        }
+        proposed
+            .iter()
+            .copied()
+            .filter(|(name, version)| {
+                by_claim
+                    .get(name)
+                    .is_some_and(|(_, newest)| newest == version)
+            })
+            .collect()
+    };
     let (one, many) = of.nouns();
     let counted = |count: usize| if count == 1 { one } else { many };
     let _ = writeln!(
@@ -302,7 +324,7 @@ pub fn view_page(
         counted(proposed.len()),
     );
     if filters.status != Statuses::Accepted && !proposed.is_empty() {
-        main.push_str(&proposed_html(conn, of, &levels, &proposed, base)?);
+        main.push_str(&proposed_html(conn, of, &levels, &newest, base)?);
     }
     if filters.status != Statuses::Proposed {
         main.push_str(&levels_html(conn, of, &levels, base)?);
@@ -569,7 +591,7 @@ fn proposed_html(
     base: &str,
 ) -> Result<String, Failure> {
     let mut html = format!(
-        "<section class=\"waiting\" id=\"proposed\">\n<h2>Proposed, binding nothing</h2>\n<p class=\"hint\">A person accepts each with their key. To accept every one of them at once:</p>\n<pre class=\"command\">{}</pre>\n",
+        "<section class=\"waiting\" id=\"proposed\">\n<h2>Proposed, binding nothing</h2>\n<p class=\"hint\">A person accepts each with their key. To accept every one of them at once, at the newest version of each claim:</p>\n<pre class=\"command\">{}</pre>\n",
         accept_command(proposed)
     );
     for level in levels.iter().filter(|level| !level.proposed.is_empty()) {
