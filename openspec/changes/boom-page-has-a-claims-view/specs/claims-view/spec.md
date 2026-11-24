@@ -14,12 +14,12 @@ each request (`views-computed-from-the-ledger`,
 
 ### Requirement: The views in the bar
 
-Each page of `boom page` SHALL give in its bar the links Book, Rules, Decisions, Terms and Claims, to `<base>/`, `<base>/rules`, `<base>/decisions`, `<base>/terms` and `<base>/claims`. The link of the page's view SHALL have `aria-current="page"`. On a view, the sidebar SHALL give the view's levels, each with its count, as a link to that level on the view.
+Each page of `boom page` SHALL give in its bar the links The book, The rules, The decisions, The terms and The claims, to `<base>/`, `<base>/rules`, `<base>/decisions`, `<base>/terms` and `<base>/claims/`. The link of the page's view SHALL have `aria-current="page"`. On a view, the sidebar SHALL give the view's levels, each with its count, as a link to that level on the view.
 
 #### Scenario: The bar of the rules view
 
 - **WHEN** `<base>/rules` is asked for
-- **THEN** the bar gives the five links, and the link Rules has `aria-current="page"`
+- **THEN** the bar gives the five links, and the link The rules has `aria-current="page"`
 
 #### Scenario: The sidebar of a view
 
@@ -33,7 +33,7 @@ Each page of `boom page` SHALL give in its bar the links Book, Rules, Decisions,
 #### Scenario: A rule of a repository
 
 - **WHEN** the invariant `status-read-from-events@<v1>` is accepted for `boom`, and `<base>/rules` is asked for
-- **THEN** the page gives it under the chapter `boom`, with a link to `<base>/c/status-read-from-events@<v1>`, its statement, and its body in `<details>`
+- **THEN** the page gives it under the chapter `boom`, with a link to `<base>/claims/status-read-from-events@<v1>`, its statement, and its body in `<details>`
 
 #### Scenario: A rule of a context
 
@@ -89,7 +89,7 @@ Each page of `boom page` SHALL give in its bar the links Book, Rules, Decisions,
 
 ### Requirement: The claims view
 
-`GET <base>/claims` SHALL give each accepted claim of every kind but narrative and outline, by level, then by kind in the order invariant, decision, assumption, term, context, then by name.
+`GET <base>/claims/` SHALL give each accepted claim of every kind but narrative and outline, by level, then by kind in the order invariant, decision, assumption, term, context, then by name.
 
 #### Scenario: Every kind
 
@@ -133,6 +133,20 @@ Each view SHALL give first, before its levels, under "Proposed, binding nothing"
 
 - **WHEN** no proposed version is of the view's kinds
 - **THEN** the view gives no "Proposed, binding nothing"
+
+### Requirement: A claim's page
+
+`GET <base>/claims/<name>[@<version>]` SHALL give the claim at that version, or at its accepted version, else its newest, where none is named: its kind, `<name>@<version>`, its status, its statement, what it binds, its body, its versions, its sources and the claims it changes, each a link to its page, and each narrative of the book that includes it, as a link to the paragraph that names it. The bar SHALL mark The claims. A name that no claim has SHALL answer 404.
+
+#### Scenario: The page of an invariant
+
+- **WHEN** `status-read-from-events@<v1>` is accepted for `boom`, and `boom-end-to-end` includes it at its paragraph 3, and `<base>/claims/status-read-from-events` is asked for
+- **THEN** the page gives `invariant status-read-from-events@<v1>`, accepted, its statement, binds `boom`, and a link to `<base>/n/boom-end-to-end#p3`
+
+#### Scenario: No such claim
+
+- **WHEN** `<base>/claims/no-such-claim` is asked for
+- **THEN** boom answers 404
 
 ### Requirement: A claim's history
 
@@ -190,7 +204,7 @@ Each view SHALL give a form that sends `GET` to its own path, with the fields `k
 
 #### Scenario: A kind that is not one
 
-- **WHEN** `<base>/claims?kind=rule` is asked for
+- **WHEN** `<base>/claims/?kind=rule` is asked for
 - **THEN** boom answers 400, and the page names `invariant`, `decision`, `assumption`, `term` and `context`
 
 ### Requirement: A search in a view
@@ -199,8 +213,8 @@ The field `q` of a view SHALL keep each claim whose words hold each word, with t
 
 #### Scenario: A search in the rules view
 
-- **WHEN** `<base>/rules?q=STATUSES` is asked for
-- **THEN** the page gives `status-read-from-events`, as `boom search STATUSES --all` gives it, and no rule that does not hold the word
+- **WHEN** `<base>/rules?q=RECORDS` is asked for
+- **THEN** the page gives `status-read-from-events`, as `boom search RECORDS --all` gives it, and no rule that does not hold the word
 
 #### Scenario: A proposed claim found
 
@@ -232,5 +246,5 @@ Each view SHALL work with HTML and CSS alone, under the page's token, and SHALL 
 
 #### Scenario: A filter's value given back
 
-- **WHEN** `<base>/claims?q=<b>bolt</b>` is asked for
+- **WHEN** `<base>/claims/?q=<b>bolt</b>` is asked for
 - **THEN** the page gives the search field's value as `&lt;b&gt;bolt&lt;/b&gt;`, and holds no `<b>` element from it

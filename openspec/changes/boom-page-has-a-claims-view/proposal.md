@@ -20,8 +20,8 @@ their own, beside the book, in that shell.
 ## What Changes
 
 - **Views beside the book.** The bar at the head of each page of
-  `boom page` links to its views: Book, Rules, Decisions, Terms and
-  Claims, the current one marked.
+  `boom page` links to its views: The book, The rules, The decisions,
+  The terms and The claims, the current one marked.
 - **The rules view.** `<base>/rules` gives each accepted invariant and
   assumption by level: the whole system, each repository, and each
   context under its repository. Each rule gives its name, its version

@@ -3,10 +3,11 @@
 `boom page` serves the design book and the page of each narrative on
 `127.0.0.1`, under a token, computed from the log for each request
 (`narrative-page`). The change `the-book-page-has-navigation` adds a
-sidebar with the book's contents, a search with the matching of
-`boom search`, a page for each claim at `<base>/c/<name>`, and, at the
-end of each level of the book, the accepted claims that no narrative
-includes. It is not built yet. This change builds on its shell.
+shell that each view of `boom page` shares: a bar of the views, a
+sidebar, and a search with the matching of `boom search`. It links each
+claim that a narrative includes to `<base>/claims/<name>@<version>`,
+which this change serves. This change builds on its shell, and the two
+land in one bolt.
 
 The user asked on 2026-11-23 for a claims viewer, "probably separate,
 since book, ADRs, context map, constitution/rules are different
@@ -77,15 +78,17 @@ gives what waits, with the command that accepts it).
 ## Decisions
 
 1. **Where it lives: views of `boom page`, beside the book.** The bar at
-   the head of each page gives the links Book, Rules, Decisions, Terms
-   and Claims, as `<nav class="views">`, the current one with
-   `aria-current="page"`. The routes are `<base>/rules`,
-   `<base>/decisions`, `<base>/terms` and `<base>/claims`. On a view,
+   the head of each page gives the links The book, The rules, The
+   decisions, The terms and The claims, as `<nav class="views">`, the
+   current one with `aria-current="page"`: this change adds three
+   entries to the shell's `VIEWS`. The routes are `<base>/rules`,
+   `<base>/decisions`, `<base>/terms` and `<base>/claims/`, and a
+   claim's page is `<base>/claims/<name>[@<version>]`. On a view,
    the sidebar of `the-book-page-has-navigation` gives that view's
    levels in place of the book's narratives: Part I the whole system,
    Part II a chapter for each repository and a section for each of its
    contexts, each with its count, as a link to that level on the view.
-   The search form stays at the head of the sidebar.
+   The search form stays in the bar.
 
    Options:
    1. Views of `boom page`, beside the book, in its shell
@@ -153,10 +156,11 @@ gives what waits, with the command that accepts it).
       words, not by a level.
    3. A view of contexts too, with their globs and counts. It is the
       context map without the drawing, which its own change gives.
-5. **A claim's page in full.** The page of a claim, from
-   `the-book-page-has-navigation`, gives its kind, version, status,
+5. **A claim's page in full.** The page of a claim,
+   `<base>/claims/<name>[@<version>]`, gives its kind, version, status,
    statement, what it binds, body, versions, sources, the claims it
-   changes and the narratives that include it. This change adds:
+   changes and the narratives that include it, each linked to the
+   paragraph that names it. It also gives:
    - **History.** Each version that is neither proposed nor accepted,
      rejected or superseded, under "History", folded, with its status,
      the entry that closed it, the person and, for a rejection, why.
@@ -228,5 +232,5 @@ gives what waits, with the command that accepts it).
 - [The sidebar of a view differs from the book's] → The view's levels
   are the book's levels, so a reader moves between them in the same
   places.
-- [It waits for `the-book-page-has-navigation`] → Its sidebar, search
-  and claim's page are the shell. This change lands after it.
+- [It builds on `the-book-page-has-navigation`] → Its bar, sidebar and
+  search are the shell. The two land in one bolt, the shell first.

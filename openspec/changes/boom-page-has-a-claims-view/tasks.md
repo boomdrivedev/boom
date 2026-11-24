@@ -1,7 +1,7 @@
 No task adds a part of the repository. The work is in the crate `boom`,
-so this change adds no moon project. Build on main after the change
-`the-book-page-has-navigation` lands: its sidebar, its search and its
-claim's page are the shell of this one. Each task names the moon task
+so this change adds no moon project. Build on the change
+`the-book-page-has-navigation`, in one bolt with it: its bar, its
+sidebar and its search are the shell of this one. Each task names the moon task
 that proves it, run as `sluice exec main -- moon run <project>:<task>`.
 Each scenario of the delta spec is one test, named by its scenario, in
 `crates/boom/tests/page.rs`.
@@ -17,7 +17,7 @@ Each scenario of the delta spec is one test, named by its scenario, in
 - [ ] 2.2 Add the route `GET <base>/rules`: each accepted invariant, then assumption, of each level, by name, its body in `<details>`; with `?repository=<name>`, the levels and the claims of `boom query --repository <name>`. Tests for "A rule of a repository", "A rule of a context", "A rule of two repositories", "Not a rule" and "The rules of boom". Proved by `boom:test`
 - [ ] 2.3 Add the route `GET <base>/decisions`: each accepted decision by level, in the order of the entry that accepted its first version, with its date, marked where a newer version is proposed. Tests for "Decisions in the order accepted" and "A newer version proposed". Proved by `boom:test`
 - [ ] 2.4 Add the route `GET <base>/terms`: each accepted term by repository, by its word, with no old word; and the old words on a term's page. Tests for "A term in the terms view" and "The page of a term". Proved by `boom:test`
-- [ ] 2.5 Add the route `GET <base>/claims`: each accepted claim of every kind but narrative and outline, by level, then by kind, then by name. A test for "Every kind". Proved by `boom:test`
+- [ ] 2.5 Add the route `GET <base>/claims/`: each accepted claim of every kind but narrative and outline, by level, then by kind, then by name. A test for "Every kind". Proved by `boom:test`
 - [ ] 2.6 Give each context as a section of each view under its repository, with its accepted globs, and on a context's page its globs and the accepted claims that bind it. Tests for "A context's section" and "A context's page". Proved by `boom:test`
 
 ## 3. The proposed versions
@@ -27,6 +27,7 @@ Each scenario of the delta spec is one test, named by its scenario, in
 
 ## 4. A claim's page in full
 
+- [ ] 4.0 Add the route `GET <base>/claims/<name>[@<version>]`: the claim's kind, version, status, statement, binding, body, versions, sources, the claims it changes, and each narrative of the book that includes it, linked to its paragraph; 404 for a name that no claim has. Tests for "The page of an invariant" and "No such claim". Proved by `boom:test`
 - [ ] 4.1 Give "History" on a claim's page: each version neither proposed nor accepted, with its status, the entry that closed it, the person and a rejection's reason; and the accepted and proposed versions alone in its versions line. A test for "A superseded and a rejected version". Proved by `boom:test`
 - [ ] 4.2 Give the claims that name the claim, each as a link, with the version meant, marked out of date. A test for "A claim named as a source". Proved by `boom:test`
 - [ ] 4.3 Give the origin as its name, fingerprint and `boom show --artifact <fingerprint>`, or as `git:<repository>@<commit>:<path>`, and serve no kept file's bytes. A test for "A kept file". Proved by `boom:test`
