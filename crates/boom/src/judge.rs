@@ -151,6 +151,15 @@ impl Version {
                 .iter()
                 .any(|name| contexts.iter().any(|context| context == name))
     }
+
+    /// Whether a person accepted it to stand: it is accepted, or a later
+    /// accept superseded it. A draft that a newer draft superseded, a
+    /// rejected version and a version from history never stood.
+    pub fn stood(&self) -> bool {
+        self.proposal.history.is_none()
+            && self.decided_in.is_some()
+            && matches!(self.status, Status::Accepted | Status::Superseded)
+    }
 }
 
 impl Claim {
@@ -159,6 +168,35 @@ impl Claim {
         self.versions
             .iter()
             .find(|candidate| candidate.proposal.version == version)
+    }
+
+    /// The newer draft that superseded the draft `version`: the version
+    /// that amends it, where no person accepted or rejected it
+    /// (claim-versions, "A new draft supersedes the draft it amends").
+    /// None for any other version.
+    pub fn newer_draft(&self, version: &str) -> Option<&Version> {
+        let found = self.version(version)?;
+        if found.status != Status::Superseded || found.decided_in.is_some() {
+            return None;
+        }
+        self.versions
+            .iter()
+            .find(|newer| newer.proposal.base.as_deref() == Some(version))
+    }
+
+    /// The base that an accept of `version` checks: the nearest version
+    /// in its line of bases that a person accepted to stand, or none
+    /// (claim-versions, "An accept stands only on its base").
+    pub fn accepted_base<'a>(&'a self, version: &'a Version) -> Option<&'a str> {
+        let mut base = version.proposal.base.as_deref();
+        while let Some(at) = base {
+            let found = self.version(at)?;
+            if found.stood() {
+                return Some(at);
+            }
+            base = found.proposal.base.as_deref();
+        }
+        None
     }
 
     fn version_mut(&mut self, version: &str) -> Option<&mut Version> {
@@ -969,7 +1007,17 @@ fn check_proposal(
         .flatten();
     let claim = state.claims.get(&key(name, term));
     match (&proposal.base, claim) {
-        (Some(base), Some(claim)) if claim.version(base).is_some() => {}
+        (Some(base), Some(claim)) if claim.version(base).is_some() => {
+            // A draft has one line: a draft that a newer draft
+            // superseded is not amended again (claim-versions, "A new
+            // draft supersedes the draft it amends").
+            if let Some(newer) = claim.newer_draft(base) {
+                let newer = &newer.proposal.version;
+                return Err(format!(
+                    "{name}@{base} is superseded by the newer draft {name}@{newer}: amend that draft, with --amends {newer}"
+                ));
+            }
+        }
         (Some(base), _) => {
             if let Some(other) = state
                 .holding(name, base)
@@ -1229,6 +1277,12 @@ fn check_accept(
         }
         Status::Accepted => return Err(format!("{name}@{version} is accepted already, by {by}")),
         Status::Superseded => {
+            if let Some(newer) = claim.newer_draft(version) {
+                return Err(format!(
+                    "{name}@{version} is superseded by the newer draft {name}@{}: accept that draft",
+                    newer.proposal.version
+                ));
+            }
             let accepted = claim.standing.as_deref().unwrap_or_default();
             return Err(format!(
                 "{name}@{version} is superseded: {name}@{accepted} is accepted"
@@ -1243,18 +1297,18 @@ fn check_accept(
         ));
     }
     // A version that comes in as history never stands, so it is accepted
-    // whatever stands (design 6).
-    if found.proposal.history.is_none() && found.proposal.base != claim.standing {
-        let amends = found
-            .proposal
-            .base
-            .as_deref()
-            .map_or("no version".to_owned(), |base| format!("{name}@{base}"));
+    // whatever stands (design 6). Any other is accepted on the nearest
+    // version in its line of bases that a person accepted, past the
+    // drafts before it (claim-versions, "An accept stands only on its
+    // base").
+    let base = claim.accepted_base(found);
+    if found.proposal.history.is_none() && base != claim.standing.as_deref() {
+        let builds_on = base.map_or("no version".to_owned(), |base| format!("{name}@{base}"));
         return Err(match &claim.standing {
             Some(standing) => format!(
-                "{name}@{standing} is accepted, and {name}@{version} amends {amends}: propose its words again amending {standing}"
+                "{name}@{standing} is accepted, and {name}@{version} builds on {builds_on}: propose its words again amending {standing}"
             ),
-            None => format!("{name}@{version} amends {amends}, which is not accepted"),
+            None => format!("{name}@{version} builds on {builds_on}, which is not accepted"),
         });
     }
     Ok(Verdict::Counts)
@@ -1266,8 +1320,14 @@ fn check_reject(
     version: &str,
     rejecter: &str,
 ) -> Result<Verdict, String> {
-    let (_, found) = find(state, name, version)?;
+    let (claim, found) = find(state, name, version)?;
     let by = found.decided_by.as_deref().unwrap_or_default();
+    if let Some(newer) = claim.newer_draft(version) {
+        return Err(format!(
+            "{name}@{version} is superseded by the newer draft {name}@{}: only a proposed version is rejected",
+            newer.proposal.version
+        ));
+    }
     match found.status {
         Status::Proposed => Ok(Verdict::Counts),
         // A person's reject carries its reason; a record that came in as
@@ -1332,6 +1392,18 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 reason: None,
                 imported: imported.as_deref().cloned(),
             });
+            // A new draft supersedes the draft it amends: this entry is
+            // the event, and the old draft's entry stays as it is
+            // (claim-versions, "A new draft supersedes the draft it
+            // amends").
+            if let Some(base) = &claim.base {
+                if let Some(draft) = entry_claim
+                    .version_mut(base)
+                    .filter(|draft| draft.status == Status::Proposed)
+                {
+                    draft.status = Status::Superseded;
+                }
+            }
         }
         Act::Accepted { versions } => {
             for named in versions {
