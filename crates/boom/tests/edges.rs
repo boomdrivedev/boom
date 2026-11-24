@@ -702,3 +702,116 @@ fn an_outline_with_its_narratives() {
     assert_eq!(answer["narratives"], edges);
     assert_eq!(last_claim(&place)["narratives"], edges);
 }
+
+// A version names its cause (claim-edges, "A version names its cause").
+
+const CAUSE: &str = "names-no-plan";
+const MONEY: &str = "money-has-currency";
+
+/// A store with `money-has-currency` accepted by ada and `names-no-plan`
+/// proposed, giving ada's key, money's version and the cause's version.
+fn money_and_cause(place: &Place) -> (String, String, String) {
+    let ada = place.made();
+    let money = place.proposed(MONEY, "Every amount names its currency.");
+    place.accepted(MONEY, &money, &ada);
+    let cause = place.proposed(CAUSE, "A claim names no plan.");
+    (ada, money, cause)
+}
+
+#[test]
+fn a_revision_with_its_cause() {
+    let place = Place::new();
+    let (_, money, cause) = money_and_cause(&place);
+    let answer = place.json(&[
+        "propose",
+        "invariant",
+        MONEY,
+        "Each amount names its currency.",
+        "--amends",
+        &money,
+        "--cause",
+        CAUSE,
+        "--provenance",
+        "run-1",
+    ]);
+    let stored = format!("{CAUSE}@{cause}");
+    assert_eq!(answer["cause"], json!(stored));
+    assert_eq!(last_claim(&place)["cause"], json!(stored));
+    let version = answer["version"].as_str().unwrap();
+    let shown = place.run(&["show", &format!("{MONEY}@{version}")]);
+    assert_eq!(shown.code, 0, "{shown:?}");
+    assert!(
+        shown
+            .stdout
+            .contains(&format!("cause: {stored}\n  A claim names no plan.\n")),
+        "{}",
+        shown.stdout
+    );
+    assert_eq!(
+        place.show(&format!("{MONEY}@{version}"))["cause"][0]["claim"],
+        CAUSE
+    );
+}
+
+#[test]
+fn a_cause_that_the_store_does_not_hold() {
+    let place = Place::new();
+    let (_, money, _) = money_and_cause(&place);
+    let before = place.log().len();
+    place.refused(
+        &[
+            "propose",
+            "invariant",
+            MONEY,
+            "Each amount names its currency.",
+            "--amends",
+            &money,
+            "--cause",
+            "no-such-claim",
+            "--provenance",
+            "run-1",
+        ],
+        "no-such-claim",
+    );
+    assert_eq!(place.log().len(), before);
+}
+
+#[test]
+fn the_cause_is_part_of_the_content() {
+    let mut plain = boom::claim::Proposal::new(
+        boom::claim::Kind::Invariant,
+        MONEY,
+        "Each amount names its currency.",
+        Vec::new(),
+        None,
+        None,
+        None,
+    );
+    let without = plain.version.clone();
+    plain.cause = Some(format!("{CAUSE}@aaaaaaaaaaaa"));
+    let with = plain.fingerprint(None);
+    assert_ne!(without, with);
+    plain.cause = Some(format!("{CAUSE}@bbbbbbbbbbbb"));
+    assert_ne!(plain.fingerprint(None), with);
+}
+
+#[test]
+fn a_cause_names_another_claim() {
+    let place = Place::new();
+    let (_, money, _) = money_and_cause(&place);
+    place.refused(
+        &[
+            "propose",
+            "invariant",
+            MONEY,
+            "Each amount names its currency.",
+            "--amends",
+            &money,
+            "--cause",
+            &format!("{MONEY}@{money}"),
+            "--provenance",
+            "run-1",
+        ],
+        "--amends",
+    );
+}

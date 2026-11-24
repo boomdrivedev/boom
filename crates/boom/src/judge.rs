@@ -1045,10 +1045,12 @@ fn check_proposal(
         (None, _) => {}
     }
     // Each edge to a claim names a version the store holds (claim-edges).
+    let cause: Vec<String> = proposal.cause.iter().cloned().collect();
     for (flag, edges) in [
         ("source", &proposal.source),
         ("changes", &proposal.changes),
         ("includes", &proposal.includes),
+        ("cause", &cause),
     ] {
         for stored in edges {
             let (target, version) = claim::edge(stored)?;

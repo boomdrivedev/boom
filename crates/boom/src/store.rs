@@ -689,6 +689,7 @@ impl Scope {
                             .chain(&claim.changes)
                             .chain(&claim.includes)
                             .chain(&claim.narratives)
+                            .chain(&claim.cause)
                             .chain(crate::judge::contexts(attach.as_ref()))
                             .filter_map(|edge| edge.split_once('@'))
                             .map(|(name, _)| name.to_owned()),
@@ -1451,11 +1452,13 @@ fn write_edges(
         "INSERT INTO edges (name, term, version, edge, position, target_name, target_version, \
          artifact, origin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
+    let cause: Vec<String> = proposal.cause.iter().cloned().collect();
     for (edge, edges) in [
         ("source", &proposal.source),
         ("changes", &proposal.changes),
         ("includes", &proposal.includes),
         ("narratives", &proposal.narratives),
+        ("cause", &cause),
     ] {
         for (position, stored) in edges.iter().enumerate() {
             let (target_name, target_version) = stored.split_once('@').unwrap_or((stored, ""));
@@ -1897,6 +1900,9 @@ pub struct VersionView {
     /// The narratives an outline holds, each `<name>@<version>`, in order
     /// (views).
     pub narratives: Vec<String>,
+    /// The version of another claim that forced it, `<name>@<version>`
+    /// (claim-edges, "A version names its cause").
+    pub cause: Option<String>,
     /// The repositories its proposal binds.
     pub repositories: Vec<String>,
     /// The contexts its proposal binds, each `<name>@<version>` of the
@@ -2001,6 +2007,7 @@ fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<Versio
             paths: proposal.paths,
             view: proposal.view,
             narratives: proposal.narratives,
+            cause: proposal.cause,
             repositories: from_json(&repositories)?,
             contexts: from_json(&contexts)?,
             proposer: from_json(&proposer)?,

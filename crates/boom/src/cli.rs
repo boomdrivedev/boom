@@ -223,6 +223,13 @@ enum Command {
         /// or its newest where none is accepted.
         #[arg(long = "narrative", value_name = "NARRATIVE")]
         narratives: Vec<String>,
+        /// The claim whose change forced this version, `<name>` or
+        /// `<name>@<version>` of another claim of the store; one at most.
+        /// A name stores its accepted version, or its newest where none is
+        /// accepted. `boom accept --cause` takes each version that names
+        /// it.
+        #[arg(long, value_name = "CLAIM")]
+        cause: Option<String>,
     },
     /// Write a person's note on one paragraph of a version of a
     /// narrative: an entry with the person's name and no signature.
@@ -882,6 +889,7 @@ fn execute(
             answers,
             view,
             narratives,
+            cause,
         } => propose(
             &path?,
             Proposed {
@@ -903,6 +911,7 @@ fn execute(
                 answers,
                 view,
                 narratives,
+                cause,
             },
             key.as_deref(),
             keys,
@@ -1208,6 +1217,7 @@ struct Proposed {
     answers: Vec<String>,
     view: Option<String>,
     narratives: Vec<String>,
+    cause: Option<String>,
 }
 
 impl Proposed {
@@ -1593,6 +1603,7 @@ fn propose(
                     .chain(&proposed.contexts)
                     .chain(&proposed.includes)
                     .chain(&proposed.narratives)
+                    .chain(&proposed.cause)
                     .map(|edge| edge.split_once('@').map_or(edge.as_str(), |(name, _)| name)),
             )
             .map(str::to_owned),
@@ -1651,7 +1662,7 @@ fn propose(
     };
     // The edges are part of its content, so a person signs them
     // (claim-edges, "The edges are part of the content").
-    let version_of = |attach: Option<&Attach>, edges: [Vec<String>; 4]| {
+    let version_of = |attach: Option<&Attach>, edges: [Vec<String>; 4], cause: Option<String>| {
         let mut proposal = version_without_edges(attach);
         let [source, changes, includes, narratives] = edges;
         if source.is_empty()
@@ -1660,9 +1671,11 @@ fn propose(
             && includes.is_empty()
             && answers.is_empty()
             && narratives.is_empty()
+            && cause.is_none()
         {
             return proposal;
         }
+        proposal.cause = cause;
         proposal.source = source;
         proposal.changes = changes;
         proposal.origin = origin.clone();
@@ -1694,7 +1707,16 @@ fn propose(
             .iter()
             .map(|given| resolve_edge(state, "narrative", given))
             .collect::<Result<Vec<_>, _>>()?;
-        let proposal = version_of(attach.as_ref(), [source, changes, includes, narratives]);
+        let cause = proposed
+            .cause
+            .as_deref()
+            .map(|given| resolve_edge(state, "cause", given))
+            .transpose()?;
+        let proposal = version_of(
+            attach.as_ref(),
+            [source, changes, includes, narratives],
+            cause,
+        );
         made = Some(proposal.clone());
         Ok(Entry {
             at: env.clock.now(),
@@ -1753,6 +1775,9 @@ fn propose(
             answer.note, answer.words
         ));
     }
+    if let Some(cause) = &proposal.cause {
+        words.push_str(&format!("cause: {cause}\n"));
+    }
     if let Some(accept) = &accept {
         words.push_str(&format!("a person accepts it with: {accept}\n"));
     }
@@ -1775,6 +1800,7 @@ fn propose(
             "answers": proposal.answers,
             "view": proposal.view,
             "narratives": proposal.narratives,
+            "cause": proposal.cause,
             "accept": accept,
         }),
         words,
@@ -2318,6 +2344,12 @@ fn edges_shown(
         // The narratives an outline holds, in its order, each at the
         // version it meant (views, "boom show gives an outline").
         kinds.push(("narratives", &view.narratives));
+    }
+    // The version of the claim that forced it (claim-edges, "A version
+    // names its cause").
+    let cause: Vec<String> = view.cause.iter().cloned().collect();
+    if !cause.is_empty() {
+        kinds.push(("cause", &cause));
     }
     for (flag, edges) in kinds {
         let mut shown = Vec::with_capacity(edges.len());

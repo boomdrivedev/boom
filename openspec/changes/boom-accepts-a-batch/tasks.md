@@ -8,8 +8,8 @@ scenario of the delta specs is one test, named by its scenario:
 
 ## 1. The edge cause
 
-- [ ] 1.1 In `claim.rs`, add `cause` to a version, written after each other edge and part of its fingerprint; in `judge.rs`, refuse a cause that the store does not hold or that names its own claim; in `store.rs`, keep it in `edges` as the edge `cause`. Tests for "A revision with its cause", "A cause that the store does not hold" and "The cause is part of the content". Proved by `boom:test`
-- [ ] 1.2 In `cli.rs`, add `boom propose --cause`, resolved as `--source` is, and give the cause in `boom show <name>@<version>`. Proved by `boom:test`
+- [x] 1.1 In `claim.rs`, add `cause` to a version, written after each other edge and part of its fingerprint; in `judge.rs`, refuse a cause that the store does not hold or that names its own claim; in `store.rs`, keep it in `edges` as the edge `cause`. Tests for "A revision with its cause", "A cause that the store does not hold" and "The cause is part of the content". Proved by `boom:test`
+- [x] 1.2 In `cli.rs`, add `boom propose --cause`, resolved as `--source` is, and give the cause in `boom show <name>@<version>`. Proved by `boom:test`
 
 ## 2. The batches
 
