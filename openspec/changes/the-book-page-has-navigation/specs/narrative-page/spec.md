@@ -1,22 +1,51 @@
 ## ADDED Requirements
 
-### Requirement: The book's contents in a sidebar
+### Requirement: One shell for each view
 
-The book page, each narrative's page, each claim's page and the page of a search SHALL give the design book's contents in `<nav class="side">`: Part I with its narratives and a section for each of its contexts, then Part II with a chapter for each repository and a section for each of its contexts. Each narrative SHALL be a link to its page with its title, in the book's order.
+Each page of `boom page` SHALL give a bar at its top with a link to each view that boom serves, the book at `<base>/` and the claims at `<base>/claims/`, the current view's link with `aria-current="page"`, a search form, and the log's entry. It SHALL give the view's sidebar in `<nav class="side">`, then the view's page in `<main>`.
+
+#### Scenario: The bar of a narrative's page
+
+- **WHEN** the page of `boom-end-to-end` is asked for
+- **THEN** the bar links "The book" to `<base>/` with `aria-current="page"`, links "The claims" to `<base>/claims/`, holds the search form, and gives `entry <n>` of the log's last entry
+
+#### Scenario: The bar of a search
+
+- **WHEN** the search `bolt` is asked for
+- **THEN** the bar links to each view, and no link of the bar has `aria-current`
+
+#### Scenario: The order of the views
+
+- **WHEN** the book page is asked for
+- **THEN** the bar gives "The book", then "The claims", and no other view
+
+### Requirement: The book's contents in the sidebar
+
+On the book page, each narrative's page and the page of a search, the sidebar SHALL give the design book's contents: Part I with its narratives and a section for each of its contexts, then Part II with a chapter for each repository and a section for each of its contexts. Each narrative SHALL be a link to its page with its title, in the book's order.
 
 #### Scenario: The sidebar of a narrative's page
 
 - **WHEN** the book gives `the-drives-log` in Part I, then `boom-end-to-end` in the chapter `boom`, and the page of `boom-end-to-end` is asked for
-- **THEN** the sidebar gives `Part I. The system` with a link to `the-drives-log`, then `Part II. The repositories` with the chapter `boom` and a link to `boom-end-to-end`, which has `aria-current="page"`
+- **THEN** the sidebar gives `Part I. The system` with a link to `the-drives-log`, then `Part II. The repositories` with the chapter `boom` and a link to `boom-end-to-end`
 
 #### Scenario: A section of a context
 
 - **WHEN** `the-merge-queue` binds the context `sluice-host-process`, whose globs name `sluice`, and a narrative's page is asked for
 - **THEN** the sidebar gives the chapter `sluice` with the section `sluice-host-process`, and a link to `the-merge-queue` under it
 
+#### Scenario: Narratives only
+
+- **WHEN** the invariant `status-read-from-events` is accepted for `boom`, no narrative includes it, and the book page is asked for
+- **THEN** neither the sidebar nor the book page names `status-read-from-events`
+
 ### Requirement: The sidebar marks the page's narrative
 
-The sidebar SHALL mark the narrative of the page, at any of its versions, with `aria-current="page"`. It SHALL mark each narrative that the outline does not hold, as the book page marks it.
+The book's sidebar SHALL mark the narrative of the page, at any of its versions, with `aria-current="page"`. It SHALL mark each narrative that the outline does not hold, as the book page marks it.
+
+#### Scenario: The current narrative
+
+- **WHEN** the page of `boom-end-to-end` is asked for
+- **THEN** the sidebar's link to `boom-end-to-end` has `aria-current="page"`, and no other link of the sidebar has it
 
 #### Scenario: The sidebar of the book page
 
@@ -35,7 +64,7 @@ The sidebar SHALL mark the narrative of the page, at any of its versions, with `
 
 ### Requirement: The sidebar folds on a narrow window
 
-Each page that gives the sidebar SHALL give a control with the word "Contents" before it. Under 60rem wide, the page SHALL hide the sidebar until the control opens it, with no script. At 60rem or wider, the page SHALL show the sidebar beside the page, and SHALL hide the control.
+A page that gives a sidebar SHALL give a control with the word "Contents" before it. Under 60rem wide, the page SHALL hide the sidebar until the control opens it, with no script. At 60rem or wider, the page SHALL show the sidebar beside the page, and SHALL hide the control.
 
 #### Scenario: A narrow window
 
@@ -49,12 +78,12 @@ Each page that gives the sidebar SHALL give a control with the word "Contents" b
 
 ### Requirement: A search from the page
 
-The sidebar SHALL hold a form that sends `GET <base>/search?q=<words>`. The page of the search SHALL give the narratives of the book whose version in the book holds each word in its paragraphs, then each other claim that `boom search --all <words>` gives, in its order. The search SHALL match words as `boom search` does.
+The bar's form SHALL send `GET <base>/search?q=<words>`. The page of the search SHALL give the narratives of the book whose version in the book holds each word in its paragraphs, then each other claim that `boom search --all <words>` gives, in its order, with its kind, `<name>@<version>`, status and statement, as a link to `<base>/claims/<name>@<version>`. The search SHALL match words as `boom search` does.
 
 #### Scenario: A claim found
 
 - **WHEN** the invariant `status-read-from-events` stands for `boom`, and the search `status events` is asked for
-- **THEN** the page gives `invariant status-read-from-events@<version>`, its status and its statement, with a link to its page
+- **THEN** the page gives `invariant status-read-from-events@<version>`, its status and its statement, with a link to `<base>/claims/status-read-from-events@<version>`
 
 #### Scenario: The forms of a word
 
@@ -73,7 +102,7 @@ The sidebar SHALL hold a form that sends `GET <base>/search?q=<words>`. The page
 
 ### Requirement: A narrative found links to its paragraph
 
-A narrative found SHALL link to its page at `#p<n>`, the first paragraph that holds each word, with that paragraph's words, or to its page where no one paragraph holds them all. A claim found SHALL link to its page, with its kind, `<name>@<version>`, status and statement.
+A narrative found SHALL link to its page at `#p<n>`, the first paragraph that holds each word, with that paragraph's words, or to its page where no one paragraph holds them all.
 
 #### Scenario: A word in a narrative's paragraph
 
@@ -90,49 +119,30 @@ A narrative found SHALL link to its page at `#p<n>`, the first paragraph that ho
 - **WHEN** a narrative's paragraph 2 holds `bolt` and its paragraph 5 holds `landing`, and no one paragraph holds both
 - **THEN** the search `bolt landing` gives the narrative with a link to its page and no `#p`
 
-### Requirement: The page of a claim
+### Requirement: An included claim links to the claims view
 
-`GET <base>/c/<name>` SHALL give the page of the claim at its accepted version, or its newest version where none is accepted, and `<base>/c/<name>@<version>` that version. The page SHALL give the kind, `<name>@<version>`, status, statement, what it binds and body. The name of a narrative SHALL answer 303 to its page, the name of an outline 303 to `<base>/v/<name>`, and a name that no claim has 404.
+On a narrative's page, the box of each included claim SHALL link its `<name>@<version>` to `<base>/claims/<name>@<version>`, at the version that the narrative meant.
 
-#### Scenario: The name of a narrative
-
-- **WHEN** `<base>/c/boom-end-to-end` is asked for, and `boom-end-to-end` is a narrative
-- **THEN** boom answers 303 to `<base>/n/boom-end-to-end`
-
-#### Scenario: A claim accepted while the page is served
-
-- **WHEN** the page of a proposed claim is served, a person then accepts it, and the browser asks for the page again
-- **THEN** the page gives the claim as accepted
-
-### Requirement: The links of a claim's page
-
-The page of a claim SHALL give each version with its status as a link, each source and each claim that it changes as a link to its page, marked out of date where another version of it is accepted, and each narrative of the book that includes the claim as a link. The box of an included claim on a narrative's page SHALL link to the claim's page at the version meant.
-
-#### Scenario: A claim's page
-
-- **WHEN** `the-design-book-follows-the-three-binding-levels@<v2>` is accepted, its source is `views-computed-from-the-ledger`, the narrative `the-drives-log` includes it, and its page is asked for
-- **THEN** the page gives `decision`, `@<v2>`, `accepted`, its statement and body, a link to each of its versions, a link to `views-computed-from-the-ledger`, and a link to `the-drives-log`
-
-#### Scenario: A source out of date
-
-- **WHEN** a claim's source is `views-computed-from-the-ledger@<v1>`, and `<v2>` of it is accepted
-- **THEN** the claim's page marks the source out of date, and names `<v2>`
-
-#### Scenario: An included claim links to its page
+#### Scenario: An included claim's link
 
 - **WHEN** a narrative includes `status-read-from-events@<v1>`, and the narrative's page is asked for
-- **THEN** the box of that claim links `status-read-from-events@<v1>` to `<base>/c/status-read-from-events@<v1>`
+- **THEN** the box of that claim links `status-read-from-events@<v1>` to `<base>/claims/status-read-from-events@<v1>`
 
-### Requirement: The navigation runs no script
+#### Scenario: An included claim out of date
 
-The sidebar, the control that folds it, the search and the page of a claim SHALL work with HTML and CSS alone. A page of the book that holds no diagram SHALL hold no `<script>` element, and each response SHALL give the policy header that a narrative's page gives.
+- **WHEN** a narrative includes `status-read-from-events@<v1>`, and `<v2>` of it is accepted
+- **THEN** the box links to `<base>/claims/status-read-from-events@<v1>`, and marks it out of date with `<v2>`
+
+### Requirement: The shell runs no script
+
+The bar, the sidebar, the control that folds it and the search SHALL work with HTML and CSS alone. A page with no diagram SHALL hold no `<script>` element, and each response SHALL give the policy header that a narrative's page gives.
 
 #### Scenario: The page of a search
 
 - **WHEN** the search `bolt` is asked for
 - **THEN** its HTML holds no `<script>` element and no URL of another host, and the response has the policy header
 
-#### Scenario: The page of a claim
+#### Scenario: The book page
 
-- **WHEN** the page of `status-read-from-events` is asked for
+- **WHEN** the book page is asked for, and no narrative holds a diagram
 - **THEN** its HTML holds no `<script>` element and no URL of another host, and the response has the policy header
