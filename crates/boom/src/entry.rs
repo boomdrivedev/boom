@@ -231,11 +231,17 @@ pub struct Attach {
     pub contexts: Vec<String>,
 }
 
-/// An entry: its time, its actor and its act.
+/// An entry: its time, the rule set it was written under, its actor and
+/// its act.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     /// When it was made, in Unix seconds, as its maker's clock read.
     pub at: u64,
+    /// The rule set it was written under, [`crate::judge::RULES`] for an
+    /// entry boom writes now, and 0 for one written before entries named
+    /// their rule set, whose signed part holds no `rules` (record-log,
+    /// "An entry is judged by the rules it was written under").
+    pub rules: u32,
     /// Who made it.
     pub actor: Actor,
     /// What it does.
@@ -248,6 +254,8 @@ struct RegisteredPart {
     format: String,
     act: String,
     at: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    rules: u32,
     actor: Actor,
     person: String,
     key: String,
@@ -260,6 +268,8 @@ struct ProposedPart {
     format: String,
     act: String,
     at: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    rules: u32,
     actor: Actor,
     claim: Box<Proposal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -277,6 +287,8 @@ struct AcceptedPart {
     format: String,
     act: String,
     at: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    rules: u32,
     actor: Actor,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -292,6 +304,8 @@ struct RepositoryPart {
     format: String,
     act: String,
     at: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    rules: u32,
     actor: Actor,
     name: String,
     remote: String,
@@ -304,6 +318,8 @@ struct NotedPart {
     format: String,
     act: String,
     at: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    rules: u32,
     actor: Actor,
     name: String,
     version: String,
@@ -318,6 +334,8 @@ struct RejectedPart {
     format: String,
     act: String,
     at: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    rules: u32,
     actor: Actor,
     name: String,
     version: String,
@@ -326,19 +344,22 @@ struct RejectedPart {
 
 impl Entry {
     /// The entry's signed part: one JSON object, its fields `format`,
-    /// `act`, `at`, `actor` and then the act's own, in that order; a
+    /// `act`, `at`, `rules` where it is not 0, `actor` and then the act's
+    /// own, in that order, so a signature covers the rule set; a
     /// proposal's `imported` after its `claim` and its `attach` after
     /// that, each only where present (design 7).
     pub fn signed_part(&self) -> String {
         let format = FORMAT.to_owned();
         let act = self.act.name().to_owned();
         let at = self.at;
+        let rules = self.rules;
         let actor = self.actor.clone();
         let written = match &self.act {
             Act::Registered { person, key, owner } => serde_json::to_string(&RegisteredPart {
                 format,
                 act,
                 at,
+                rules,
                 actor,
                 person: person.clone(),
                 key: key.clone(),
@@ -352,6 +373,7 @@ impl Entry {
                 format,
                 act,
                 at,
+                rules,
                 actor,
                 claim: claim.clone(),
                 imported: imported.clone(),
@@ -362,6 +384,7 @@ impl Entry {
                     format,
                     act,
                     at,
+                    rules,
                     actor,
                     name: Some(one.name.clone()),
                     version: Some(one.version.clone()),
@@ -371,6 +394,7 @@ impl Entry {
                     format,
                     act,
                     at,
+                    rules,
                     actor,
                     name: None,
                     version: None,
@@ -385,6 +409,7 @@ impl Entry {
                 format,
                 act,
                 at,
+                rules,
                 actor,
                 name: name.clone(),
                 remote: remote.clone(),
@@ -398,6 +423,7 @@ impl Entry {
                 format,
                 act,
                 at,
+                rules,
                 actor,
                 name: name.clone(),
                 version: version.clone(),
@@ -413,6 +439,7 @@ impl Entry {
                 format,
                 act,
                 at,
+                rules,
                 actor,
                 name: name.clone(),
                 version: version.clone(),
@@ -441,6 +468,7 @@ impl Entry {
                 let part: RegisteredPart = serde_json::from_str(signed).map_err(form)?;
                 Ok(Entry {
                     at: part.at,
+                    rules: part.rules,
                     actor: part.actor,
                     act: Act::Registered {
                         person: part.person,
@@ -453,6 +481,7 @@ impl Entry {
                 let part: ProposedPart = serde_json::from_str(signed).map_err(form)?;
                 Ok(Entry {
                     at: part.at,
+                    rules: part.rules,
                     actor: part.actor,
                     act: Act::Proposed {
                         claim: part.claim,
@@ -480,6 +509,7 @@ impl Entry {
                     };
                 Ok(Entry {
                     at: part.at,
+                    rules: part.rules,
                     actor: part.actor,
                     act: Act::Accepted { versions },
                 })
@@ -488,6 +518,7 @@ impl Entry {
                 let part: RepositoryPart = serde_json::from_str(signed).map_err(form)?;
                 Ok(Entry {
                     at: part.at,
+                    rules: part.rules,
                     actor: part.actor,
                     act: Act::Repository {
                         name: part.name,
@@ -500,6 +531,7 @@ impl Entry {
                 let part: RejectedPart = serde_json::from_str(signed).map_err(form)?;
                 Ok(Entry {
                     at: part.at,
+                    rules: part.rules,
                     actor: part.actor,
                     act: Act::Rejected {
                         name: part.name,
@@ -512,6 +544,7 @@ impl Entry {
                 let part: NotedPart = serde_json::from_str(signed).map_err(form)?;
                 Ok(Entry {
                     at: part.at,
+                    rules: part.rules,
                     actor: part.actor,
                     act: Act::Noted {
                         name: part.name,
@@ -528,6 +561,12 @@ impl Entry {
             None => Err("it names no act".to_owned()),
         }
     }
+}
+
+/// Whether a rule set is 0, which a signed part leaves out.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(rules: &u32) -> bool {
+    *rules == 0
 }
 
 /// An entry's hash: the SHA-256 of its `prev`, a newline, its signed
@@ -550,6 +589,7 @@ mod tests {
     fn registration() -> Entry {
         Entry {
             at: 1_763_424_000,
+            rules: crate::judge::RULES,
             actor: Actor::Person("ada".to_owned()),
             act: Act::Registered {
                 person: "ada".to_owned(),
@@ -566,6 +606,7 @@ mod tests {
     fn attached(attach: Option<Attach>) -> Entry {
         Entry {
             at: 1_763_424_100,
+            rules: crate::judge::RULES,
             actor: Actor::Agent {
                 provenance: "run-1".to_owned(),
             },
@@ -659,10 +700,13 @@ mod tests {
         let registered = registration().signed_part();
         assert_eq!(
             keys(&registered),
-            ["format", "act", "at", "actor", "person", "key", "owner"]
+            ["format", "act", "at", "rules", "actor", "person", "key", "owner"]
         );
         let proposed = proposal().signed_part();
-        assert_eq!(keys(&proposed), ["format", "act", "at", "actor", "claim"]);
+        assert_eq!(
+            keys(&proposed),
+            ["format", "act", "at", "rules", "actor", "claim"]
+        );
         for signed in [&registered, &proposed] {
             for absent in ["seq", "number", "prev", "hash", "signature"] {
                 assert!(!keys(signed).iter().any(|key| key == absent), "{signed}");
@@ -671,6 +715,22 @@ mod tests {
         }
         assert_eq!(Entry::parse(&registered), Ok(registration()));
         assert_eq!(Entry::parse(&proposed), Ok(proposal()));
+    }
+
+    #[test]
+    fn an_entry_of_rule_set_0_names_no_rule_set() {
+        let mut old = proposal();
+        old.rules = 0;
+        let signed = old.signed_part();
+        assert_eq!(keys(&signed), ["format", "act", "at", "actor", "claim"]);
+        assert_eq!(Entry::parse(&signed), Ok(old.clone()));
+        assert_eq!(Entry::parse(&signed).unwrap().signed_part(), signed);
+        let now = proposal().signed_part();
+        assert!(
+            now.contains(&format!(r#""rules":{},"actor""#, crate::judge::RULES)),
+            "{now}"
+        );
+        assert_eq!(Entry::parse(&now).unwrap().rules, crate::judge::RULES);
     }
 
     #[test]
@@ -683,7 +743,7 @@ mod tests {
         let signed = entry.signed_part();
         assert_eq!(
             keys(&signed),
-            ["format", "act", "at", "actor", "claim", "attach"]
+            ["format", "act", "at", "rules", "actor", "claim", "attach"]
         );
         assert!(
             signed.ends_with(r#","attach":{"repositories":["ledger","shop"]}}"#),
@@ -723,7 +783,9 @@ mod tests {
 
     #[test]
     fn a_proposal_with_no_attachment_is_written_as_before() {
-        let entry = proposal();
+        // As before rule sets: an entry of rule set 0.
+        let mut entry = proposal();
+        entry.rules = 0;
         let Act::Proposed { claim, .. } = &entry.act else {
             unreachable!("a proposal");
         };
@@ -742,7 +804,7 @@ mod tests {
         let signed = entry.signed_part();
         assert_eq!(
             keys(&signed),
-            ["format", "act", "at", "actor", "claim", "imported"]
+            ["format", "act", "at", "rules", "actor", "claim", "imported"]
         );
         assert!(
             signed.contains(r#""imported":{"repository":"shop","from":"0003-amounts-in-cents.md","form":"madr","legacy":"0003","status":"accepted","date":"2026-01-04","deciders":["ada","bo"],"section":null,"drafted":true}"#),
@@ -780,7 +842,7 @@ mod tests {
         let signed = entry.signed_part();
         assert_eq!(
             keys(&signed),
-            ["format", "act", "at", "actor", "claim", "imported", "attach"]
+            ["format", "act", "at", "rules", "actor", "claim", "imported", "attach"]
         );
         assert!(
             signed.ends_with(r#","attach":{"repositories":["shop"]}}"#),
@@ -793,7 +855,10 @@ mod tests {
     #[test]
     fn a_proposal_with_nothing_imported_writes_no_imported_field() {
         let signed = proposal().signed_part();
-        assert_eq!(keys(&signed), ["format", "act", "at", "actor", "claim"]);
+        assert_eq!(
+            keys(&signed),
+            ["format", "act", "at", "rules", "actor", "claim"]
+        );
         assert!(!signed.contains("imported"), "{signed}");
         assert_eq!(Entry::parse(&signed), Ok(proposal()));
     }

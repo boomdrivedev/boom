@@ -1170,6 +1170,7 @@ fn init(
     }
     let entry = Entry {
         at: env.clock.now(),
+        rules: crate::judge::RULES,
         actor: Actor::Person(person.to_owned()),
         act: Act::Registered {
             person: person.to_owned(),
@@ -1226,6 +1227,7 @@ fn register(
         |state| {
             Ok(Entry {
                 at: env.clock.now(),
+                rules: crate::judge::RULES,
                 actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
                 act: Act::Registered {
                     person: person.to_owned(),
@@ -1772,6 +1774,7 @@ fn propose(
         made = Some(proposal.clone());
         Ok(Entry {
             at: env.clock.now(),
+            rules: crate::judge::RULES,
             actor,
             act: Act::Proposed {
                 claim: Box::new(proposal),
@@ -2131,6 +2134,7 @@ fn accept_versions(
     let now = env.clock.now();
     let one = |name: &str, version: &str| Entry {
         at: now,
+        rules: crate::judge::RULES,
         actor: Actor::Person(person.clone()),
         act: Act::accepted(name, version),
     };
@@ -2172,6 +2176,7 @@ fn accept_versions(
         }
         let entry = Entry {
             at: now,
+            rules: crate::judge::RULES,
             actor: Actor::Person(person.clone()),
             act: Act::Accepted { versions: waiting },
         };
@@ -2408,6 +2413,7 @@ fn reject(
         |state| {
             Ok(Entry {
                 at: env.clock.now(),
+                rules: crate::judge::RULES,
                 actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
                 act: Act::Rejected {
                     name: name.to_owned(),
@@ -3206,7 +3212,9 @@ fn log(path: &Path) -> Result<Answer, Failure> {
                     .cloned()
                     .unwrap_or(Value::Null)
             };
-            let targets: Vec<String> = Entry::parse(&row.signed)
+            let parsed = Entry::parse(&row.signed);
+            let targets: Vec<String> = parsed
+                .as_ref()
                 .map(|entry| {
                     entry
                         .act
@@ -3230,6 +3238,7 @@ fn log(path: &Path) -> Result<Answer, Failure> {
                 "act": field("act"),
                 "actor": field("actor"),
                 "at": field("at"),
+                "rules": parsed.as_ref().ok().map(|entry| entry.rules),
                 "signed": row.signed,
                 "signature": row.signature,
                 "counted": found.counted,
@@ -3420,6 +3429,7 @@ fn repo_write(
         |state| {
             Ok(Entry {
                 at: env.clock.now(),
+                rules: crate::judge::RULES,
                 actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
                 act: Act::Repository {
                     name: name.to_owned(),
@@ -3852,6 +3862,7 @@ fn import(
     for record in &read.records {
         let entry = Entry {
             at: env.clock.now(),
+            rules: crate::judge::RULES,
             actor: Actor::Agent {
                 provenance: provenance.clone(),
             },

@@ -159,6 +159,7 @@ fn found_by_an_old_versions_scenarios() {
     place.append_by_hand(
         &boom::entry::Entry {
             at: 1_763_424_600,
+            rules: boom::judge::RULES,
             actor: boom::entry::Actor::Agent {
                 provenance: "an-old-boom".to_owned(),
             },

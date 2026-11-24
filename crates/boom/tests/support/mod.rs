@@ -478,6 +478,7 @@ impl Place {
 pub fn accept_entry(person: &str, name: &str, version: &str) -> boom::entry::Entry {
     boom::entry::Entry {
         at: 1_763_424_500,
+        rules: boom::judge::RULES,
         actor: boom::entry::Actor::Person(person.to_owned()),
         act: boom::entry::Act::accepted(name, version),
     }

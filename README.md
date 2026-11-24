@@ -91,6 +91,11 @@ claims that hold.
   A record that came in as history keeps its file's own status. It judges
   each entry it reads as it judges a write, so an entry written by hand
   that breaks a rule counts for nothing.
+- **An entry stands under its own rules.** Each entry names, in its
+  signed part, the rule set that boom wrote it under, and boom judges it
+  by those rules alone. A rule that a later release adds holds only for
+  the entries after it, so it never voids an entry or a signature that
+  came before it. An entry that names no rule set is of rule set 0.
 - **Views kept in step with the log.** Each write updates the views in
   the same transaction. A command checks the log's last entry against
   the views, applies any entries after them, and answers from the

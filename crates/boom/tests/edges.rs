@@ -940,6 +940,7 @@ fn two_elaborations_appended_by_hand_count_for_nothing() {
     claim.version = claim.fingerprint(None);
     let entry = boom::entry::Entry {
         at: 1_763_424_600,
+        rules: boom::judge::RULES,
         actor: boom::entry::Actor::Agent {
             provenance: "another-program".to_owned(),
         },

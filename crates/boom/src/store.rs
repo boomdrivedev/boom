@@ -156,7 +156,7 @@ const VIEW_TABLES: [&str; 10] = [
 
 /// The views' form, kept in `views_head`. Views of another form are
 /// built again from the whole log.
-const VIEWS_FORM: i64 = 9;
+const VIEWS_FORM: i64 = 10;
 
 thread_local! {
     static ENTRIES_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };

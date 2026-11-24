@@ -178,6 +178,7 @@ fn generate(dir: &Path, entries: usize) {
                     let version = proposal.version.clone();
                     let entry = Entry {
                         at: 1_763_424_600,
+                        rules: boom::judge::RULES,
                         actor: Actor::Agent {
                             provenance: format!("run-{round}"),
                         },
@@ -212,6 +213,7 @@ fn generate(dir: &Path, entries: usize) {
                     }
                     let signed = Entry {
                         at: 1_763_424_700,
+                        rules: boom::judge::RULES,
                         actor: Actor::Person("ada".to_owned()),
                         act,
                     }
@@ -249,6 +251,7 @@ fn behind(dir: &Path, count: usize) {
     for at in 0..count {
         let signed = Entry {
             at: 1_763_424_800,
+            rules: boom::judge::RULES,
             actor: Actor::Agent {
                 provenance: "another-program".to_owned(),
             },

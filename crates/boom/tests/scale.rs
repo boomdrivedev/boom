@@ -24,6 +24,7 @@ fn proposals_for_other(place: &Place, from: usize, count: usize) {
             .map(|at| {
                 Entry {
                     at: 1_763_424_600,
+                    rules: boom::judge::RULES,
                     actor: Actor::Agent {
                         provenance: "a-large-log".to_owned(),
                     },
@@ -101,6 +102,7 @@ fn three_by_hand(place: &Place, from: usize) {
     for at in from..from + 3 {
         let entry = Entry {
             at: 1_763_424_700,
+            rules: boom::judge::RULES,
             actor: Actor::Agent {
                 provenance: "another-program".to_owned(),
             },

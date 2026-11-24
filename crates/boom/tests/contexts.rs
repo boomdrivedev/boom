@@ -1036,6 +1036,7 @@ fn a_context_the_log_does_not_hold() {
     place.made();
     let proposal = |contexts: Vec<String>, kind: boom::claim::Kind| boom::entry::Entry {
         at: 1_763_424_100,
+        rules: boom::judge::RULES,
         actor: boom::entry::Actor::Agent {
             provenance: "run-1".to_owned(),
         },
@@ -1108,6 +1109,7 @@ fn a_binding_to_a_claim_that_is_not_a_context_counts_for_nothing() {
     let money = place.proposed("money-has-currency", "Every amount names its currency.");
     let entry = boom::entry::Entry {
         at: 1_763_424_100,
+        rules: boom::judge::RULES,
         actor: boom::entry::Actor::Agent {
             provenance: "run-1".to_owned(),
         },
@@ -1147,6 +1149,7 @@ fn a_context_whose_attachment_is_not_its_globs_counts_for_nothing() {
     place.made();
     let entry = |repositories: Vec<String>, contexts: Vec<String>| boom::entry::Entry {
         at: 1_763_424_100,
+        rules: boom::judge::RULES,
         actor: boom::entry::Actor::Agent {
             provenance: "run-1".to_owned(),
         },

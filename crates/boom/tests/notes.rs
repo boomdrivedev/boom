@@ -194,6 +194,7 @@ fn a_note_from_an_agent() {
     place.append_by_hand(
         &Entry {
             at: 1_763_424_500,
+            rules: boom::judge::RULES,
             actor: Actor::Agent {
                 provenance: "run-1".to_owned(),
             },
@@ -226,6 +227,7 @@ fn a_note_on_a_paragraph_of_another_fingerprint() {
     place.append_by_hand(
         &Entry {
             at: 1_763_424_500,
+            rules: boom::judge::RULES,
             actor: Actor::Person("chuck".to_owned()),
             act: Act::Noted {
                 name: NAME.to_owned(),
