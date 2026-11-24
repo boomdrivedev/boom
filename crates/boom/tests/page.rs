@@ -1077,11 +1077,9 @@ fn the_order_of_the_views() {
     book_store(&place);
     let html = book_html(&place, None);
     let views = between(&bar(&html), "<nav class=\"views\"", "</nav>");
-    assert_eq!(views.matches("<a ").count(), 2, "{views}");
-    assert!(
-        views.find("The book").unwrap() < views.find("The claims").unwrap(),
-        "{views}"
-    );
+    let book = views.find(">The book<").unwrap();
+    assert_eq!(views.find("<a "), views[..book].rfind("<a "), "{views}");
+    assert!(book < views.find(">The claims<").unwrap(), "{views}");
 }
 
 #[test]

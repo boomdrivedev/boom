@@ -17,7 +17,7 @@ Each page of `boom page` SHALL give a bar at its top with a link to each view th
 #### Scenario: The order of the views
 
 - **WHEN** the book page is asked for
-- **THEN** the bar gives "The book", then "The claims", and no other view
+- **THEN** the bar gives "The book" first, and "The claims" after it
 
 ### Requirement: The book's contents in the sidebar
 
