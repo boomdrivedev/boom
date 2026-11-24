@@ -896,7 +896,7 @@ fn an_elaboration_in_its_form() {
 }
 
 #[test]
-fn a_version_came_from_one_elaboration_at_most() {
+fn a_version_names_one_elaboration_at_most() {
     let place = Place::new();
     place.made();
     let outcome = from_origins(&place, &["elaboration:boom/one", "elaboration:boom/two"]);
