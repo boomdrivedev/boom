@@ -180,7 +180,7 @@ gives what waits, with the command that accepts it).
    - **A proposed version.** The page of a proposed version gives it in
      a dashed frame marked "proposed, binds nothing", with
      `boom accept <name>@<version>` and
-     `boom reject <name>@<version> --why "<why>"`.
+     `boom reject <name>@<version> --reason "<why>"`.
 6. **Proposed versions apart from accepted ones.** Each view gives
    first, before its levels, under "Proposed, binding nothing", each
    proposed version of its kinds, grouped by the level that it binds,

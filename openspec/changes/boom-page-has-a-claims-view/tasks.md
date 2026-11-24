@@ -23,7 +23,7 @@ Each scenario of the delta spec is one test, named by its scenario, in
 ## 3. The proposed versions
 
 - [ ] 3.1 Give, at the head of each view, "Proposed, binding nothing": each proposed version of its kinds, grouped by the level it binds, in a dashed frame marked "proposed", with `boom accept <name>@<version>`, and one `boom accept` with each version of the list; no rejected or superseded version in any view. Tests for "A proposed decision", "One command for every proposal", "A rejected version" and "Nothing proposed". Proved by `boom:test`
-- [ ] 3.2 Give the page of a proposed version in a dashed frame marked "proposed, binds nothing", with `boom accept` and `boom reject --why`, and no `POST` form. A test for "The page of a proposed decision". Proved by `boom:test`
+- [ ] 3.2 Give the page of a proposed version in a dashed frame marked "proposed, binds nothing", with `boom accept` and `boom reject --reason`, and no `POST` form. A test for "The page of a proposed decision". Proved by `boom:test`
 
 ## 4. A claim's page in full
 

@@ -186,12 +186,12 @@ The page of a claim SHALL give each note on a paragraph of a narrative of the bo
 
 ### Requirement: A proposed version's page
 
-The page of a proposed version SHALL give it in a frame of its own marked "proposed, binds nothing", with `boom accept <name>@<version>` and `boom reject <name>@<version> --why "<why>"`. The page SHALL NOT accept or reject.
+The page of a proposed version SHALL give it in a frame of its own marked "proposed, binds nothing", with `boom accept <name>@<version>` and `boom reject <name>@<version> --reason "<why>"`. The page SHALL NOT accept or reject.
 
 #### Scenario: The page of a proposed decision
 
 - **WHEN** the page of `only-an-accepted-version-binds-work@<v1>` is asked for, and `<v1>` is proposed
-- **THEN** the page gives "proposed, binds nothing", `boom accept only-an-accepted-version-binds-work@<v1>` and `boom reject only-an-accepted-version-binds-work@<v1> --why`, and no form that sends a `POST`
+- **THEN** the page gives "proposed, binds nothing", `boom accept only-an-accepted-version-binds-work@<v1>` and `boom reject only-an-accepted-version-binds-work@<v1> --reason`, and no form that sends a `POST`
 
 ### Requirement: Filters with no script
 
