@@ -496,6 +496,7 @@ nav.side .in li a,nav.side li.in>a{padding-left:1.2rem}
 nav.side li a:hover{background:var(--card)}
 nav.side li a[aria-current]{background:var(--claim);box-shadow:inset 3px 0 0 var(--claim-edge);font-weight:600}
 nav.side .unheld{display:block;font-size:11px}
+nav.side li a .n{float:right;margin-left:.5rem;color:var(--soft);font-size:12px}
 main{max-width:46rem;margin:0 auto;padding:1.5rem 1rem 4rem;min-width:0}
 @media (min-width:60rem){
 .bar{flex-wrap:nowrap}
