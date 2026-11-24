@@ -87,8 +87,8 @@ The bar's form SHALL send `GET <base>/search?q=<words>`. The page of the search 
 
 #### Scenario: The forms of a word
 
-- **WHEN** the search `STATUSES` is asked for
-- **THEN** the page gives `status-read-from-events`, as `boom search STATUSES --all` gives it
+- **WHEN** the search `RECORDS` is asked for
+- **THEN** the page gives `status-read-from-events`, as `boom search RECORDS --all` gives it
 
 #### Scenario: No word to search
 
