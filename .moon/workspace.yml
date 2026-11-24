@@ -18,6 +18,7 @@ projects:
   claude-code: 'plugins/claude-code'
   nix: 'nix'
   site: 'site'
+  models: 'models'
   root: '.'
 
 # --affected compares against the merge-base with main.
