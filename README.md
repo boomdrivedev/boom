@@ -221,6 +221,16 @@ claims that hold.
   name gives it as a page, each narrative a link to its own page, which
   links to the narratives before it and after it. `boom page --view
   <outline>` gives the view of that outline.
+- **Each page of the book has a bar, contents and a search.** A bar at
+  the top of each page names the views of `boom page`, the book and the
+  claims, and marks the view that you read. Beside the page, the
+  contents give each part, chapter and section of the book, with each
+  narrative as a link, and mark the narrative that you read. On a narrow
+  window, the contents fold behind a "Contents" control. The search in
+  the bar finds words as `boom search` does: it gives the narratives of
+  the book, each linked to the first paragraph that holds the words,
+  then the claims that stand. Each claim that a narrative includes links
+  to its own page in the claims view.
 
 ```sh
 boom init --person ada --key ~/.ssh/id_ed25519_sk
