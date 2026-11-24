@@ -30,4 +30,4 @@ scenario of the delta specs is one test, named by its scenario:
 
 ## 5. The words
 
-- [ ] 5.1 Give `boom accept --cause` and `--waiting`, `boom propose --cause` and the view in the README and the site's page of the commands. Proved by `site:build` and `root:format`
+- [x] 5.1 Give `boom accept --cause` and `--waiting`, `boom propose --cause` and the view in the README and the site's page of the commands. Proved by `site:build` and `root:format`

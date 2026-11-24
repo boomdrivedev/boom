@@ -21,7 +21,7 @@ finds a claim violated or unclear, and 2 when it refuses.
 | Command | What it does |
 |---|---|
 | [`boom propose`](#boom-propose) | Proposes a claim, or a narrative, context, relationship or term. |
-| [`boom accept`](#boom-accept) | Accepts a proposed version, so it stands. A person's. |
+| [`boom accept`](#boom-accept) | Accepts proposed versions in one sign: a narrative with its claims, a cause with its revision, or what waits. A person's. |
 | [`boom reject`](#boom-reject) | Rejects a proposed version, with a reason. A person's. |
 | [`boom supersede`](#boom-supersede) | Proposes a claim that replaces a standing one. |
 | [`boom query`](#boom-query) | Lists what applies to a path, a context or a name. |
@@ -68,31 +68,32 @@ recorded in shop-ledger at 2f6d9b1
 ## `boom accept`
 
 ```text
-boom accept <name>[@<version>] [--note <text>]
+boom accept <name>@<version>... --key <key>
+boom accept --cause <name>@<version> --key <key>
+boom accept --waiting [--key <key>]
 ```
 
-Accepts the proposed version, the latest when `@<version>` is left out,
-and it stands. Accepting a claim that supersedes another supersedes that
-one in the same commit. Only a person accepts; how boom tells a person's
-accept from an agent's is one of the [open
-questions](/boom/roadmap/#open-questions).
+Accepts each version named, in one entry that the person's security key
+signs one time: every version, or none. Only a person accepts. A
+narrative takes each proposed version that it includes, and boom refuses
+it while it includes a rejected or superseded version. `--cause` takes a
+cause and each proposed version that names it with `boom propose
+--cause`. Before the key signs, boom lists each version that the entry
+takes.
+
+`--waiting` lists what waits on a person, as the page "Waiting on you"
+gives it: each narrative with the claims that it includes, each
+revision with its cause, and each other proposed claim alone, a ruling,
+each with the one command that accepts it. With `--key`, it accepts
+each of them in one sign.
 
 ```console
-$ boom accept refund-within-payment
-accepted refund-within-payment@5e8c210: it stands
-in scope for shop; boom sync writes it there
-recorded in shop-ledger at 8a01c4e
-```
-
-```json
-{
-  "event": "accepted",
-  "record": { "name": "refund-within-payment", "version": "5e8c210" },
-  "status": "standing",
-  "superseded": [],
-  "scope": ["shop"],
-  "commit": "8a01c4e"
-}
+$ boom accept boom-end-to-end@a541548cc582 --key ~/.ssh/id_ed25519_sk
+This accept takes 2 versions in one entry:
+  narrative boom-end-to-end@a541548cc582
+  invariant status-read-from-events@914dd32ed8dd
+boom-end-to-end@a541548cc582 is accepted, accepted by ada, by entry 12
+status-read-from-events@914dd32ed8dd is accepted, accepted by ada, by entry 12
 ```
 
 ## `boom reject`
