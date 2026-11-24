@@ -17,6 +17,9 @@ repositories an owner registers with `boom repo add`, from views kept in
 step with the log, which `boom verify` checks against a full replay, and
 `boom search` finds the claims that stand by their words, in a
 repository or every repository.
+A version that amends a draft supersedes that draft, so a person
+accepts the newest draft of a claim, on the nearest version in its line
+of bases that a person accepted.
 A version links to the claims that it rests on with `--source`, to
 the claims that a decision changes with `--changes`, and to the file or
 commit that it came from with `--origin`, a file that boom keeps by its

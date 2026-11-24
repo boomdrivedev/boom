@@ -929,13 +929,16 @@ fn two_persons_and_no_person() {
     place.narrative(NAME, TITLE, NARRATIVE, &[]);
     let page = served(&place, &[NAME]);
     let body = page.page(NAME).body;
-    assert!(!body.contains("<form"), "{body}");
+    assert!(!body.contains("<form method=\"post\""), "{body}");
     assert!(
         body.contains(&format!("boom page {NAME} --person")),
         "{body}"
     );
     let with_person = served(&place, &[NAME, "--person", "bo"]);
-    assert!(with_person.page(NAME).body.contains("<form"));
+    assert!(with_person
+        .page(NAME)
+        .body
+        .contains("<form method=\"post\""));
 }
 
 #[test]
@@ -985,4 +988,412 @@ fn a_view_that_is_not_an_outline() {
         "{outcome:?}"
     );
     assert!(outcome.stdout.is_empty(), "{outcome:?}");
+}
+
+// The shell, the book's sidebar and the search (narrative-page, "One
+// shell for each view" to "The shell runs no script").
+
+/// The part of `html` from `start` to the next `end`.
+fn between(html: &str, start: &str, end: &str) -> String {
+    let at = html
+        .find(start)
+        .unwrap_or_else(|| panic!("no {start}: {html}"));
+    let rest = &html[at..];
+    rest[..rest.find(end).unwrap()].to_owned()
+}
+
+/// The bar of a page.
+fn bar(html: &str) -> String {
+    between(html, "<header class=\"bar\">", "</header>")
+}
+
+/// The sidebar of a page.
+fn side(html: &str) -> String {
+    between(html, "<nav class=\"side\"", "</nav>")
+}
+
+/// The HTML of the page of the search `query`, as the function gives it.
+fn search_html(place: &Place, query: &str) -> String {
+    let context = Context {
+        base: "/t".to_owned(),
+        person: None,
+    };
+    Store::open(&place.store)
+        .unwrap()
+        .read(|conn| boom::page::search_page(conn, query, &context))
+        .unwrap()
+}
+
+/// The number of the log's last entry.
+fn last_entry(place: &Place) -> u64 {
+    place.log().len() as u64
+}
+
+/// The item of the claim `name` in `html`, a page of a search.
+fn found_claim(html: &str, name: &str) -> String {
+    between(html, &format!("<li data-claim=\"{name}\">"), "</li>")
+}
+
+#[test]
+fn the_bar_of_a_narratives_page() {
+    let place = Place::new();
+    book_store(&place);
+    let html = html(&place, NAME, None, None);
+    let bar = bar(&html);
+    assert!(
+        bar.contains("<a href=\"/t/\" aria-current=\"page\">The book</a>"),
+        "{bar}"
+    );
+    assert!(
+        bar.contains("<a href=\"/t/claims/\">The claims</a>"),
+        "{bar}"
+    );
+    assert!(
+        bar.contains("<form class=\"search\" role=\"search\" method=\"get\" action=\"/t/search\">"),
+        "{bar}"
+    );
+    assert!(bar.contains("name=\"q\""), "{bar}");
+    assert!(
+        bar.contains(&format!("entry {}", last_entry(&place))),
+        "{bar}"
+    );
+}
+
+#[test]
+fn the_bar_of_a_search() {
+    let place = Place::new();
+    book_store(&place);
+    let html = search_html(&place, "bolt");
+    let bar = bar(&html);
+    assert!(bar.contains("href=\"/t/\""), "{bar}");
+    assert!(bar.contains("href=\"/t/claims/\""), "{bar}");
+    assert!(!bar.contains("aria-current"), "{bar}");
+    assert!(bar.contains("value=\"bolt\""), "{bar}");
+}
+
+#[test]
+fn the_order_of_the_views() {
+    let place = Place::new();
+    book_store(&place);
+    let html = book_html(&place, None);
+    let views = between(&bar(&html), "<nav class=\"views\"", "</nav>");
+    assert_eq!(views.matches("<a ").count(), 2, "{views}");
+    assert!(
+        views.find("The book").unwrap() < views.find("The claims").unwrap(),
+        "{views}"
+    );
+}
+
+#[test]
+fn the_sidebar_of_a_narratives_page() {
+    let place = Place::new();
+    book_store(&place);
+    let html = html(&place, NAME, None, None);
+    let side = side(&html);
+    let part_one = side
+        .find("<p class=\"part\">Part I. The system</p>")
+        .unwrap();
+    let log = side.find(&format!("href=\"/t/n/{LOG}\"")).unwrap();
+    let part_two = side
+        .find("<p class=\"part\">Part II. The repositories</p>")
+        .unwrap();
+    let chapter = side.find("<p class=\"chapter\">boom</p>").unwrap();
+    let end_to_end = side.find(&format!("href=\"/t/n/{NAME}\"")).unwrap();
+    assert!(
+        part_one < log && log < part_two && part_two < chapter && chapter < end_to_end,
+        "{side}"
+    );
+    assert!(side.contains(TITLE), "{side}");
+    assert!(side.contains("The drive&#39;s log"), "{side}");
+}
+
+#[test]
+fn a_section_of_a_context() {
+    let place = Place::new();
+    book_store(&place);
+    place.json(&[
+        "propose",
+        "context",
+        "sluice-host-process",
+        "The host process of the queue.",
+        "--path",
+        "sluice:crates/sluice/src/host/**",
+        "--provenance",
+        "run-1",
+    ]);
+    place.narrative(
+        "the-merge-queue",
+        "The merge queue",
+        "A queue.\n",
+        &["--context", "sluice-host-process"],
+    );
+    let html = html(&place, NAME, None, None);
+    let side = side(&html);
+    let chapter = side.find("<p class=\"chapter\">sluice</p>").unwrap();
+    let section = side
+        .find("<p class=\"section\">sluice-host-process</p>")
+        .unwrap();
+    let queue = side.find("href=\"/t/n/the-merge-queue\"").unwrap();
+    assert!(chapter < section && section < queue, "{side}");
+}
+
+#[test]
+fn narratives_only() {
+    let place = Place::new();
+    book_store(&place);
+    let html = book_html(&place, None);
+    assert!(!side(&html).contains(STATUS), "{html}");
+    assert!(!html.contains(STATUS), "{html}");
+}
+
+#[test]
+fn the_current_narrative() {
+    let place = Place::new();
+    book_store(&place);
+    let html = html(&place, NAME, None, None);
+    let side = side(&html);
+    assert!(
+        side.contains(&format!("href=\"/t/n/{NAME}\" aria-current=\"page\"")),
+        "{side}"
+    );
+    assert_eq!(side.matches("aria-current").count(), 1, "{side}");
+}
+
+#[test]
+fn the_sidebar_of_the_book_page() {
+    let place = Place::new();
+    book_store(&place);
+    let html = book_html(&place, None);
+    let side = side(&html);
+    for name in [LOG, NAME, RECORDS] {
+        assert!(side.contains(&format!("href=\"/t/n/{name}\"")), "{side}");
+    }
+    assert!(!side.contains("aria-current"), "{side}");
+}
+
+#[test]
+fn a_narrative_that_the_outline_does_not_hold() {
+    let place = Place::new();
+    book_store(&place);
+    place.narrative(
+        "boom-for-a-reader",
+        "Boom, for a reader",
+        "A short one.\n",
+        &["--repository", "boom"],
+    );
+    let html = html(&place, NAME, None, None);
+    let side = side(&html);
+    let chapter = &side[side.find("<p class=\"chapter\">boom</p>").unwrap()..];
+    let last = chapter.rfind("<li>").unwrap();
+    let item = &chapter[last..];
+    assert!(
+        item.starts_with("<li><a href=\"/t/n/boom-for-a-reader\">"),
+        "{chapter}"
+    );
+    assert!(item.contains("not in the outline"), "{item}");
+    let held = between(chapter, &format!("<li><a href=\"/t/n/{RECORDS}\""), "</li>");
+    assert!(!held.contains("not in the outline"), "{held}");
+}
+
+#[test]
+fn the_sidebar_of_a_versions_page() {
+    let place = Place::new();
+    let v1 = one_narrative(&place, &[]);
+    let v2 = version(&place.narrative(
+        NAME,
+        TITLE,
+        &format!("{NARRATIVE}\nOne more.\n"),
+        &["--amends", &v1],
+    ));
+    assert_ne!(v1, v2);
+    let html = html(&place, NAME, Some(&v1), None);
+    assert!(
+        side(&html).contains(&format!("href=\"/t/n/{NAME}\" aria-current=\"page\"")),
+        "{html}"
+    );
+}
+
+#[test]
+fn a_claim_found() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let status = place.show(STATUS)["accepted"].as_str().unwrap().to_owned();
+    let html = search_html(&place, "status events");
+    let item = found_claim(&html, STATUS);
+    assert!(
+        item.contains(&format!(
+            "invariant <a href=\"/t/claims/{STATUS}@{status}\"><code>{STATUS}@{status}</code></a>"
+        )),
+        "{item}"
+    );
+    assert!(item.contains("accepted"), "{item}");
+    assert!(item.contains("A record never holds its status."), "{item}");
+}
+
+#[test]
+fn the_forms_of_a_word() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let searched = place.json(&["search", "RECORDS", "--all"]);
+    let names: Vec<&str> = searched["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|claim| claim["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, [STATUS]);
+    let html = search_html(&place, "RECORDS");
+    assert!(
+        html.contains(&format!("<li data-claim=\"{STATUS}\">")),
+        "{html}"
+    );
+}
+
+#[test]
+fn no_word_to_search() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let page = served(&place, &[NAME]);
+    let response = page.get(&format!("/{}/search?q=%2A%2A%2A", page.token));
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert!(
+        response
+            .body
+            .contains("boom search needs a word holding a letter or a digit"),
+        "{}",
+        response.body
+    );
+    assert!(!response.body.contains("data-claim"), "{}", response.body);
+    assert!(!response.body.contains("<ul class=\"list found\">"));
+}
+
+#[test]
+fn a_search_with_no_token() {
+    let place = Place::new();
+    book_store(&place);
+    let page = served(&place, &[]);
+    for path in [
+        "/search?q=bolt".to_owned(),
+        format!("/{}/search?q=bolt", "0".repeat(32)),
+    ] {
+        let response = page.get(&path);
+        assert_eq!(response.status, 404, "{path}");
+        assert!(!response.body.contains(NAME), "{path}: {}", response.body);
+        assert!(!response.body.contains("Part I"), "{path}");
+    }
+}
+
+#[test]
+fn a_word_in_a_narratives_paragraph() {
+    let place = Place::new();
+    place.made_by("chuck");
+    place.narrative(
+        NAME,
+        TITLE,
+        "# Boom\n\nOne.\n\nTwo.\n\nThe views replay the log.\n\nA replay again.\n",
+        &["--repository", "boom"],
+    );
+    let html = search_html(&place, "replay");
+    let item = item(&html, NAME);
+    assert!(item.contains(&format!("href=\"/t/n/{NAME}#p4\"")), "{item}");
+    assert!(item.contains("The views replay the log."), "{item}");
+    assert!(!item.contains("A replay again."), "{item}");
+}
+
+#[test]
+fn a_narrative_that_is_proposed() {
+    let place = Place::new();
+    place.made_by("chuck");
+    place.narrative(
+        RECORDS,
+        "Boom's change record",
+        "A record.\n\nA bolt lands.\n",
+        &["--repository", "boom"],
+    );
+    let html = search_html(&place, "bolt");
+    let item = item(&html, RECORDS);
+    assert!(
+        item.contains(&format!("href=\"/t/n/{RECORDS}#p2\"")),
+        "{item}"
+    );
+    assert!(item.contains("proposed"), "{item}");
+}
+
+#[test]
+fn words_in_two_paragraphs() {
+    let place = Place::new();
+    place.made_by("chuck");
+    place.narrative(
+        RECORDS,
+        "Boom's change record",
+        "A record.\n\nA bolt waits.\n\nThree.\n\nFour.\n\nThe landing comes.\n",
+        &["--repository", "boom"],
+    );
+    let html = search_html(&place, "bolt landing");
+    let item = item(&html, RECORDS);
+    assert!(item.contains(&format!("href=\"/t/n/{RECORDS}\"")), "{item}");
+    assert!(!item.contains("#p"), "{item}");
+}
+
+#[test]
+fn an_included_claims_link() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let status = place.show(STATUS)["accepted"].as_str().unwrap().to_owned();
+    let html = html(&place, NAME, None, None);
+    assert!(
+        paragraph(&html, 3).contains(&format!(
+            "<a href=\"/t/claims/{STATUS}@{status}\"><code>{STATUS}@{status}</code></a>"
+        )),
+        "{html}"
+    );
+}
+
+#[test]
+fn an_included_claim_out_of_date() {
+    let place = Place::new();
+    let v1 = one_narrative(&place, &[]);
+    let status = place.show(STATUS)["accepted"].as_str().unwrap().to_owned();
+    let chuck = place.key("chuck", 7);
+    let newer = place.amended(STATUS, "A record never holds its own status.", &status);
+    place.accepted(STATUS, &newer, &chuck);
+    let html = html(&place, NAME, Some(&v1), None);
+    let third = paragraph(&html, 3);
+    assert!(
+        third.contains(&format!("href=\"/t/claims/{STATUS}@{status}\"")),
+        "{third}"
+    );
+    assert!(
+        third.contains(&format!("out of date: accepted now {newer}")),
+        "{third}"
+    );
+}
+
+/// Asserts that a response holds no script and no URL of another host,
+/// and gives the policy header.
+fn runs_no_script(response: &Response) {
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert!(
+        !response.body.to_lowercase().contains("<script"),
+        "{}",
+        response.body
+    );
+    assert!(!response.body.contains("//"), "{}", response.body);
+    assert_eq!(response.header("Content-Security-Policy"), Some(POLICY));
+}
+
+#[test]
+fn the_page_of_a_search() {
+    let place = Place::new();
+    book_store(&place);
+    let page = served(&place, &[]);
+    runs_no_script(&page.get(&format!("/{}/search?q=bolt", page.token)));
+}
+
+#[test]
+fn the_book_page() {
+    let place = Place::new();
+    book_store(&place);
+    let page = served(&place, &[]);
+    runs_no_script(&page.get(&format!("/{}/", page.token)));
 }

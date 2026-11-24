@@ -51,7 +51,7 @@ record 0011).
 #### Scenario: A tool's arguments are its command's
 
 - **WHEN** a client sends `tools/list`
-- **THEN** `propose` takes `kind` (one of `invariant`, `decision`, `assumption`, `term`, `context` and `narrative`), `name`, `statement`, `amends`, `body`, `source`, `changes`, `origin`, `includes`, `answers`, `provenance`, `repositories`, `contexts`, `system`, `replaces` and `paths`, and requires `kind`, `name` and `statement`. `source`, `changes`, `origin`, `includes`, `answers`, `contexts`, `replaces` and `paths` are arrays of strings. `propose` takes no `scenarios`. `show` takes `target`, `repository` and `artifact`, and requires none of them. `log` takes nothing. `query` takes `repository`, `if_declared` and `paths`, an array of strings. `search` takes `words`, an array of strings, required, and `repository`, `all` and `limit`. `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, and requires `dir`. `import_rules` takes the same, with `page` for `dir`
+- **THEN** `propose` takes `kind` (one of `invariant`, `decision`, `assumption`, `term`, `context`, `narrative` and `outline`), `name`, `statement`, `amends`, `body`, `source`, `changes`, `origin`, `includes`, `answers`, `view`, `narratives`, `provenance`, `repositories`, `contexts`, `system`, `replaces` and `paths`, and requires `kind`, `name` and `statement`. `source`, `changes`, `origin`, `includes`, `answers`, `narratives`, `contexts`, `replaces` and `paths` are arrays of strings. `propose` takes no `scenarios`. `show` takes `target`, `repository` and `artifact`, and requires none of them. `log` takes nothing. `query` takes `repository`, `if_declared` and `paths`, an array of strings. `search` takes `words`, an array of strings, required, and `repository`, `all` and `limit`. `import_adr` takes `dir`, `repository`, `drafts`, `provenance` and `dry_run`, and requires `dir`. `import_rules` takes the same, with `page` for `dir`
 
 #### Scenario: Each command served or absent
 
@@ -87,6 +87,11 @@ record 0011).
 
 - **WHEN** an agent calls `query` with `paths` `["sluice:crates/sluice/src/overview.rs"]`
 - **THEN** the result gives what `boom query --path sluice:crates/sluice/src/overview.rs --json` gives
+
+#### Scenario: An outline proposed through its tool
+
+- **WHEN** the store holds the narrative `boom-end-to-end`, and an agent calls `propose` with `kind` `outline`, `name` `boomdrive-design-book`, `statement` `The design book of Boomdrive`, `view` `book`, `narratives` `["boom-end-to-end"]` and `provenance` `run-1`
+- **THEN** the result is not an error, and the log gets one `proposed` entry for an outline that holds `boom-end-to-end`
 
 ### Requirement: A tool runs its command
 
