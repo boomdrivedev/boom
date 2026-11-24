@@ -194,8 +194,8 @@ The list leaves out words that the domain of the family uses in another
 sense: `plan` (an approved plan), `step` (a drive's step), `status` (a
 version's status), `backlog`, `draft`, `in progress` (a run in
 progress), `not yet`, `first` and `next`. Of the claims that stand on
-2026-11-24, `boom search --all` finds each word of one word of the list
-in none, except `MVP` in two: one quotes the user, and one names
+2026-11-24, `boom search --all` finds no single word of the list, except
+`MVP` in two claims: one quotes the user, and one names
 timber's plan. The warning's tests count the phrases.
 
 The match is the match of `boom terms check` (`term-check`): another
