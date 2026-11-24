@@ -246,6 +246,19 @@ claims that hold.
   name it, its origin, and the narratives that include it with their
   notes. The page accepts and rejects nothing: it gives the command, and
   a person runs it with the key.
+- **A person accepts a batch with one sign.** Boom computes from the
+  log's links what waits on a person, and no agent makes it: a narrative
+  with the proposed claims that it includes, a revision with its cause,
+  and each other proposed claim alone, a ruling. `boom accept
+  <narrative>@<version>` accepts the narrative and each proposed version
+  that it includes, and boom refuses it while it includes a rejected or
+  superseded version. `boom propose --cause <claim>` names the claim
+  whose change forced a new version, and `boom accept --cause
+  <claim>@<version>` accepts the cause with each version that names it.
+  Before the key signs, boom lists each version that the entry takes.
+  `boom accept --waiting` lists each batch with its one command, and
+  with the key accepts them all. `boom page` gives them first, under
+  "Waiting on you", with the number in the bar.
 
 ```sh
 boom init --person ada --key ~/.ssh/id_ed25519_sk

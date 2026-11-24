@@ -89,6 +89,16 @@ pub trait Signer {
     /// Signs `message` in the namespace `boom`, answering the armored
     /// SSH signature, or not run where the key's program did not sign.
     fn sign(&self, message: &[u8]) -> Result<String, Failure>;
+
+    /// Tells the person `words` before the key asks for a touch: what the
+    /// entry that it signs takes (persons-acts, "An accept lists what it
+    /// takes"). The person's terminal gets them on standard error.
+    fn tell(&self, words: &str) {
+        use std::io::Write as _;
+        let mut stderr = std::io::stderr();
+        let _ = stderr.write_all(words.as_bytes());
+        let _ = stderr.flush();
+    }
 }
 
 /// Turns the path a command's `--key` names into a [`Signer`].

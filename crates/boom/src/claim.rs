@@ -147,6 +147,11 @@ pub struct Proposal {
     /// in the order given; written only where there is one (views).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub narratives: Vec<String>,
+    /// The version of another claim that forced this one, `<name>@<version>`,
+    /// which a revision names; written only where there is one
+    /// (claim-edges, "A version names its cause").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cause: Option<String>,
 }
 
 /// The one view that boom computes: the design book (views).
@@ -384,6 +389,8 @@ struct Content<'a> {
     view: Option<&'a str>,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     narratives: &'a [String],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cause: Option<&'a str>,
 }
 
 impl Proposal {
@@ -415,6 +422,7 @@ impl Proposal {
             answers: Vec::new(),
             view: None,
             narratives: Vec::new(),
+            cause: None,
         };
         proposal.version = proposal.fingerprint(None);
         proposal
@@ -460,8 +468,9 @@ impl Proposal {
     /// it has them, its history, the repository of a term, given as
     /// `repository` and none for a term of the whole system, the old words of a term, the globs of a context, its
     /// edges `source`, `changes`, `origin` and `includes`, the answers
-    /// of a narrative, and the view and the narratives of an outline
-    /// (claim-versions; claim-edges; context-claims; narratives; views).
+    /// of a narrative, the view and the narratives of an outline, and its
+    /// cause (claim-versions; claim-edges; context-claims; narratives;
+    /// views).
     pub fn fingerprint(&self, repository: Option<&str>) -> String {
         let content = serde_json::to_string(&Content {
             kind: self.kind,
@@ -481,6 +490,7 @@ impl Proposal {
             answers: &self.answers,
             view: self.view.as_deref(),
             narratives: &self.narratives,
+            cause: self.cause.as_deref(),
         })
         .expect("a version's content is JSON");
         crate::sha256_hex(content.as_bytes())[..12].to_owned()
@@ -603,10 +613,12 @@ impl Proposal {
                 self.kind.as_str()
             ));
         }
+        let cause: Vec<String> = self.cause.iter().cloned().collect();
         for (flag, edges) in [
             ("source", &self.source),
             ("changes", &self.changes),
             ("includes", &self.includes),
+            ("cause", &cause),
         ] {
             for (at, stored) in edges.iter().enumerate() {
                 let (name, _) = edge(stored)?;

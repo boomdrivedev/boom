@@ -11,6 +11,7 @@
 //! serves an agent's program the commands it may run as tools, through
 //! [`mcp::serve`].
 
+pub mod batch;
 pub mod claim;
 pub mod cli;
 pub mod context;
