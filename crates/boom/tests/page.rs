@@ -1077,8 +1077,10 @@ fn the_order_of_the_views() {
     book_store(&place);
     let html = book_html(&place, None);
     let views = between(&bar(&html), "<nav class=\"views\"", "</nav>");
+    let waiting = views.find(">Waiting on you<").unwrap();
+    assert_eq!(views.find("<a "), views[..waiting].rfind("<a "), "{views}");
     let book = views.find(">The book<").unwrap();
-    assert_eq!(views.find("<a "), views[..book].rfind("<a "), "{views}");
+    assert!(waiting < book, "{views}");
     assert!(book < views.find(">The claims<").unwrap(), "{views}");
 }
 
@@ -2372,4 +2374,187 @@ fn a_filters_value_given_back() {
     let html = page.at("claims/?q=%3Cb%3Ebolt%3C%2Fb%3E").body;
     assert!(html.contains("value=\"&lt;b&gt;bolt&lt;/b&gt;\""), "{html}");
     assert!(!html.contains("<b>"), "{html}");
+}
+
+// The view "Waiting on you" (narrative-page, "The view \"Waiting on
+// you\"", and "A narrative's page lists what its accept takes").
+
+const MONEY: &str = "money-has-currency";
+const CAUSE: &str = "names-no-plan";
+const AMOUNTS: &str = "amounts-in-cents";
+
+/// A store whose one person is chuck, with a narrative that includes one
+/// proposed claim, a cause with one new version that names it, and one
+/// other proposed claim; giving the narrative's version and the cause's.
+fn three_waiting(place: &Place) -> (String, String) {
+    let chuck = place.made_by("chuck");
+    place.proposed(STATUS, "A record never holds its status.");
+    let story = version(&place.narrative(NAME, TITLE, NARRATIVE, &["--includes", STATUS]));
+    let money = place.proposed(MONEY, "Every amount names its currency.");
+    place.accepted(MONEY, &money, &chuck);
+    let cause = place.proposed(CAUSE, "A claim names no plan.");
+    place.json(&[
+        "propose",
+        "invariant",
+        MONEY,
+        "Each amount names its currency.",
+        "--amends",
+        &money,
+        "--cause",
+        CAUSE,
+        "--provenance",
+        "run-2",
+    ]);
+    place.proposed(AMOUNTS, "Amounts are kept in cents.");
+    (story, cause)
+}
+
+#[test]
+fn the_view_of_three_batches() {
+    let place = Place::new();
+    let (story, cause) = three_waiting(&place);
+    let page = served(&place, &[]);
+    let html = page.at("waiting").body;
+    let views = between(&bar(&html), "<nav class=\"views\"", "</nav>");
+    assert!(
+        views.contains("aria-current=\"page\">Waiting on you<span class=\"waits\">3</span></a>"),
+        "{views}"
+    );
+    for shape in ["narrative", "revision", "ruling"] {
+        assert!(
+            html.contains(&format!("<span class=\"shape\">{shape}</span>")),
+            "{shape}: {html}"
+        );
+    }
+    assert!(
+        html.contains(&format!("boom accept {NAME}@{story} --key &lt;key&gt;")),
+        "{html}"
+    );
+    assert!(
+        html.contains(&format!(
+            "boom accept --cause {CAUSE}@{cause} --key &lt;key&gt;"
+        )),
+        "{html}"
+    );
+    assert!(
+        html.contains(&format!("href=\"/{}/n/{NAME}@{story}\"", page.token)),
+        "{html}"
+    );
+    assert!(
+        html.contains("1 narrative · 1 claim it includes is proposed"),
+        "{html}"
+    );
+    assert!(
+        html.contains("boom accept --waiting --key &lt;key&gt;"),
+        "{html}"
+    );
+    // A revision gives each claim's old words and its new.
+    assert!(
+        html.contains("<del>Every amount names its currency.</del>"),
+        "{html}"
+    );
+}
+
+#[test]
+fn a_narrative_batch_refused() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let status = place.proposed(STATUS, "A record never holds its status.");
+    let story = version(&place.narrative(NAME, TITLE, NARRATIVE, &["--includes", STATUS]));
+    place.json(&[
+        "reject",
+        &format!("{STATUS}@{status}"),
+        "--reason",
+        "Too narrow.",
+        "--key",
+        &chuck,
+    ]);
+    let page = served(&place, &[]);
+    let html = page.at("waiting").body;
+    assert!(
+        html.contains(&format!(
+            "Boom refuses this accept: {STATUS}@{status} is rejected"
+        )),
+        "{html}"
+    );
+    assert!(
+        !html.contains(&format!("boom accept {NAME}@{story} --key")),
+        "{html}"
+    );
+}
+
+#[test]
+fn nothing_waits_on_the_page() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let page = served(&place, &[]);
+    let html = page.at("waiting").body;
+    assert!(html.contains("Nothing waits on you"), "{html}");
+    let views = between(&bar(&html), "<nav class=\"views\"", "</nav>");
+    assert!(!views.contains("class=\"waits\""), "{views}");
+}
+
+#[test]
+fn what_the_accept_takes() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let status = place.proposed(STATUS, "A record never holds its status.");
+    let money = place.proposed(MONEY, "Every amount names its currency.");
+    place.accepted(MONEY, &money, &chuck);
+    let story = version(&place.narrative(
+        NAME,
+        TITLE,
+        NARRATIVE,
+        &["--includes", STATUS, "--includes", MONEY],
+    ));
+    let html = after_body(&html(&place, NAME, Some(&story), Some("chuck")));
+    assert!(
+        html.contains(&format!("boom accept {NAME}@{story} --key &lt;key&gt;")),
+        "{html}"
+    );
+    assert!(
+        html.contains("This accept takes 2 versions in one entry"),
+        "{html}"
+    );
+    assert!(
+        html.contains(&format!("<li>narrative <code>{NAME}@{story}</code></li>")),
+        "{html}"
+    );
+    assert!(
+        html.contains(&format!(
+            "<li>invariant <code>{STATUS}@{status}</code></li>"
+        )),
+        "{html}"
+    );
+    assert!(
+        !html.contains(&format!("<code>{MONEY}@{money}</code></li>")),
+        "{html}"
+    );
+}
+
+#[test]
+fn an_include_that_refuses_the_accept() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let status = place.proposed(STATUS, "A record never holds its status.");
+    let story = version(&place.narrative(NAME, TITLE, NARRATIVE, &["--includes", STATUS]));
+    place.json(&[
+        "reject",
+        &format!("{STATUS}@{status}"),
+        "--reason",
+        "Too narrow.",
+        "--key",
+        &chuck,
+    ]);
+    let html = after_body(&html(&place, NAME, Some(&story), Some("chuck")));
+    assert!(
+        html.contains(&format!(
+            "Boom refuses its accept: {STATUS}@{status} is rejected"
+        )),
+        "{html}"
+    );
+    assert!(
+        !html.contains(&format!("boom accept {NAME}@{story}")),
+        "{html}"
+    );
 }

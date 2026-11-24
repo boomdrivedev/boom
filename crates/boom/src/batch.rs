@@ -49,6 +49,10 @@ pub struct Named {
     pub kind: Kind,
     /// Its status now.
     pub status: Status,
+    /// Its statement.
+    pub statement: String,
+    /// The version it amends, where it amends one.
+    pub base: Option<String>,
 }
 
 impl Named {
@@ -58,6 +62,8 @@ impl Named {
             version: version.proposal.version.clone(),
             kind: version.proposal.kind,
             status: version.status,
+            statement: version.proposal.statement.clone(),
+            base: version.proposal.base.clone(),
         }
     }
 

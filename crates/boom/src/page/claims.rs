@@ -336,6 +336,7 @@ pub fn view_page(
         view: Some(view),
         side: Some(levels_side(of, &levels, &path, &query, &filters)),
         query: "",
+        waiting: super::waiting_count(conn)?,
     };
     Ok(Ok(shell(&page, &main)))
 }
@@ -912,6 +913,7 @@ pub fn claim_page(
         view: Some(CLAIMS),
         side: Some(levels_side(Of::Claims, &levels, &path, "", &filters)),
         query: "",
+        waiting: super::waiting_count(conn)?,
     };
     Ok(shell(&page, &main))
 }

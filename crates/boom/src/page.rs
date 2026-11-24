@@ -30,6 +30,7 @@ use crate::view::Book;
 use crate::Failure;
 
 mod claims;
+mod waiting;
 
 /// The policy of each response: nothing from another host, no script
 /// but the page's own origin's, which serves Mermaid's alone, the style
@@ -360,10 +361,22 @@ pub const CLAIMS: View = View {
     path: "/claims/",
 };
 
+/// What waits on the person: `<base>/waiting`, each batch with its one
+/// command (narrative-page, "The view \"Waiting on you\"").
+pub const WAITING: View = View {
+    words: "Waiting on you",
+    path: "/waiting",
+};
+
 /// Each view that boom serves, in the bar's order (narrative-page, "One
 /// shell for each view"; claims-view, "The views in the bar"). A later
 /// view adds itself here and its routes.
-pub const VIEWS: &[View] = &[BOOK, RULES, DECISIONS, TERMS, CLAIMS];
+pub const VIEWS: &[View] = &[WAITING, BOOK, RULES, DECISIONS, TERMS, CLAIMS];
+
+/// The number of batches that wait on a person, which the bar gives.
+fn waiting_count(conn: &rusqlite::Connection) -> Result<usize, Failure> {
+    Ok(crate::batch::waiting(conn)?.len())
+}
 
 /// What the shell of a page holds besides its `<main>`.
 struct Shell<'a> {
@@ -379,6 +392,8 @@ struct Shell<'a> {
     side: Option<String>,
     /// The words of the search, given back in its field.
     query: &'a str,
+    /// The number of batches that wait on a person.
+    waiting: usize,
 }
 
 /// The whole document around `main`: the bar with each view, the search
@@ -406,8 +421,13 @@ fn shell(page: &Shell<'_>, main: &str) -> String {
             } else {
                 ""
             };
+            let count = if *view == WAITING && page.waiting > 0 {
+                format!("<span class=\"waits\">{}</span>", page.waiting)
+            } else {
+                String::new()
+            };
             format!(
-                "<a href=\"{base}{}\"{current}>{}</a>",
+                "<a href=\"{base}{}\"{current}>{}{count}</a>",
                 view.path, view.words
             )
         })
@@ -549,6 +569,27 @@ pre.mermaid{background:#fff;color:#1d1d1f;border-color:#dcdce2}
 pre.mermaid[data-processed]{font:inherit;text-align:center}
 pre.mermaid svg{max-width:100%;height:auto}
 footer.hint{max-width:46rem;margin:0 auto;padding:0 1rem 2rem}
+.bar .views .waits{display:inline-block;margin-left:.3rem;padding:0 .35rem;border-radius:9px;background:var(--note-edge);color:#fff;font-size:11px}
+.how,.total{margin:.4rem 0 1rem;padding:.6rem .8rem;border-radius:6px;border:1px solid var(--line);background:var(--card);font:14px/1.5 system-ui,sans-serif}
+.how p{margin:0}.how ul{margin:.3rem 0 0;padding-left:1.2rem}
+.total{background:var(--done);border-color:var(--done-edge)}
+section.wait{margin:1rem 0;padding:.9rem 1rem;border:1.5px dashed var(--claim-edge);border-radius:8px;background:var(--card);scroll-margin-top:1rem}
+section.wait.ruling{border-color:var(--note-edge)}
+section.wait.revision{border-color:var(--soft)}
+section.wait .hd{margin:0;font:13px/1.4 system-ui,sans-serif;color:var(--soft)}
+.shape{display:inline-block;margin-right:.4rem;padding:0 .4rem;border-radius:4px;font:700 11px/1.6 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:var(--claim-edge)}
+.ruling .shape{background:var(--note-edge)}
+.revision .shape{background:var(--soft)}
+section.wait h3{margin:.35rem 0 .2rem;font:600 1.15rem/1.3 system-ui,sans-serif}
+section.wait p{margin:.25rem 0}
+section.wait .counts{font:600 14px/1.5 system-ui,sans-serif}
+section.wait .read{font:14px/1.5 system-ui,sans-serif}
+.cmdl{font:12px/1.4 system-ui,sans-serif;color:var(--soft);margin-top:.5rem}
+details.takes{font:14px/1.5 system-ui,sans-serif;margin:.3rem 0}
+details.takes>summary{cursor:pointer;color:var(--soft);font-size:13px}
+.diff p{margin:.15rem 0;padding:.2rem .5rem;border-radius:4px}
+.diff .o{background:color-mix(in srgb,#b4452c 12%,transparent)}
+.diff .w{background:var(--claim)}
 ";
 
 /// The binding of a version in words.
@@ -737,11 +778,39 @@ pub fn narrative_page(
         }
     }
     if shown.status == judge::Status::Proposed {
-        let _ = writeln!(
-            main,
-            "<h2>To accept</h2>\n<p class=\"hint\">In your terminal, with your key:</p>\n<pre>boom accept {} --key &lt;key&gt;</pre>",
-            escape(&at)
-        );
+        // What its accept takes: the narrative and each proposed version
+        // it includes, or the closed versions that refuse it
+        // (narrative-page, "A narrative's page lists what its accept
+        // takes").
+        let takes = crate::batch::of_narrative(&state, name, shown);
+        main.push_str("<h2>To accept</h2>\n");
+        if takes.closed.is_empty() {
+            let _ = writeln!(
+                main,
+                "<p class=\"hint\">In your terminal, with your key:</p>\n<pre>boom accept {} --key &lt;key&gt;</pre>\n<p class=\"hint\">This accept takes {} in one entry:</p>\n<ul class=\"edges takes\">",
+                escape(&at),
+                if takes.versions.len() == 1 {
+                    "1 version".to_owned()
+                } else {
+                    format!("{} versions", takes.versions.len())
+                }
+            );
+            for named in &takes.versions {
+                let _ = writeln!(
+                    main,
+                    "<li>{} <code>{}</code></li>",
+                    named.kind.as_str(),
+                    escape(&named.target())
+                );
+            }
+            main.push_str("</ul>\n");
+        } else {
+            let _ = writeln!(
+                main,
+                "<p class=\"unheld\">Boom refuses its accept: {}. Its author proposes a new version that names the current ones.</p>",
+                escape(&crate::batch::closed_words(&takes.closed))
+            );
+        }
     }
     let (_, book) = book_of(conn, None)?;
     main.push_str(&neighbors(&book, name, base));
@@ -752,6 +821,7 @@ pub fn narrative_page(
         view: Some(BOOK),
         side: Some(book_side(&book, base, BOOK.path, Some(name))),
         query: "",
+        waiting: waiting_count(conn)?,
     };
     Ok(shell(&page, &main))
 }
@@ -1086,6 +1156,7 @@ pub fn book_page(
         view: Some(BOOK),
         side: Some(book_side(&book, base, &home, None)),
         query: "",
+        waiting: waiting_count(conn)?,
     };
     Ok(shell(&page, &main))
 }
@@ -1129,6 +1200,7 @@ pub fn search_page(
         view: None,
         side: Some(book_side(&book, base, BOOK.path, None)),
         query,
+        waiting: waiting_count(conn)?,
     };
     Ok(shell(&page, &main))
 }
@@ -1411,6 +1483,9 @@ impl Server {
             }
             ("GET" | "HEAD", None) if rest.is_empty() => {
                 self.read(|conn| book_page(conn, None, &self.context))
+            }
+            ("GET" | "HEAD", None) if rest == "waiting" => {
+                self.read(|conn| waiting::waiting_page(conn, &self.context))
             }
             ("GET" | "HEAD", None) if rest == "search" => {
                 let words = form(query_of(url))

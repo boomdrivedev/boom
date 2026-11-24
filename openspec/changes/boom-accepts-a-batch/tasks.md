@@ -25,8 +25,8 @@ scenario of the delta specs is one test, named by its scenario:
 
 ## 4. The page
 
-- [ ] 4.1 In `page.rs`, add the view "Waiting on you" at `<base>/waiting`, first in the bar with its count. Tests for "The view of three batches", "A narrative batch refused" and "Nothing waits". Proved by `boom:test`
-- [ ] 4.2 On a narrative's page, list under "To accept" what its accept takes, or name the includes that refuse it. Tests for "What the accept takes" and "An include that refuses the accept". Proved by `boom:test`
+- [x] 4.1 In `page.rs`, add the view "Waiting on you" at `<base>/waiting`, first in the bar with its count. Tests for "The view of three batches", "A narrative batch refused" and "Nothing waits". Proved by `boom:test`
+- [x] 4.2 On a narrative's page, list under "To accept" what its accept takes, or name the includes that refuse it. Tests for "What the accept takes" and "An include that refuses the accept". Proved by `boom:test`
 
 ## 5. The words
 
