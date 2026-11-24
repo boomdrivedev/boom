@@ -276,6 +276,26 @@ fn an_amendment_answers_the_note() {
 }
 
 #[test]
+fn the_notes_on_an_old_draft() {
+    let place = Place::new();
+    let (_, v1) = one_narrative(&place);
+    let note = place.noted(&format!("{NAME}@{v1}"), 3, DRIVE)["note"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let answer = format!("{note}=Section 10 now says it.");
+    let outcome = amend(&place, &v1, &["--answers", &answer, "--json"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    let v2 = version(&serde_json::from_str(&outcome.stdout).unwrap());
+    // The draft that the note is on is superseded, and the new draft
+    // answers its note.
+    assert_eq!(place.show(&format!("{NAME}@{v1}"))["status"], "superseded");
+    let shown = place.show(NAME);
+    assert_eq!(shown["notes"][0]["status"], "answered");
+    assert_eq!(shown["notes"][0]["answer"]["version"], v2.as_str());
+}
+
+#[test]
 fn an_amendment_that_leaves_a_note_open() {
     let place = Place::new();
     let (_, v1) = one_narrative(&place);
