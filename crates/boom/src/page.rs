@@ -470,6 +470,7 @@ h2{font:600 1.05rem/1.3 system-ui,sans-serif;margin:2.2rem 0 .6rem;padding-top:1
 .p{position:relative;padding:.1rem 0 .1rem 3rem;border-radius:6px;scroll-margin-top:1rem}
 .p:target{background:var(--card);box-shadow:0 0 0 1px var(--line)}
 .p>.n{position:absolute;left:0;top:.35rem;width:2.5rem;text-align:right;font:12px/1.6 system-ui,sans-serif;color:var(--soft);text-decoration:none}
+.p>.text{overflow-x:auto}
 .p>.text>:first-child{margin-top:.3rem}
 .p>.text>:last-child{margin-bottom:.3rem}
 details.write{font:13px/1.4 system-ui,sans-serif;margin:0 0 .6rem}
