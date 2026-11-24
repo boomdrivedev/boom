@@ -41,7 +41,11 @@ session in full, the decisions, the assumptions and the contexts by
 name, and a menu. `boom hook pre-tool-use` stops the first edit of a
 file in a context in a session, gives the rules of that context with
 their bodies, and the agent makes the edit again. Each hook shows the
-person one line. Boom keeps the contexts that a session got in
+person one line. Its skills `using-boom`, `proposing-claims` and
+`writing-narratives` teach an agent to read, propose and explain
+claims, and `boom propose` warns of each plan word, such as `wave` or
+`happy path`, in a statement or a body, and never refuses for one.
+Boom keeps the contexts that a session got in
 `$XDG_STATE_HOME/boom/sessions/<session_id>/`, outside each repository
 and the store.
 A term is a word and its meaning in one repository, with the old words

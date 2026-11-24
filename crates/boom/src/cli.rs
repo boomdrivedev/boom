@@ -683,13 +683,13 @@ where
             bytes: None,
             code: 0,
             stdout: format!("{}\n", answer.json),
-            stderr: answer.words,
+            stderr: format!("{}{}", plan_word_warnings(&answer.json), answer.words),
         },
         Ok(answer) => Outcome {
             bytes: None,
             code: 0,
+            stderr: plan_word_warnings(&answer.json),
             stdout: answer.words,
-            stderr: String::new(),
         },
         Err(failure) => failed(cli.json, failure),
     }
@@ -1529,6 +1529,7 @@ fn propose(
         }
         None => None,
     };
+    let plan_words = plan_words_of(&proposed.statement, body.as_deref())?;
     match proposed.kind {
         Kind::Context if proposed.names_its_binding() => {
             return Err(Failure::refused(
@@ -1853,9 +1854,47 @@ fn propose(
             "narratives": proposal.narratives,
             "cause": proposal.cause,
             "accept": accept,
+            "plan_words": plan_words,
         }),
         words,
     })
+}
+
+/// Each plan word in a proposal's statement and body, as the JSON of
+/// `plan_words` gives it: the word, `statement` or `body`, and the line
+/// of the body (claim-versions, "A proposal warns of plan words").
+fn plan_words_of(statement: &str, body: Option<&[u8]>) -> Result<Vec<Value>, Failure> {
+    let mut words: Vec<Value> = crate::terms::plan_words(statement)?
+        .into_iter()
+        .map(|found| json!({"word": found.word, "in": "statement", "line": null}))
+        .collect();
+    if let Some(text) = body.and_then(|bytes| std::str::from_utf8(bytes).ok()) {
+        words.extend(
+            crate::terms::plan_words(text)?
+                .into_iter()
+                .map(|found| json!({"word": found.word, "in": "body", "line": found.line})),
+        );
+    }
+    Ok(words)
+}
+
+/// The warning of each plan word that an answer's `plan_words` gives, one
+/// line each, for standard error.
+fn plan_word_warnings(json: &Value) -> String {
+    let Some(words) = json.get("plan_words").and_then(Value::as_array) else {
+        return String::new();
+    };
+    words
+        .iter()
+        .map(|found| {
+            let word = found["word"].as_str().unwrap_or_default();
+            let place = match found["line"].as_u64() {
+                Some(line) => format!("in line {line} of the body"),
+                None => "in the statement".to_owned(),
+            };
+            format!("warning: \"{word}\" names a plan, {place}. A claim says what the system is.\n")
+        })
+        .collect()
 }
 
 /// `boom note`: a person's note on one paragraph of a version of a

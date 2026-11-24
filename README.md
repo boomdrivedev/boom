@@ -266,6 +266,17 @@ claims that hold.
   `boom accept --waiting` lists each batch with its one command, and
   with the key accepts them all. `boom page` gives them first, under
   "Waiting on you", with the number in the bar.
+- **A proposal warns of a plan word.** A claim says what the system is
+  and does, and never the plan. `boom propose` warns of each plan word
+  in the statement or the body: `wave`, `phase`, `milestone`, `sprint`,
+  `epic`, `user story`, `roadmap`, `MVP`, `stretch goal`, `nice to
+  have`, `stopgap`, `interim`, `for now`, `until then`, `not built yet`,
+  `happy path`, `sad path`, `unhappy path`, `TODO`, `TBD`, `WIP` and
+  `FIXME`. A plan word matches as an old word of a term matches, and a
+  line with `boom: allow <word>` gives none. Each warning names the word
+  and its line on standard error, and `--json` and the MCP tool
+  `propose` give each one in `plan_words`. Boom never refuses for a
+  plan word, and appends the version as before.
 
 ```sh
 boom init --person ada --key ~/.ssh/id_ed25519_sk
@@ -322,6 +333,14 @@ standard input and answers with the JSON of Claude Code, or nothing.
   gives the rules of that context, each with its body: what breaks the
   rule, what does not, and its source. The agent then makes the edit
   again, and the hook is silent for that context in that session.
+- Three skills teach an agent to use Boom, in any repository that boom
+  serves and with no other tool. `using-boom` reads and cites claims,
+  and names the acts that are a person's. `proposing-claims` proposes
+  each kind: its fields, Plain, no plan word, the narrowest level, the
+  links, drafts and batches. `writing-narratives` explains a design in
+  a narrative with its claims, answers a note and orders the book. A
+  stage of a flume kind names the skills that its agent loads, as
+  `boom:<skill>`.
 - Each hook that gives claims shows the person one line, such as
   `Boom: 39 claims for sluice, at entry 217` or
   `Boom: 4 rules and 1 decision for sluice-host`.
@@ -404,7 +423,7 @@ tag.
 | path | what |
 |---|---|
 | `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import`, `query`, `search`, `repo`, `terms check` and `mcp` |
-| `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom hook session-start` and its `PreToolUse` hook running `boom hook pre-tool-use`, listed by the marketplace in `.claude-plugin/` |
+| `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom hook session-start`, its `PreToolUse` hook running `boom hook pre-tool-use` and its skills `using-boom`, `proposing-claims` and `writing-narratives`, listed by the marketplace in `.claude-plugin/` |
 | `check-terms.sh` | the gate's terms task: `boom terms check` on the files that a change adds or modifies |
 | `flake.nix`, `nix/` | boom's flake, giving `boom` and `boom-claude-plugin` at one version, and its offline checks |
 | `.github/workflows/release.yml` | the release: a landing with a new version, tagged on a release commit off main, its binaries built by cargo |
