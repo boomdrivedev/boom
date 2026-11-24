@@ -501,9 +501,9 @@ fn filter_form(
         levels,
         filters.level.as_deref(),
     ));
-    let _ = write!(
+    let _ = writeln!(
         html,
-        "<label>words <input type=\"search\" name=\"q\" value=\"{}\" placeholder=\"Words to find\"></label><button type=\"submit\">Show</button></form>\n",
+        "<label>words <input type=\"search\" name=\"q\" value=\"{}\" placeholder=\"Words to find\"></label><button type=\"submit\">Show</button></form>",
         escape(&filters.q)
     );
     html
