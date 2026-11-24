@@ -10,7 +10,7 @@ every version read from the log (record 0005, point 2; interview:
 
 ### Requirement: A claim and its name
 
-A claim SHALL have one kind: `invariant`, `decision`, `assumption`, `term`, `context` or `narrative`. The first proposal SHALL fix the kind and the name. A name SHALL be kebab case: lowercase letters and digits, in words that single hyphens join. Each version SHALL have a statement of one line. A decision version and a narrative version SHALL also have a body. Another version MAY have a body. A new version SHALL have no scenarios. An old version SHALL keep the scenarios that its entry holds.
+A claim SHALL have one kind: `invariant`, `decision`, `assumption`, `term`, `context`, `narrative` or `outline`. The first proposal SHALL fix the kind and the name. A name SHALL be kebab case: lowercase letters and digits, in words that single hyphens join. Each version SHALL have a statement of one line. A decision and a narrative SHALL also have a body. Another kind MAY have one. A new version SHALL have no scenarios. An old version SHALL keep the scenarios that its entry holds.
 
 #### Scenario: A claim proposed
 
@@ -61,6 +61,11 @@ A claim SHALL have one kind: `invariant`, `decision`, `assumption`, `term`, `con
 
 - **WHEN** an agent proposes a narrative with a title of one line and `--body`
 - **THEN** boom exits 0, and `boom show <name> --json` gives the kind `narrative`
+
+#### Scenario: An outline with its title
+
+- **WHEN** an agent proposes an outline with a title of one line, `--view book`, one `--narrative` and no `--body`
+- **THEN** boom exits 0, and `boom show <name> --json` gives the kind `outline`
 
 ### Requirement: A version is the fingerprint of its content
 
