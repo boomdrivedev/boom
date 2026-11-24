@@ -56,5 +56,6 @@ None.
 - The decision `a-new-draft-replaces-the-one-before`, proposed in Boom
   for a person to accept.
 - No change to the log's format or to the fingerprint of a version.
-  Today's store reads under the new rule: 39 drafts that a newer draft
-  amends become `superseded`, and each of its 599 entries still counts.
+  Today's store reads under the new rule: 38 drafts that a newer draft
+  amends become `superseded`, and each entry that counts under main's
+  boom still counts.

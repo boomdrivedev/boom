@@ -142,12 +142,18 @@ this change read under the new rule. The views' form goes from 8 to 9,
 and each store builds its views again from its log when a command opens
 it.
 
-A copy of today's store, at entry 599, holds 39 drafts that a later
-draft amends. Under the new rule each of the 39 is `superseded`. No
-person accepted or rejected one of them, and no proposal amends one of
-them a second time. Thus each of the 599 entries still counts. `boom
-verify` on the copy names the view `versions` as built again, and
-nothing else. The store holds no note, so the notes change nothing.
+A copy of today's store, at entry 600, holds 39 drafts that a later
+draft amends. Main's boom already refuses entries 338 and 352, two
+versions of the narrative `decisions-that-check-themselves` that bind
+two repositories, under the rule that a narrative binds one level. Thus
+38 of the drafts count, and under the new rule each of the 38 is
+`superseded`. No person accepted or rejected one of them, and no
+proposal amends one of them a second time. Thus each entry that counts
+under main's boom still counts. On two copies of the store, `boom
+verify` of main's boom and of this change's boom build the same
+judgments and the same edges. Their versions differ in the 38 drafts
+alone, and their `views_head` in its form alone. The store holds no
+note, so the notes change nothing.
 
 `new-design-goes-into-boom-not-blueprints@bd68243ee18f` amends the draft
 `a43ac547d4e6`, and its accept checks no version. The first version
