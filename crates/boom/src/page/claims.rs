@@ -317,7 +317,7 @@ pub fn view_page(
     let counted = |count: usize| if count == 1 { one } else { many };
     let _ = writeln!(
         main,
-        "<p class=\"meta count\">{} accepted {} · {} proposed {}, at entry {entry} of the store's log</p>",
+        "<p class=\"meta tally\">{} accepted {} · {} proposed {}, at entry {entry} of the store's log</p>",
         accepted.len(),
         counted(accepted.len()),
         proposed.len(),

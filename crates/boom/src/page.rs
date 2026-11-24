@@ -451,7 +451,8 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size
 pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:.7rem .9rem;overflow-x:auto}
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1.2rem;padding:.6rem 1rem;border-bottom:1px solid var(--line);font:13px/1.4 system-ui,sans-serif;color:var(--soft)}
 .bar .name{font-weight:700;color:var(--ink)}
-.bar .views{display:flex;gap:1rem}
+.bar .views{display:flex;flex-wrap:wrap;gap:.2rem 1rem}
+.bar .views a{white-space:nowrap}
 .bar .views a{color:var(--soft);text-decoration:none;font-weight:600;padding:.15rem 0;border-bottom:2px solid transparent}
 .bar .views a[aria-current]{color:var(--ink);border-bottom-color:var(--claim-edge)}
 .bar .entry{margin-left:auto}
