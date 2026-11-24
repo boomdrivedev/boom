@@ -300,6 +300,164 @@ fn the_same_words_on_the_new_base_stand() {
     assert_eq!(place.status("money-has-currency", &one), "superseded");
 }
 
+/// A store of ada's with `money-has-currency@<v1>` accepted, `<v2>`
+/// amending `<v1>` and `<v3>` amending the draft `<v2>`, giving ada's
+/// key and the three versions.
+fn a_draft_of_a_draft(place: &Place) -> (String, [String; 3]) {
+    let ada = place.made();
+    let v1 = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &v1, &ada);
+    let v2 = place.amended("money-has-currency", ONE, &v1);
+    let v3 = place.amended("money-has-currency", ISO, &v2);
+    (ada, [v1, v2, v3])
+}
+
+#[test]
+fn a_draft_amended() {
+    let place = Place::new();
+    let (_, [v1, v2, v3]) = a_draft_of_a_draft(&place);
+    let shown = place.show("money-has-currency");
+    assert_eq!(shown["accepted"], v1.as_str());
+    assert_eq!(shown["newest"]["version"], v3.as_str());
+    assert_eq!(place.status("money-has-currency", &v2), "superseded");
+    assert_eq!(place.status("money-has-currency", &v3), "proposed");
+    let versions = shown["versions"].as_array().unwrap();
+    assert_eq!(versions[1]["status"], "superseded");
+    assert_eq!(versions[1]["accepted_by"], json!(null));
+}
+
+#[test]
+fn the_newest_draft_accepted() {
+    let place = Place::new();
+    let (ada, [v1, v2, v3]) = a_draft_of_a_draft(&place);
+    place.accepted("money-has-currency", &v3, &ada);
+    assert_eq!(place.status("money-has-currency", &v3), "accepted");
+    assert_eq!(place.status("money-has-currency", &v1), "superseded");
+    assert_eq!(place.status("money-has-currency", &v2), "superseded");
+    assert_eq!(place.show("money-has-currency")["accepted"], v3.as_str());
+}
+
+#[test]
+fn a_first_draft_amended() {
+    let place = Place::new();
+    let ada = place.made();
+    let v1 = place.proposed("money-has-currency", MONEY);
+    let v2 = place.amended("money-has-currency", ONE, &v1);
+    assert_eq!(place.status("money-has-currency", &v1), "superseded");
+    place.accepted("money-has-currency", &v2, &ada);
+    assert_eq!(place.status("money-has-currency", &v2), "accepted");
+    assert_eq!(place.status("money-has-currency", &v1), "superseded");
+}
+
+#[test]
+fn an_old_draft_accepted() {
+    let place = Place::new();
+    let (ada, [_, v2, v3]) = a_draft_of_a_draft(&place);
+    let before = place.log();
+    place.refused(
+        &["accept", &format!("money-has-currency@{v2}"), "--key", &ada],
+        &format!("superseded by the newer draft money-has-currency@{v3}"),
+    );
+    assert_eq!(place.log(), before);
+}
+
+#[test]
+fn an_old_draft_rejected() {
+    let place = Place::new();
+    let (ada, [_, v2, v3]) = a_draft_of_a_draft(&place);
+    let before = place.log();
+    place.refused(
+        &[
+            "reject",
+            &format!("money-has-currency@{v2}"),
+            "--reason",
+            "Too narrow.",
+            "--key",
+            &ada,
+        ],
+        &format!("superseded by the newer draft money-has-currency@{v3}"),
+    );
+    assert_eq!(place.log(), before);
+}
+
+#[test]
+fn an_old_draft_amended() {
+    let place = Place::new();
+    let (_, [_, v2, v3]) = a_draft_of_a_draft(&place);
+    let before = place.log();
+    place.refused(
+        &[
+            "propose",
+            "invariant",
+            "money-has-currency",
+            "Every amount names its currency, always.",
+            "--amends",
+            &v2,
+            "--provenance",
+            "run-3",
+        ],
+        &format!("amend that draft, with --amends {v3}"),
+    );
+    assert_eq!(place.log(), before);
+}
+
+#[test]
+fn the_newer_draft_rejected() {
+    let place = Place::new();
+    let (ada, [_, v2, v3]) = a_draft_of_a_draft(&place);
+    let target = format!("money-has-currency@{v3}");
+    place.json(&["reject", &target, "--reason", "Too narrow.", "--key", &ada]);
+    assert_eq!(place.status("money-has-currency", &v3), "rejected");
+    assert_eq!(place.status("money-has-currency", &v2), "superseded");
+}
+
+#[test]
+fn a_log_from_before_this_rule() {
+    let place = Place::new();
+    let (_, [_, v2, _]) = a_draft_of_a_draft(&place);
+    // Views as the release before this rule wrote them: form 8, with the
+    // old draft still proposed.
+    place
+        .sqlite()
+        .execute_batch(&format!(
+            "UPDATE versions SET status = 'proposed' WHERE version = '{v2}'; \
+             UPDATE views_head SET form = 8;"
+        ))
+        .unwrap();
+    assert_eq!(place.status("money-has-currency", &v2), "superseded");
+    assert_eq!(place.json(&["verify"])["rebuilt"], json!([]));
+}
+
+#[test]
+fn an_amendment_of_a_rejected_version() {
+    let place = Place::new();
+    let ada = place.made();
+    let v1 = place.proposed("money-has-currency", MONEY);
+    place.accepted("money-has-currency", &v1, &ada);
+    let v2 = place.amended("money-has-currency", ONE, &v1);
+    let target = format!("money-has-currency@{v2}");
+    place.json(&["reject", &target, "--reason", "Too narrow.", "--key", &ada]);
+    let v3 = place.amended("money-has-currency", ISO, &v2);
+    place.accepted("money-has-currency", &v3, &ada);
+    assert_eq!(place.status("money-has-currency", &v3), "accepted");
+    assert_eq!(place.status("money-has-currency", &v2), "rejected");
+}
+
+#[test]
+fn a_draft_of_a_draft_on_an_old_base() {
+    let place = Place::new();
+    let ada = place.made();
+    let v1 = place.proposed("money-has-currency", MONEY);
+    let v2 = place.amended("money-has-currency", ONE, &v1);
+    let w1 = place.proposed("money-has-currency", ISO);
+    place.accepted("money-has-currency", &w1, &ada);
+    place.refused(
+        &["accept", &format!("money-has-currency@{v2}"), "--key", &ada],
+        &format!("money-has-currency@{w1} is accepted"),
+    );
+    assert_eq!(place.status("money-has-currency", &v2), "proposed");
+}
+
 #[test]
 fn proposed_standing_replaced() {
     let place = Place::new();
