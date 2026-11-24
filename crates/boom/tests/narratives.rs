@@ -331,6 +331,7 @@ fn an_open_note_shown() {
         shown["notes"],
         json!([{
             "note": note["note"],
+            "narrative": NAME,
             "version": version(&answer),
             "paragraph": 3,
             "fingerprint": note["fingerprint"],
@@ -338,6 +339,7 @@ fn an_open_note_shown() {
             "words": "Say what a drive is.",
             "at": 1_763_424_000u64,
             "entry": note["entry"],
+            "elaboration": null,
             "status": "open",
             "answer": null,
         }])

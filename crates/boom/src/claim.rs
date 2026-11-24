@@ -207,8 +207,8 @@ impl Answer {
 }
 
 /// Where a version came from: a file boom keeps by the fingerprint of
-/// its bytes, or a file in a commit of a repository (claim-edges, "The
-/// origin of a claim").
+/// its bytes, a file in a commit of a repository, or the elaboration
+/// that made it (claim-edges, "The origin of a claim").
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub enum Origin {
@@ -228,10 +228,24 @@ pub enum Origin {
         /// The file's path in the commit, relative.
         path: String,
     },
+    /// The elaboration that a version came from,
+    /// `elaboration:<repository>/<name>`, as sounding names it.
+    Elaboration {
+        /// The repository, as boom names repositories.
+        repository: String,
+        /// The elaboration's name in its repository.
+        name: String,
+    },
 }
 
 /// The prefix of an origin that names a file in a commit.
 pub const GIT: &str = "git:";
+
+/// The prefix of an origin that names an elaboration.
+pub const ELABORATION: &str = "elaboration:";
+
+/// The form of an elaboration as `--origin` names it.
+const ELABORATION_FORM: &str = "an elaboration is elaboration:<repository>/<name>";
 
 impl Origin {
     /// A file in a commit, read from `git:<repository>@<commit>:<path>`.
@@ -258,8 +272,38 @@ impl Origin {
         Ok(origin)
     }
 
+    /// The elaboration `elaboration:<repository>/<name>` names.
+    pub fn elaboration(reference: &str) -> Result<Origin, String> {
+        let rest = reference
+            .strip_prefix(ELABORATION)
+            .ok_or_else(|| format!("{ELABORATION_FORM}: {reference} is not"))?;
+        let (repository, name) = rest
+            .split_once('/')
+            .ok_or_else(|| format!("{ELABORATION_FORM}: {reference} names no name"))?;
+        Origin::elaboration_of(repository, name)
+    }
+
+    /// The elaboration `<repository>/<name>` names, as `boom query
+    /// --elaboration` takes it.
+    pub fn elaboration_named(given: &str) -> Result<Origin, String> {
+        let (repository, name) = given.split_once('/').ok_or_else(|| {
+            format!("an elaboration is <repository>/<name>: {given} names no repository")
+        })?;
+        Origin::elaboration_of(repository, name)
+    }
+
+    fn elaboration_of(repository: &str, name: &str) -> Result<Origin, String> {
+        let origin = Origin::Elaboration {
+            repository: repository.to_owned(),
+            name: name.to_owned(),
+        };
+        origin.check()?;
+        Ok(origin)
+    }
+
     /// The origin as a person reads it: `<name>, sha256 <fingerprint>`,
-    /// or `git:<repository>@<commit>:<path>`.
+    /// `git:<repository>@<commit>:<path>` or
+    /// `elaboration:<repository>/<name>`.
     pub fn words(&self) -> String {
         match self {
             Origin::File { name, fingerprint } => format!("{name}, sha256 {fingerprint}"),
@@ -268,6 +312,9 @@ impl Origin {
                 commit,
                 path,
             } => format!("{GIT}{repository}@{commit}:{path}"),
+            Origin::Elaboration { repository, name } => {
+                format!("{ELABORATION}{repository}/{name}")
+            }
         }
     }
 
@@ -318,6 +365,19 @@ impl Origin {
                 {
                     return Err(format!(
                         "the path of a file in a commit is relative, with no `..`: {path} is not"
+                    ));
+                }
+                Ok(())
+            }
+            Origin::Elaboration { repository, name } => {
+                crate::repository::check_name(repository)?;
+                let edge = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
+                let formed = name.chars().next().is_some_and(edge)
+                    && name.chars().next_back().is_some_and(edge)
+                    && name.chars().all(|c| edge(c) || c == '-');
+                if !formed {
+                    return Err(format!(
+                        "an elaboration's name is lowercase letters, digits and hyphens, beginning and ending with a letter or a digit: {name:?} is not"
                     ));
                 }
                 Ok(())
@@ -394,6 +454,14 @@ struct Content<'a> {
 }
 
 impl Proposal {
+    /// The elaboration that this version came from, which its origin
+    /// names, if any (claim-edges).
+    pub fn elaboration(&self) -> Option<&Origin> {
+        self.origin
+            .iter()
+            .find(|origin| matches!(origin, Origin::Elaboration { .. }))
+    }
+
     /// A version with its fingerprint computed from its content.
     pub fn new(
         kind: Kind,
@@ -642,6 +710,19 @@ impl Proposal {
                     origin.words()
                 ));
             }
+        }
+        let elaborations: Vec<String> = self
+            .origin
+            .iter()
+            .filter(|origin| matches!(origin, Origin::Elaboration { .. }))
+            .map(Origin::words)
+            .collect();
+        if elaborations.len() > 1 {
+            return Err(format!(
+                "a version came from one elaboration at most: {} names {}",
+                self.name,
+                elaborations.join(" and ")
+            ));
         }
         Ok(())
     }

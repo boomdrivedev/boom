@@ -336,6 +336,17 @@ impl State {
             })
     }
 
+    /// The elaboration that the version `note` is on came from, which
+    /// that version's origin names; None where it names none
+    /// (narrative-notes).
+    pub fn elaboration_of(&self, note: &Note) -> Option<&crate::claim::Origin> {
+        self.named(&note.narrative)
+            .into_iter()
+            .flat_map(|claim| &claim.versions)
+            .find(|version| version.proposal.version == note.version)
+            .and_then(|version| version.proposal.elaboration())
+    }
+
     /// The notes on the narrative `name` that no version answers.
     pub fn open_notes(&self, name: &str) -> Vec<&Note> {
         self.notes_of(name)

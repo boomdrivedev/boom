@@ -283,7 +283,14 @@ fn a_tools_arguments_are_its_commands() {
     let query = tool(&tools, "query");
     assert_eq!(
         arguments(query),
-        (names(&["repository", "if_declared", "paths"]), vec![])
+        (
+            names(&["repository", "if_declared", "paths", "elaboration"]),
+            vec![]
+        )
+    );
+    assert_eq!(
+        query["inputSchema"]["properties"]["elaboration"]["type"],
+        "string"
     );
     assert_eq!(query["inputSchema"]["properties"]["paths"]["type"], "array");
     assert_eq!(
@@ -845,4 +852,28 @@ fn an_outline_proposed_through_its_tool() {
     assert_eq!(signed["claim"]["kind"], "outline");
     let held = signed["claim"]["narratives"][0].as_str().unwrap();
     assert!(held.starts_with("boom-end-to-end@"), "{held}");
+}
+
+#[test]
+fn the_open_notes_of_an_elaboration_through_its_tool() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let narrative = place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &["--origin", "elaboration:boom/the-design-book"],
+    );
+    let version = narrative["version"].as_str().unwrap();
+    place.noted(
+        &format!("boom-end-to-end@{version}"),
+        3,
+        "Say what a drive is.",
+    );
+    let result = place.call("query", json!({"elaboration": "boom/the-design-book"}));
+    assert_eq!(result["isError"], false, "{result}");
+    let command = place.run(&["query", "--elaboration", "boom/the-design-book", "--json"]);
+    assert_eq!(command.code, 0, "{command:?}");
+    assert_eq!(result["content"][0]["text"], command.stdout.trim());
+    assert_eq!(text(&result)["notes"][0]["narrative"], "boom-end-to-end");
 }

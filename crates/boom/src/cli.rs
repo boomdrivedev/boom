@@ -195,9 +195,11 @@ enum Command {
         #[arg(long = "changes", value_name = "CLAIM")]
         changes: Vec<String>,
         /// Where this version came from: a file, which boom keeps by the
-        /// fingerprint of its bytes, or a file in a commit,
-        /// `git:<repository>@<commit>:<path>`; any number of times.
-        #[arg(long = "origin", value_name = "FILE")]
+        /// fingerprint of its bytes, a file in a commit,
+        /// `git:<repository>@<commit>:<path>`, or the elaboration that made
+        /// it, `elaboration:<repository>/<name>`, one at most; any number of
+        /// times.
+        #[arg(long = "origin", value_name = "ORIGIN")]
         origin: Vec<String>,
         /// For a context, a glob it owns, `<repository>:<pattern>`, the
         /// pattern relative to the root of the repository; any number of
@@ -360,6 +362,10 @@ enum Command {
         /// repository.
         #[arg(long = "path", value_name = "PATH")]
         paths: Vec<String>,
+        /// An elaboration, `<repository>/<name>`, for the open notes on
+        /// the versions that came from it, in place of the claims.
+        #[arg(long, value_name = "ELABORATION")]
+        elaboration: Option<String>,
     },
     /// Find the claims that stand whose words hold every word searched,
     /// in a repository or every repository, the best matches first,
@@ -1000,6 +1006,13 @@ fn execute(
             repository,
             if_declared,
             paths,
+            elaboration: Some(elaboration),
+        } => elaboration_notes(path, &elaboration, repository.is_some(), if_declared, &paths),
+        Command::Query {
+            repository,
+            if_declared,
+            paths,
+            elaboration: None,
         } => query(path, repository.as_deref(), if_declared, &paths, env),
         Command::Search {
             words,
@@ -1330,10 +1343,14 @@ fn origins(given: &[String]) -> Result<(Vec<Origin>, Vec<Vec<u8>>), Failure> {
             kept.push(Origin::git(origin).map_err(Failure::Refused)?);
             continue;
         }
+        if origin.starts_with(crate::claim::ELABORATION) {
+            kept.push(Origin::elaboration(origin).map_err(Failure::Refused)?);
+            continue;
+        }
         let file = Path::new(origin);
         let bytes = std::fs::read(file).map_err(|error| {
             Failure::refused(format!(
-                "the origin {origin} cannot be read: {error}; an origin is a file, or git:<repository>@<commit>:<path>"
+                "the origin {origin} cannot be read: {error}; an origin is a file, git:<repository>@<commit>:<path> or elaboration:<repository>/<name>"
             ))
         })?;
         let name = file
@@ -1894,9 +1911,9 @@ fn edges_words(source: &[String], changes: &[String], origin: &[Origin]) -> Stri
     words
 }
 
-/// An origin as JSON: a file's `name` and `fingerprint`, or a commit's
-/// `repository`, `commit` and `path`, with its `reference` as a person
-/// writes it.
+/// An origin as JSON: a file's `name` and `fingerprint`, a commit's
+/// `repository`, `commit` and `path`, or an elaboration's `repository`
+/// and `elaboration`, with its `reference` as a person writes it.
 fn origin_json(origin: &Origin) -> Value {
     match origin {
         Origin::File { name, fingerprint } => json!({
@@ -1911,6 +1928,11 @@ fn origin_json(origin: &Origin) -> Value {
             "repository": repository,
             "commit": commit,
             "path": path,
+            "reference": origin.words(),
+        }),
+        Origin::Elaboration { repository, name } => json!({
+            "repository": repository,
+            "elaboration": name,
             "reference": origin.words(),
         }),
     }
@@ -2999,9 +3021,9 @@ fn answers_shown(view: &store::VersionView) -> (Value, String) {
 }
 
 /// The notes on the narrative `name`, or on its version `version` alone,
-/// in the order written: each with its paragraph, its person and its
-/// words, and `open` or the version that answers it with its answer
-/// (narrative-notes).
+/// in the order written: each with its paragraph, its person, its words
+/// and its elaboration, and `open` or the version that answers it with
+/// its answer (narrative-notes).
 fn notes_shown(state: &State, name: &str, version: Option<&str>) -> (Value, String) {
     let mut shown = Vec::new();
     let mut words = String::new();
@@ -3009,35 +3031,66 @@ fn notes_shown(state: &State, name: &str, version: Option<&str>) -> (Value, Stri
         if version.is_some_and(|version| version != note.version) {
             continue;
         }
-        let answer = state.answer_of(note);
-        words.push_str(&format!(
-            "note {} on paragraph {} of {name}@{}, by {}: {}\n",
-            note.name, note.paragraph, note.version, note.person, note.words
-        ));
-        match answer {
-            Some((by, answer)) => words.push_str(&format!(
-                "  answered by {name}@{}: {answer}\n",
-                by.proposal.version
-            )),
-            None => words.push_str("  open\n"),
-        }
-        shown.push(json!({
-            "note": note.name,
-            "version": note.version,
-            "paragraph": note.paragraph,
-            "fingerprint": note.fingerprint,
-            "person": note.person,
-            "words": note.words,
-            "at": note.at,
-            "entry": note.noted_in,
-            "status": if answer.is_some() { "answered" } else { "open" },
-            "answer": answer.map(|(by, answer)| json!({
-                "version": by.proposal.version,
-                "words": answer,
-            })),
-        }));
+        let (json, note_words) = note_shown(state, note);
+        shown.push(json);
+        words.push_str(&note_words);
     }
     (Value::Array(shown), words)
+}
+
+/// One note as `boom show` and `boom query --elaboration` give it: its
+/// narrative, its version, its paragraph, its person, its words and its
+/// elaboration, and `open` or the version that answers it with its
+/// answer (narrative-notes).
+fn note_shown(state: &State, note: &crate::judge::Note) -> (Value, String) {
+    let name = &note.narrative;
+    let answer = state.answer_of(note);
+    let elaboration = state.elaboration_of(note);
+    let mut words = format!(
+        "note {} on paragraph {} of {name}@{}, by {}: {}\n",
+        note.name, note.paragraph, note.version, note.person, note.words
+    );
+    if let Some(elaboration) = elaboration {
+        words.push_str(&format!("  elaboration: {}\n", elaboration.words()));
+    }
+    match answer {
+        Some((by, answer)) => words.push_str(&format!(
+            "  answered by {name}@{}: {answer}\n",
+            by.proposal.version
+        )),
+        None => words.push_str("  open\n"),
+    }
+    let json = json!({
+        "note": note.name,
+        "narrative": name,
+        "version": note.version,
+        "paragraph": note.paragraph,
+        "fingerprint": note.fingerprint,
+        "person": note.person,
+        "words": note.words,
+        "at": note.at,
+        "entry": note.noted_in,
+        "elaboration": elaboration.map(elaboration_json),
+        "status": if answer.is_some() { "answered" } else { "open" },
+        "answer": answer.map(|(by, answer)| json!({
+            "version": by.proposal.version,
+            "words": answer,
+        })),
+    });
+    (json, words)
+}
+
+/// A note's elaboration as JSON: its `repository`, its `name` and its
+/// `reference` (narrative-notes).
+fn elaboration_json(origin: &Origin) -> Value {
+    match origin {
+        Origin::Elaboration { repository, name } => json!({
+            "repository": repository,
+            "name": name,
+            "reference": origin.words(),
+        }),
+        other => origin_json(other),
+    }
 }
 
 /// What the entry that proposed a version says of where it came from
@@ -3530,6 +3583,68 @@ fn query(
         Ok(Answer {
             json,
             words: format!("Boom: {count} for {repository}, at entry {number}\n{lines}"),
+        })
+    })
+}
+
+/// The open notes on the versions that came from the elaboration
+/// `given`, `<repository>/<name>`, in the order written, each with its
+/// narrative and its elaboration (narrative-notes): read from the views
+/// once they are at the log's last entry, appending nothing.
+fn elaboration_notes(
+    path: Result<PathBuf, Failure>,
+    given: &str,
+    repository: bool,
+    if_declared: bool,
+    paths: &[String],
+) -> Result<Answer, Failure> {
+    for (named, flag) in [
+        (repository, "--repository"),
+        (!paths.is_empty(), "--path"),
+        (if_declared, "--if-declared"),
+    ] {
+        if named {
+            return Err(Failure::refused(format!(
+                "boom query takes --elaboration or {flag}, and not both: an elaboration's notes bind no repository"
+            )));
+        }
+    }
+    let elaboration = Origin::elaboration_named(given).map_err(Failure::Refused)?;
+    let mut store = Store::open(&path?)?;
+    store.read(|conn| {
+        let state = store::view_state(conn)?;
+        let (number, hash) = store::head_entry(conn)?;
+        let mut notes: Vec<&crate::judge::Note> = state
+            .notes
+            .values()
+            .filter(|note| state.elaboration_of(note) == Some(&elaboration))
+            .filter(|note| state.answer_of(note).is_none())
+            .collect();
+        notes.sort_by_key(|note| note.noted_in);
+        let mut shown = Vec::with_capacity(notes.len());
+        let mut lines = String::new();
+        for note in &notes {
+            let (json, words) = note_shown(&state, note);
+            shown.push(json);
+            lines.push_str(&words);
+        }
+        let count = match notes.len() {
+            1 => "1 open note".to_owned(),
+            n => format!("{n} open notes"),
+        };
+        Ok(Answer {
+            json: json!({
+                "format": "boom-query/2",
+                "repository": null,
+                "elaboration": elaboration_json(&elaboration),
+                "head": {"number": number, "hash": hash},
+                "claims": [],
+                "notes": shown,
+            }),
+            words: format!(
+                "Boom: {count} of {}, at entry {number}\n{lines}",
+                elaboration.words()
+            ),
         })
     })
 }
