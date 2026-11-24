@@ -43,7 +43,9 @@ claims that hold.
   <file>` names the file that a version came from, such as a mockup,
   and boom keeps its bytes under their fingerprint. `--origin
   git:<repository>@<commit>:<path>` names a file in a commit, and an
-  agent opens it with `git show <commit>:<path>`. The edges are part of
+  agent opens it with `git show <commit>:<path>`. `--origin
+  elaboration:<repository>/<name>` names the elaboration that made a
+  version, as sounding names it, one at most. The edges are part of
   the version's fingerprint, so a person signs them. `boom show
   <name>@<version>` gives each edge, marks an edge out of date where
   another version of its claim is accepted now, and gives `Before:` and
@@ -206,7 +208,12 @@ claims that hold.
   later version of its narrative answers it, with `--answers
   <note>=<words>`. boom refuses a new version that leaves a note open,
   and names each one. `boom show <name>` gives each note with its
-  paragraph, its words, and `open` or its answer.
+  paragraph, its words, its elaboration, and `open` or its answer.
+- **A note reaches the elaboration that made its version.** A note's
+  elaboration is the one that the version it is on names as its origin.
+  `boom query --elaboration <repository>/<name>` gives the open notes of
+  that elaboration's versions, each with its narrative, for the round
+  that answers them. A note on a version of no elaboration gives none.
 - **boom computes the design book.** An outline is a claim that holds
   the order of a view: `boom propose outline <name> "<title>" --view
   book --narrative <name> ...` names the narratives of the book in
@@ -275,9 +282,11 @@ boom query --repository shop
 boom query --path shop:src/billing/refund.rs
 boom search amounts cents --repository shop
 boom propose narrative shop-end-to-end "The shop, end to end" --body design.md \
-  --includes money-has-currency --repository shop --provenance run-4
+  --includes money-has-currency --origin elaboration:shop/the-refunds \
+  --repository shop --provenance run-4
 boom page shop-end-to-end
 boom note shop-end-to-end@<version> --paragraph 3 "Say what a refund is."
+boom query --elaboration shop/the-refunds
 boom propose narrative shop-end-to-end "The shop, end to end" --body design.md \
   --amends <version> --answers "<note>=Paragraph 4 says it now." --provenance run-5
 boom propose outline shop-design-book "The design book of the shop" --view book \

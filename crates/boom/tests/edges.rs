@@ -815,3 +815,150 @@ fn a_cause_names_another_claim() {
         "--amends",
     );
 }
+
+/// `status-on-a-socket` proposed with each origin of `origins`.
+fn from_origins(place: &Place, origins: &[&str]) -> boom::cli::Outcome {
+    let mut args = vec![
+        "propose",
+        "invariant",
+        "status-on-a-socket",
+        "Status is read from a socket.",
+        "--provenance",
+        "run-1",
+    ];
+    for origin in origins {
+        args.extend(["--origin", origin]);
+    }
+    place.run(&args)
+}
+
+#[test]
+fn a_narrative_from_an_elaboration() {
+    let place = Place::new();
+    place.made();
+    let reference = "elaboration:boom/the-design-book";
+    let answer = place.narrative(
+        "boom-end-to-end",
+        "Boom, end to end",
+        support::NARRATIVE,
+        &["--origin", reference],
+    );
+    let origin = json!([{
+        "repository": "boom",
+        "elaboration": "the-design-book",
+        "reference": reference,
+    }]);
+    assert_eq!(answer["origin"], origin);
+    assert_eq!(
+        last_claim(&place)["origin"],
+        json!([{"elaboration": {"repository": "boom", "name": "the-design-book"}}])
+    );
+    let version = answer["version"].as_str().unwrap();
+    let target = format!("boom-end-to-end@{version}");
+    assert_eq!(place.show(&target)["origin"], origin);
+    let words = place.run(&["show", &target]);
+    assert!(
+        words.stdout.contains(&format!("origin: {reference}\n")),
+        "{words:?}"
+    );
+}
+
+#[test]
+fn an_elaboration_in_its_form() {
+    let place = Place::new();
+    place.made();
+    for (origin, words) in [
+        (
+            "elaboration:boom",
+            "an elaboration is elaboration:<repository>/<name>",
+        ),
+        (
+            "elaboration:boom/The_Book",
+            "an elaboration's name is lowercase letters, digits and hyphens",
+        ),
+        (
+            "elaboration:boom/-the-book",
+            "beginning and ending with a letter or a digit",
+        ),
+        ("elaboration:boom/", "an elaboration's name is"),
+        (
+            "elaboration:Boom/the-book",
+            "a repository's name is kebab case",
+        ),
+    ] {
+        let outcome = from_origins(&place, &[origin]);
+        assert_eq!(outcome.code, 2, "{origin}: {outcome:?}");
+        assert!(outcome.stderr.contains(words), "{origin}: {outcome:?}");
+    }
+    let sounding = from_origins(&place, &["elaboration:boom/design--the-book-2"]);
+    assert_eq!(sounding.code, 0, "{sounding:?}");
+    assert_eq!(place.log().len(), 2);
+}
+
+#[test]
+fn a_version_came_from_one_elaboration_at_most() {
+    let place = Place::new();
+    place.made();
+    let outcome = from_origins(&place, &["elaboration:boom/one", "elaboration:boom/two"]);
+    assert_eq!(outcome.code, 2, "{outcome:?}");
+    assert!(
+        outcome
+            .stderr
+            .contains("a version came from one elaboration at most"),
+        "{outcome:?}"
+    );
+    assert_eq!(place.log().len(), 1);
+    let beside = from_origins(
+        &place,
+        &[
+            "elaboration:boom/one",
+            &format!("git:sluice@{COMMIT}:design/overview.svg"),
+        ],
+    );
+    assert_eq!(beside.code, 0, "{beside:?}");
+}
+
+#[test]
+fn two_elaborations_appended_by_hand_count_for_nothing() {
+    let place = Place::new();
+    place.made();
+    let mut claim = boom::claim::Proposal::new(
+        boom::claim::Kind::Invariant,
+        "status-on-a-socket",
+        "Status is read from a socket.",
+        Vec::new(),
+        None,
+        None,
+        None,
+    );
+    claim.origin = ["one", "two"]
+        .map(|name| boom::claim::Origin::Elaboration {
+            repository: "boom".to_owned(),
+            name: name.to_owned(),
+        })
+        .to_vec();
+    claim.version = claim.fingerprint(None);
+    let entry = boom::entry::Entry {
+        at: 1_763_424_600,
+        actor: boom::entry::Actor::Agent {
+            provenance: "another-program".to_owned(),
+        },
+        act: boom::entry::Act::Proposed {
+            claim: Box::new(claim),
+            imported: None,
+            attach: None,
+        },
+    };
+    place.append_by_hand(&entry, None);
+    let proposed = place.log().pop().unwrap();
+    assert_eq!(proposed["counted"], false, "{proposed}");
+    assert!(
+        proposed["reason"]
+            .as_str()
+            .unwrap()
+            .contains("a version came from one elaboration at most"),
+        "{proposed}"
+    );
+    let shown = place.run(&["show", "status-on-a-socket"]);
+    assert_eq!(shown.code, 2, "{shown:?}");
+}

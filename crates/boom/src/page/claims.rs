@@ -1006,7 +1006,8 @@ fn naming_html(state: &State, claim: &Claim, base: &str) -> String {
 }
 
 /// The origin of a version: a kept file by its name, its fingerprint
-/// and the command that writes it, and a commit as it is. boom serves no
+/// and the command that writes it, and a commit or an elaboration as it
+/// is. boom serves no
 /// kept file's bytes.
 fn origin_html(origins: &[Origin]) -> String {
     if origins.is_empty() {
@@ -1033,6 +1034,9 @@ fn origin_html(origins: &[Origin]) -> String {
                     escape(repository),
                     escape(path)
                 );
+            }
+            Origin::Elaboration { .. } => {
+                let _ = writeln!(html, "<li><code>{}</code></li>", escape(&origin.words()));
             }
         }
     }

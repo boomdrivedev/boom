@@ -1478,7 +1478,7 @@ fn write_edges(
     for (position, origin) in proposal.origin.iter().enumerate() {
         let artifact = match origin {
             Origin::File { fingerprint, .. } => Some(fingerprint.as_str()),
-            Origin::Git { .. } => None,
+            Origin::Git { .. } | Origin::Elaboration { .. } => None,
         };
         insert.execute(params![
             name,

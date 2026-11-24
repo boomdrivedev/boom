@@ -23,10 +23,11 @@ of bases that a person accepted.
 A version links to the claims that it rests on with `--source`, to
 the claims that a decision changes with `--changes`, and to the file or
 commit that it came from with `--origin`, a file that boom keeps by its
-fingerprint or `git:<repository>@<commit>:<path>`. Each edge to a claim
-stores the version that it meant, and `boom show` marks it out of date,
-gives the versions by base and the claims that rest on a claim, and
-writes a kept file with `--artifact`.
+fingerprint or `git:<repository>@<commit>:<path>`, and to the
+elaboration that made it with `--origin elaboration:<repository>/<name>`.
+Each edge to a claim stores the version that it meant, and `boom show`
+marks it out of date, gives the versions by base and the claims that
+rest on a claim, and writes a kept file with `--artifact`.
 A context owns path globs, each `<repository>:<pattern>`, and a version
 binds a context with `--context`, which stores the version of the
 context that it meant; `boom query --path <repository>:<path>` gives
@@ -67,7 +68,9 @@ each request, where a person reads it and writes a note on a paragraph.
 `boom note` writes the same note: an entry with the person's name and
 no signature. A note stays open until a later version answers it with
 `--answers <note>=<words>`, and boom refuses a version that leaves one
-open. No tool of `boom mcp` writes a note or serves a page.
+open. A note's elaboration is the one its version names as its origin,
+and `boom query --elaboration <repository>/<name>` gives the open notes
+of that elaboration. No tool of `boom mcp` writes a note or serves a page.
 A narrative binds one level: the whole system, one repository or one
 context. An outline is a claim of the kind `outline` that holds the
 order of a view, `--view book`, with `--narrative`, each at the version
