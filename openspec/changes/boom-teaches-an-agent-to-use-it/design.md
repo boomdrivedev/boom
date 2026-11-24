@@ -21,12 +21,12 @@ This change keeps these claims:
   `a-narratives-open-question-is-a-proposed-decision-included-at-its-paragraph@5b473b9ae454`
   and `the-accept-of-a-narrative-accepts-the-claims-it-includes@5642b23601f5`:
   the skills teach these as the person accepted them.
-- `a-claim-or-narrative-describes-the-system-and-names-no-plan@acd2e8e1efc6`,
-  which waits on the person: the skills teach it, and the warning finds
-  the words that its body names.
-- `proposals-reach-the-person-in-batches-a-narrative-a-ruling-or-a-revision@868a48d5ee39`,
-  which waits on the person: the skills teach its three shapes. When the
-  person amends it, the skills change with it.
+- `booms-plugin-teaches-an-agent-to-use-boom-and-flumes-kinds-load-its-skills@3405c214c3da`:
+  the decision that this change builds. The rule that a claim names no
+  plan lives in the skill `proposing-claims`, and in no claim.
+- `proposals-reach-the-person-in-batches-a-narrative-a-ruling-or-a-revision@9894c719e441`:
+  the skills teach its three shapes, which Boom computes from the links
+  of the log: `--includes`, `--cause`, and a ruling alone.
 - `boom-mcp-serves-an-agent-the-commands-it-may-run-and-none-a-person-must-sign`:
   the skills name the same acts as the person's.
 - `a-term-binds-one-repository@52e0b523d9a9`: the old words of a term
@@ -201,8 +201,8 @@ timber's plan. The warning's tests count the phrases.
 The match is the match of `boom terms check` (`term-check`): another
 form, case or accent matches, so `Phases` matches `phase`. A word of two
 words matches those words in order. A word inside a longer word, such
-as `microwave`, does not match. The marker `boom: allow <word>` is not
-read: a warning stops nothing, so it needs no marker.
+as `microwave`, does not match. A line that holds `boom: allow <word>`
+gives no warning for that word, as it gives no old word.
 
 ### 4. The list is in the code
 
