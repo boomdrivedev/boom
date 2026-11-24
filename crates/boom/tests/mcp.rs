@@ -384,6 +384,28 @@ fn a_proposal_through_its_tool() {
 }
 
 #[test]
+fn the_mcp_tool_warns_too() {
+    let place = Place::new();
+    place.made();
+    let result = place.call(
+        "propose",
+        json!({
+            "kind": "invariant",
+            "name": "money-has-currency",
+            "statement": "The roadmap gives every amount its currency.",
+            "provenance": "run-1",
+        }),
+    );
+    assert_eq!(result["isError"], false, "{result}");
+    let answer = text(&result);
+    assert_eq!(answer["format"], "boom-propose/2", "{answer}");
+    assert_eq!(
+        answer["plan_words"],
+        json!([{"word": "roadmap", "in": "statement", "line": null}])
+    );
+}
+
+#[test]
 fn the_commands_own_answer() {
     let place = Place::new();
     let ada = place.made();

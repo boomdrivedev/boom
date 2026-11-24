@@ -14,6 +14,11 @@ The plan words SHALL be `wave`, `phase`, `milestone`, `sprint`, `epic`, `user st
 - **WHEN** an agent proposes a version whose statement holds `microwave` and no other plan word
 - **THEN** standard error holds no warning
 
+#### Scenario: A marker on the line
+
+- **WHEN** an agent proposes a version whose body holds `the user's words: "MVP" boom: allow MVP` on one line, and no other plan word
+- **THEN** standard error holds no warning
+
 ### Requirement: A proposal warns of plan words
 
 `boom propose` SHALL read the statement and the body of a version for the plan words. For each match, boom SHALL write a warning on standard error that names the word and where it is. With `--json`, the field `plan_words` SHALL give each match. The warning SHALL NOT refuse, and SHALL NOT change what boom appends or how it exits.

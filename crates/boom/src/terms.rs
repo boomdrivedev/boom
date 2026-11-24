@@ -86,6 +86,51 @@ pub fn accepted(state: &State, repository: &str) -> Vec<Term> {
         .collect()
 }
 
+/// The words that name a plan, not the system: a part or a point of
+/// the work in time, a work item, a form that later work replaces, a
+/// case named by the plan's hope, or a status of work. `boom propose`
+/// warns of each one in a statement or a body, and never refuses it
+/// (claim-versions, "The plan words").
+pub const PLAN_WORDS: [&str; 22] = [
+    "wave",
+    "phase",
+    "milestone",
+    "sprint",
+    "epic",
+    "user story",
+    "roadmap",
+    "MVP",
+    "stretch goal",
+    "nice to have",
+    "stopgap",
+    "interim",
+    "for now",
+    "until then",
+    "not built yet",
+    "happy path",
+    "sad path",
+    "unhappy path",
+    "TODO",
+    "TBD",
+    "WIP",
+    "FIXME",
+];
+
+/// Each plan word in `text`, matched as an old word of a term matches
+/// (`find`): `word` is the plan word as the list names it.
+pub fn plan_words(text: &str) -> Result<Vec<Found>, Failure> {
+    let plan = Term {
+        name: String::new(),
+        version: String::new(),
+        meaning: String::new(),
+        repository: None,
+        replaces: PLAN_WORDS.iter().map(|&word| word.to_owned()).collect(),
+    };
+    let mut found = find(text, std::slice::from_ref(&plan))?;
+    found.sort_by(|a, b| (a.line, &a.written).cmp(&(b.line, &b.written)));
+    Ok(found)
+}
+
 /// `line` with `CASE_JOIN` at each change from a lowercase letter or a
 /// digit to an uppercase letter, so a name in code splits into its
 /// words: `KeeperStore` is `Keeper` and `Store`. FTS5 splits at `_`, `-` // boom: allow keeper
