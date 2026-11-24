@@ -27,8 +27,11 @@ claims that hold.
 - **Claims by name, versions by fingerprint.** A claim, an invariant, a
   decision or an assumption, keeps its name for life and gains a
   version for each change, named by the fingerprint of its words. An
-  amendment names the version it amends. boom keeps a long body once,
-  under the fingerprint of its bytes.
+  amendment names the version it amends. A new draft supersedes the
+  draft that it amends, so a person accepts only the newest draft of a
+  claim, and boom accepts it when the nearest version in its line of
+  bases that a person accepted is the accepted version. boom keeps a
+  long body once, under the fingerprint of its bytes.
 - **A version links to its source and its origin.** `--source <name>`
   names a claim that a version rests on, the same word as the "Source:"
   line of a rule. A decision names each claim that it changes with
