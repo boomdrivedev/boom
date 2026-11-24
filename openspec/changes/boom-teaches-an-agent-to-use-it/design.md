@@ -21,6 +21,9 @@ This change keeps these claims:
   `a-narratives-open-question-is-a-proposed-decision-included-at-its-paragraph@5b473b9ae454`
   and `the-accept-of-a-narrative-accepts-the-claims-it-includes@5642b23601f5`:
   the skills teach these as the person accepted them.
+- `a-claim-or-narrative-describes-the-system-and-names-no-plan@acd2e8e1efc6`,
+  which waits on the person: the skills teach it, and the warning finds
+  the words that its body names.
 - `proposals-reach-the-person-in-batches-a-narrative-a-ruling-or-a-revision@868a48d5ee39`,
   which waits on the person: the skills teach its three shapes. When the
   person amends it, the skills change with it.
@@ -177,6 +180,8 @@ The words:
 | `stopgap` | a form that later work replaces |
 | `interim` | a form that later work replaces |
 | `for now` | a form that later work replaces |
+| `until then` | a form that later work replaces |
+| `not built yet` | a status of work |
 | `happy path` | names a case by the plan's hope, not by what happens |
 | `sad path` | names a case by the plan's hope, not by what happens |
 | `unhappy path` | names a case by the plan's hope, not by what happens |
@@ -189,8 +194,9 @@ The list leaves out words that the domain of the family uses in another
 sense: `plan` (an approved plan), `step` (a drive's step), `status` (a
 version's status), `backlog`, `draft`, `in progress` (a run in
 progress), `not yet`, `first` and `next`. Of the claims that stand on
-2026-11-24, only two match a word of the list, both `MVP`: one quotes
-the user, and one names timber's plan.
+2026-11-24, `boom search --all` finds each word of one word of the list
+in none, except `MVP` in two: one quotes the user, and one names
+timber's plan. The warning's tests count the phrases.
 
 The match is the match of `boom terms check` (`term-check`): another
 form, case or accent matches, so `Phases` matches `phase`. A word of two

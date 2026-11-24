@@ -36,12 +36,13 @@ it as it is.
 ## Say what the system is, never the plan
 
 A claim stays true for as long as it stands. A plan is true for one
-moment. So a claim never says:
+moment. So a claim or a narrative never says
+(`a-claim-or-narrative-describes-the-system-and-names-no-plan`):
 
 - a wave, a phase, a milestone, a sprint, an epic or a roadmap item;
 - an MVP, a first cut, a stopgap, an interim form or a stretch goal;
 - the order of work: "first", "then", "later", "after this lands";
-- a status of work: TODO, TBD, WIP, FIXME, "in progress", "for now",
+- a status of work: TODO, TBD, WIP, FIXME, "for now", "until then",
   "not built yet";
 - "the happy path" or "the sad path". Name a failure by what happens:
   "When the store is locked, boom waits 5 seconds and exits 2".

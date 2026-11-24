@@ -2,7 +2,7 @@
 
 ### Requirement: The plan words
 
-The plan words SHALL be `wave`, `phase`, `milestone`, `sprint`, `epic`, `user story`, `roadmap`, `MVP`, `stretch goal`, `nice to have`, `stopgap`, `interim`, `for now`, `happy path`, `sad path`, `unhappy path`, `TODO`, `TBD`, `WIP` and `FIXME`. A plan word SHALL match as an old word of a term matches (`term-check`).
+The plan words SHALL be `wave`, `phase`, `milestone`, `sprint`, `epic`, `user story`, `roadmap`, `MVP`, `stretch goal`, `nice to have`, `stopgap`, `interim`, `for now`, `until then`, `not built yet`, `happy path`, `sad path`, `unhappy path`, `TODO`, `TBD`, `WIP` and `FIXME`. A plan word SHALL match as an old word of a term matches (`term-check`).
 
 #### Scenario: Another form
 
