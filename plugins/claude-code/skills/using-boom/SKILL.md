@@ -75,7 +75,8 @@ departs from a rule names the rule and says why.
 You never run these. Each one is a person's act, signed with a key or
 written in the person's name:
 
-- `boom accept`: a person accepts versions.
+- `boom accept`: a person accepts versions, a narrative with its
+  claims, a cause with its revision, or each batch that waits.
 - `boom reject`: a person rejects a version, with why.
 - `boom note`: a person writes a note on a paragraph of a narrative.
 - `boom init`, `boom register`, `boom repo add` and `boom repo set`:

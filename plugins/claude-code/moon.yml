@@ -1,8 +1,9 @@
 $schema: 'https://moonrepo.dev/schemas/project.json'
 
 # boom's Claude Code plugin: its manifest, its session hook, which runs
-# boom hook session-start, and its PreToolUse hook, which runs boom hook
-# pre-tool-use (session-context). Each check is one task, in the fast layer
+# boom hook session-start, its PreToolUse hook, which runs boom hook
+# pre-tool-use (session-context), and its skills, which teach an agent to
+# use Boom (claude-code-plugin). Each check is one task, in the fast layer
 # (core.5).
 language: 'bash'
 layer: 'application'
@@ -18,16 +19,18 @@ tasks:
     command: 'biome lint .'
     inputs: ['.claude-plugin/**/*', 'hooks/**/*', 'tests/**/*.mjs', '/biome.json', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]
-  # The manifest and its hooks, read by the pinned Claude Code (design 9).
+  # The manifest, its hooks and its skills, read by the pinned Claude Code
+  # (design 9).
   typecheck:
     command: '../claude.sh plugin validate --strict .'
-    inputs: ['.claude-plugin/**/*', 'hooks/**/*', '/plugins/claude.sh', '/devenv.nix', '/devenv.lock']
+    inputs: ['.claude-plugin/**/*', 'hooks/**/*', 'skills/**/*', '/plugins/claude.sh', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]
   # The session hook and the PreToolUse hook, each run as Claude Code runs
   # it, with a boom of its own and with the boom the tree builds; and a stop
   # whose reason has more than 10,000 characters, given to the pinned Claude
-  # Code through the plugin (session-context).
+  # Code through the plugin (session-context); and each skill at its path,
+  # with none of its words read (claude-code-plugin).
   test:
-    script: 'bash tests/session.sh && bash tests/write.sh && bash tests/cap.sh'
-    inputs: ['.claude-plugin/**/*', 'hooks/**/*', 'tests/**/*', '/crates/boom/**/*', '/Cargo.toml', '/Cargo.lock', '/.prototools', '/rust-toolchain.toml', '/devenv.nix', '/devenv.lock']
+    script: 'bash tests/session.sh && bash tests/write.sh && bash tests/cap.sh && bash tests/skills.sh'
+    inputs: ['.claude-plugin/**/*', 'hooks/**/*', 'skills/**/*', 'tests/**/*', '/crates/boom/**/*', '/Cargo.toml', '/Cargo.lock', '/.prototools', '/rust-toolchain.toml', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]
