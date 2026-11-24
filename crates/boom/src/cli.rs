@@ -3203,9 +3203,7 @@ fn search(
 ) -> Result<Answer, Failure> {
     let words = crate::search::words(given);
     if words.is_empty() {
-        return Err(Failure::refused(
-            "boom search needs a word holding a letter or a digit",
-        ));
+        return Err(Failure::refused(crate::search::NO_WORD));
     }
     let mut store = Store::open(path)?;
     // One read of the views: the repository of the session, then the
@@ -3235,45 +3233,17 @@ fn search(
             Some(repository) => store::contexts_in(conn, repository)?,
             None => Vec::new(),
         };
-        let accepted = store::accepted_for(conn, repository.as_deref(), &contexts)?;
+        let found =
+            crate::search::standing(conn, repository.as_deref(), &contexts, &words)?;
         let (number, hash) = store::head_entry(conn)?;
-        let standing: Vec<(&judge::Claim, &judge::Version)> = accepted
-            .iter()
-            .map(|(claim, version)| (claim, version))
-            .collect();
-        // A body that is not text is searched as holding no word; one
-        // whose bytes no longer match its fingerprint stops the search.
-        let bodies = standing
-            .iter()
-            .map(|(_, version)| match &version.proposal.body {
-                Some(fingerprint) => Ok(String::from_utf8(store::blob(conn, fingerprint)?).ok()),
-                None => Ok(None),
-            })
-            .collect::<Result<Vec<_>, Failure>>()?;
-        let searched: Vec<crate::search::Claim<'_>> = standing
-            .iter()
-            .zip(&bodies)
-            .map(|((claim, version), body)| {
-                let imported = version.imported.as_ref();
-                crate::search::Claim {
-                    name: &claim.name,
-                    legacy: imported.and_then(|imported| imported.legacy.as_deref()),
-                    statement: &version.proposal.statement,
-                    section: imported.and_then(|imported| imported.section.as_deref()),
-                    scenarios: &version.proposal.scenarios,
-                    body: body.as_deref(),
-                }
-            })
-            .collect();
-        let found = crate::search::search(&searched, &words)?;
         let total = found.len();
         let shown = usize::try_from(limit).unwrap_or(usize::MAX);
         let mut claims = Vec::new();
         let mut lines = String::new();
         for found in found.iter().take(shown) {
-            let (claim, version) = standing[found.place];
+            let (claim, version) = (&found.claim, &found.version);
             let proposal = &version.proposal;
-            let legacy = searched[found.place].legacy;
+            let legacy = found.legacy.as_deref();
             let mut object = standing_json(claim, version);
             object.insert("excerpt".into(), json!(found.excerpt));
             object.insert("legacy".into(), json!(legacy));

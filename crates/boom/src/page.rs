@@ -26,6 +26,7 @@ use crate::entry::{Act, Actor, Entry};
 use crate::judge::{self, Claim, Proof, State, Verdict, Version};
 use crate::narrative::{self, Paragraph};
 use crate::store::{self, Scope, Store};
+use crate::view::Book;
 use crate::Failure;
 
 /// The policy of each response: nothing from another host, no script
@@ -315,9 +316,55 @@ fn actor_words(actor: &Actor) -> String {
     }
 }
 
-/// The whole document around `main`, with its title and its style, and
-/// Mermaid's script and license where `main` draws a diagram.
-fn document(title: &str, entry: u64, base: &str, main: &str) -> String {
+/// A view of `boom page`: its words in the bar, and the path of its
+/// first page under the token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct View {
+    /// Its words in the bar.
+    pub words: &'static str,
+    /// The path of its first page, after `<base>`.
+    pub path: &'static str,
+}
+
+/// The book: `<base>/`, `<base>/v/<outline>` and `<base>/n/<name>`.
+pub const BOOK: View = View {
+    words: "The book",
+    path: "/",
+};
+
+/// The claims: `<base>/claims/` and `<base>/claims/<name>[@<version>]`.
+pub const CLAIMS: View = View {
+    words: "The claims",
+    path: "/claims/",
+};
+
+/// Each view that boom serves, in the bar's order (narrative-page, "One
+/// shell for each view"). A later view adds itself here and its routes.
+pub const VIEWS: &[View] = &[BOOK, CLAIMS];
+
+/// What the shell of a page holds besides its `<main>`.
+struct Shell<'a> {
+    /// The page's title.
+    title: &'a str,
+    /// The log's last entry.
+    entry: u64,
+    /// The start of each path.
+    base: &'a str,
+    /// The view of the page; none for the page of a search.
+    view: Option<View>,
+    /// The HTML of the view's sidebar; none where the view gives none.
+    side: Option<String>,
+    /// The words of the search, given back in its field.
+    query: &'a str,
+}
+
+/// The whole document around `main`: the bar with each view, the search
+/// form and the log's entry; the control that folds the sidebar and the
+/// sidebar, where the view gives one; `<main>`; and Mermaid's script and
+/// license where `main` draws a diagram (narrative-page, "One shell for
+/// each view").
+fn shell(page: &Shell<'_>, main: &str) -> String {
+    let base = page.base;
     let mermaid = if main.contains(DIAGRAM) {
         format!(
             "<footer class=\"hint\">Diagrams drawn by Mermaid {MERMAID_VERSION}, under its <a href=\"{base}/{}\">license</a>.</footer>\n\
@@ -328,19 +375,49 @@ fn document(title: &str, entry: u64, base: &str, main: &str) -> String {
     } else {
         String::new()
     };
+    let views: String = VIEWS
+        .iter()
+        .map(|view| {
+            let current = if page.view == Some(*view) {
+                " aria-current=\"page\""
+            } else {
+                ""
+            };
+            format!(
+                "<a href=\"{base}{}\"{current}>{}</a>",
+                view.path, view.words
+            )
+        })
+        .collect();
+    let (control, side) = match &page.side {
+        Some(side) => (
+            "<input type=\"checkbox\" id=\"contents\" class=\"fold\">\
+             <label for=\"contents\" class=\"fold\">Contents</label>\n",
+            format!("<nav class=\"side\" aria-label=\"Contents\">\n{side}</nav>\n"),
+        ),
+        None => ("", String::new()),
+    };
     format!(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
          <meta name=\"referrer\" content=\"{REFERRER_POLICY}\">\n\
-         <title>{} · Boom</title>\n<style>{STYLE}</style>\n</head>\n<body>\n\
-         <header class=\"bar\"><a href=\"{base}/\">Boom · the design book</a><span>entry {entry}</span></header>\n\
-         <main>\n{main}</main>\n{mermaid}</body>\n</html>\n",
-        escape(title)
+         <title>{title} · Boom</title>\n<style>{STYLE}</style>\n</head>\n<body>\n\
+         <header class=\"bar\"><span class=\"name\">Boom</span><nav class=\"views\" aria-label=\"Views\">{views}</nav>\
+         <form class=\"search\" role=\"search\" method=\"get\" action=\"{base}/search\">\
+         <input type=\"search\" name=\"q\" value=\"{query}\" placeholder=\"Search the book and the claims\" aria-label=\"Search the book and the claims\">\
+         <button type=\"submit\">Search</button></form>\
+         <span class=\"entry\">entry {entry}</span></header>\n\
+         {control}<div class=\"page\">\n{side}<main>\n{main}</main>\n</div>\n{mermaid}</body>\n</html>\n",
+        title = escape(page.title),
+        query = escape(page.query),
+        entry = page.entry,
     )
 }
 
-/// The page's style: one column for reading, the number of each
-/// paragraph in its margin, and a box for each claim and each note.
+/// The page's style: the bar, the sidebar beside the page from 60rem
+/// and folded behind its control under it, one column for reading, the
+/// number of each paragraph in its margin, and a box for each claim and
+/// each note.
 const STYLE: &str = "
 :root{--ink:#1d1d1f;--soft:#5c5c66;--line:#dcdce2;--paper:#fbfbf8;--card:#fff;--claim:#eef4ff;--claim-edge:#4b6fd6;--note:#fff6e0;--note-edge:#d29a16;--done:#e9f6ec;--done-edge:#3f9a5a;--link:#2f55c4}
 @media (prefers-color-scheme: dark){:root{--ink:#e9e9ee;--soft:#a4a4b0;--line:#34343c;--paper:#141418;--card:#1c1c22;--claim:#1b2236;--claim-edge:#7d9bf0;--note:#2e2716;--note-edge:#e0b13e;--done:#18291d;--done-edge:#5cc27b;--link:#8fa9f5}}
@@ -349,9 +426,41 @@ body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 ui-serif,Ge
 a{color:var(--link)}
 code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em}
 pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:.7rem .9rem;overflow-x:auto}
-.bar{display:flex;justify-content:space-between;gap:1rem;padding:.6rem 1rem;border-bottom:1px solid var(--line);font:13px/1.4 system-ui,sans-serif;color:var(--soft)}
-.bar a{color:var(--soft);text-decoration:none;font-weight:600}
-main{max-width:46rem;margin:0 auto;padding:1.5rem 1rem 4rem}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1.2rem;padding:.6rem 1rem;border-bottom:1px solid var(--line);font:13px/1.4 system-ui,sans-serif;color:var(--soft)}
+.bar .name{font-weight:700;color:var(--ink)}
+.bar .views{display:flex;gap:1rem}
+.bar .views a{color:var(--soft);text-decoration:none;font-weight:600;padding:.15rem 0;border-bottom:2px solid transparent}
+.bar .views a[aria-current]{color:var(--ink);border-bottom-color:var(--claim-edge)}
+.bar .entry{margin-left:auto}
+.bar form{display:flex;gap:.4rem;order:3;flex:1 1 100%}
+.bar input[type=search]{flex:1;min-width:0;font:14px/1.4 system-ui,sans-serif;padding:.3rem .55rem;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+.bar button{font:600 13px system-ui,sans-serif;padding:.3rem .7rem;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);cursor:pointer}
+input.fold{position:absolute;opacity:0;width:1px;height:1px}
+label.fold{display:inline-block;margin:.7rem 1rem 0;padding:.25rem .7rem;border:1px solid var(--line);border-radius:6px;background:var(--card);font:600 13px/1.4 system-ui,sans-serif;color:var(--ink);cursor:pointer}
+label.fold::before{content:'☰ '}
+input.fold:focus-visible+label.fold{outline:2px solid var(--link);outline-offset:2px}
+nav.side{display:none;padding:.8rem 1rem 1.2rem;border-bottom:1px solid var(--line);font:14px/1.45 system-ui,sans-serif}
+input.fold:checked~.page>nav.side{display:block}
+nav.side .book-title{display:block;font-weight:700;color:var(--ink);text-decoration:none;margin:0 0 .6rem}
+nav.side .part{margin:1rem 0 .3rem;font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--soft)}
+nav.side .chapter{margin:.7rem 0 .2rem;font-weight:600;color:var(--ink)}
+nav.side .section{margin:.5rem 0 .15rem .7rem;font-size:13px;color:var(--soft)}
+nav.side ul{list-style:none;margin:0;padding:0}
+nav.side li{margin:0}
+nav.side li a{display:block;padding:.2rem .5rem;border-radius:5px;color:var(--ink);text-decoration:none}
+nav.side .in li a{padding-left:1.2rem}
+nav.side li a:hover{background:var(--card)}
+nav.side li a[aria-current]{background:var(--claim);box-shadow:inset 3px 0 0 var(--claim-edge);font-weight:600}
+nav.side .unheld{display:block;font-size:11px}
+main{max-width:46rem;margin:0 auto;padding:1.5rem 1rem 4rem;min-width:0}
+@media (min-width:60rem){
+.bar{flex-wrap:nowrap}
+.bar form{order:0;flex:0 1 24rem;margin-left:auto}
+.bar .entry{margin-left:0}
+input.fold,label.fold{display:none}
+.page{display:grid;grid-template-columns:17rem minmax(0,1fr);align-items:start}
+nav.side{display:block;position:sticky;top:0;max-height:100vh;overflow-y:auto;border-bottom:0;border-right:1px solid var(--line);padding:1.2rem 1rem 2rem}
+}
 h1{font:600 2rem/1.2 system-ui,sans-serif;margin:.4rem 0 .6rem}
 h2{font:600 1.05rem/1.3 system-ui,sans-serif;margin:2.2rem 0 .6rem;padding-top:1rem;border-top:1px solid var(--line)}
 .meta,.versions,.hint{font:13px/1.55 system-ui,sans-serif;color:var(--soft)}
@@ -361,6 +470,7 @@ h2{font:600 1.05rem/1.3 system-ui,sans-serif;margin:2.2rem 0 .6rem;padding-top:1
 .p{position:relative;padding:.1rem 0 .1rem 3rem;border-radius:6px;scroll-margin-top:1rem}
 .p:target{background:var(--card);box-shadow:0 0 0 1px var(--line)}
 .p>.n{position:absolute;left:0;top:.35rem;width:2.5rem;text-align:right;font:12px/1.6 system-ui,sans-serif;color:var(--soft);text-decoration:none}
+.p>.text{overflow-x:auto}
 .p>.text>:first-child{margin-top:.3rem}
 .p>.text>:last-child{margin-bottom:.3rem}
 details.write{font:13px/1.4 system-ui,sans-serif;margin:0 0 .6rem}
@@ -385,6 +495,8 @@ h3{font:600 .98rem/1.3 system-ui,sans-serif;margin:1.6rem 0 .3rem}
 h4{font:600 .9rem/1.3 system-ui,sans-serif;margin:1.2rem 0 .2rem;color:var(--soft)}
 nav.book{display:flex;justify-content:space-between;gap:1rem;margin:2.4rem 0 0;padding-top:1rem;border-top:1px solid var(--line);font:13px/1.5 system-ui,sans-serif}
 .quote{border-left:2px solid var(--line);padding-left:.6rem;color:var(--soft)}
+.found .quote{margin:.3rem 0 0;font:14px/1.5 system-ui,sans-serif;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.box .head a{color:inherit}
 .p table,.box table{border-collapse:collapse;margin:.5rem 0;font:15px/1.45 system-ui,sans-serif}
 .p th,.p td,.box th,.box td{border:1px solid var(--line);padding:.35rem .7rem;text-align:left;vertical-align:top}
 .p th,.box th{background:var(--card);font-weight:600}
@@ -535,7 +647,7 @@ pub fn narrative_page(
             .zip(&placed)
             .filter(|(_, place)| **place == Some(n))
         {
-            main.push_str(&claim_box(conn, &state, included, meant)?);
+            main.push_str(&claim_box(conn, base, &state, included, meant)?);
         }
         for note in notes.iter().filter(|note| note.paragraph == n) {
             main.push_str(&note_box(&state, note, None));
@@ -555,7 +667,7 @@ pub fn narrative_page(
     if !unplaced.is_empty() {
         main.push_str("<h2>Claims it includes that no paragraph names</h2>\n");
         for (included, meant) in unplaced {
-            main.push_str(&claim_box(conn, &state, included, meant)?);
+            main.push_str(&claim_box(conn, base, &state, included, meant)?);
         }
     }
     let earlier: Vec<&judge::Note> = state
@@ -586,20 +698,27 @@ pub fn narrative_page(
             escape(&at)
         );
     }
-    main.push_str(&neighbors(conn, name, base)?);
-    Ok(document(&shown.proposal.statement, entry, base, &main))
+    let (_, book) = book_of(conn, None)?;
+    main.push_str(&neighbors(&book, name, base));
+    let page = Shell {
+        title: &shown.proposal.statement,
+        entry,
+        base,
+        view: Some(BOOK),
+        side: Some(book_side(&book, base, BOOK.path, Some(name))),
+        query: "",
+    };
+    Ok(shell(&page, &main))
 }
 
 /// The links of a narrative that the design book gives: to the book, and
 /// to the narratives before it and after it in the book's order; nothing
 /// for a narrative that the book does not give (narrative-page, "A
 /// narrative's place in the book").
-fn neighbors(conn: &rusqlite::Connection, name: &str, base: &str) -> Result<String, Failure> {
-    let state = store::view_state(conn)?;
-    let book = crate::view::book(&state, None);
+fn neighbors(book: &Book, name: &str, base: &str) -> String {
     let order = book.order();
     let Some(at) = order.iter().position(|entry| entry.narrative == name) else {
-        return Ok(String::new());
+        return String::new();
     };
     let link = |entry: &crate::view::Entry, rel: &str, words: &str| {
         format!(
@@ -617,9 +736,92 @@ fn neighbors(conn: &rusqlite::Connection, name: &str, base: &str) -> Result<Stri
         .get(at + 1)
         .map(|entry| link(entry, "next", "→"))
         .unwrap_or_default();
-    Ok(format!(
+    format!(
         "<nav class=\"book\"><span>{before}</span><a rel=\"contents\" href=\"{base}/\">the design book</a><span>{after}</span></nav>\n"
-    ))
+    )
+}
+
+/// The design book of the store at the log's last entry, from the
+/// outline `outline`, or from the outline of the view `book` where none
+/// is named, computed once for a request.
+fn book_of(conn: &rusqlite::Connection, outline: Option<&str>) -> Result<(State, Book), Failure> {
+    let state = store::view_state(conn)?;
+    if let Some(name) = outline {
+        outline_claim(&state, name)?;
+    }
+    let book = crate::view::book(&state, outline);
+    Ok((state, book))
+}
+
+/// The book's contents in the sidebar: its title, Part I with its
+/// narratives and a section for each of its contexts, then Part II with
+/// a chapter for each repository and a section for each of its
+/// contexts. Each narrative is a link to its page with its title, in the
+/// book's order; `current` has `aria-current="page"`, and each narrative
+/// that the outline does not hold is marked (narrative-page, "The book's
+/// contents in the sidebar", "The sidebar marks the page's narrative").
+fn book_side(book: &Book, base: &str, home: &str, current: Option<&str>) -> String {
+    let entries = |html: &mut String, entries: &[crate::view::Entry], class: &str| {
+        if entries.is_empty() {
+            return;
+        }
+        let _ = writeln!(html, "<ul{class}>");
+        for entry in entries {
+            let here = if current == Some(entry.narrative.as_str()) {
+                " aria-current=\"page\""
+            } else {
+                ""
+            };
+            let unheld = if entry.held {
+                ""
+            } else {
+                "<span class=\"unheld\">not in the outline</span>"
+            };
+            let _ = writeln!(
+                html,
+                "<li><a href=\"{base}/n/{}\"{here}>{}{unheld}</a></li>",
+                escape(&entry.narrative),
+                escape(&entry.title)
+            );
+        }
+        html.push_str("</ul>\n");
+    };
+    let title = book
+        .outline
+        .as_ref()
+        .map_or("The design book", |head| head.title.as_str());
+    let mut html = format!(
+        "<a class=\"book-title\" href=\"{base}{home}\">{}</a>\n",
+        escape(title)
+    );
+    let _ = writeln!(html, "<p class=\"part\">{}</p>", crate::view::PART_I);
+    entries(&mut html, &book.system.narratives, "");
+    for section in &book.system.sections {
+        let _ = writeln!(
+            html,
+            "<p class=\"section\">{}</p>",
+            escape(&section.context)
+        );
+        entries(&mut html, &section.narratives, " class=\"in\"");
+    }
+    let _ = writeln!(html, "<p class=\"part\">{}</p>", crate::view::PART_II);
+    for chapter in &book.repositories {
+        let _ = writeln!(
+            html,
+            "<p class=\"chapter\">{}</p>",
+            escape(&chapter.repository)
+        );
+        entries(&mut html, &chapter.narratives, "");
+        for section in &chapter.sections {
+            let _ = writeln!(
+                html,
+                "<p class=\"section\">{}</p>",
+                escape(&section.context)
+            );
+            entries(&mut html, &section.narratives, " class=\"in\"");
+        }
+    }
+    html
 }
 
 /// The claim `name` of `state`, a narrative.
@@ -647,11 +849,14 @@ fn body_text(conn: &rusqlite::Connection, fingerprint: Option<&str>) -> Result<S
         .map_err(|_| Failure::not_run(format!("the blob {fingerprint} is not text")))
 }
 
-/// The box of an included claim: its kind, `<name>@<version>`, its
-/// status, its statement and its body, marked out of date where another
-/// version of it is accepted.
+/// The box of an included claim: its kind, `<name>@<version>` as a link
+/// to its page in the claims view at the version meant, its status, its
+/// statement and its body, marked out of date where another version of
+/// it is accepted (narrative-page, "An included claim links to the
+/// claims view").
 fn claim_box(
     conn: &rusqlite::Connection,
+    base: &str,
     state: &State,
     name: &str,
     meant: &str,
@@ -667,11 +872,10 @@ fn claim_box(
         ));
     };
     let mut html = format!(
-        "<div class=\"box claim\"><div class=\"head\">{} <code>{}@{}</code> · {}",
+        "<div class=\"box claim\"><div class=\"head\">{} <a href=\"{base}/claims/{at}\"><code>{at}</code></a> · {}",
         claim.kind.as_str(),
-        escape(name),
-        escape(meant),
-        version.status.as_str()
+        version.status.as_str(),
+        at = format!("{}@{}", escape(name), escape(meant)),
     );
     if let Some(accepted) = claim.standing.as_deref().filter(|now| *now != meant) {
         let _ = write!(
@@ -779,11 +983,7 @@ pub fn book_page(
     outline: Option<&str>,
     context: &Context,
 ) -> Result<String, Failure> {
-    let state = store::view_state(conn)?;
-    if let Some(name) = outline {
-        outline_claim(&state, name)?;
-    }
-    let book = crate::view::book(&state, outline);
+    let (state, book) = book_of(conn, outline)?;
     let (entry, _) = store::head_entry(conn)?;
     let base = &context.base;
     let mut main = String::new();
@@ -833,7 +1033,180 @@ pub fn book_page(
     if book.repositories.is_empty() {
         main.push_str("<p class=\"hint\">No narrative binds a repository.</p>\n");
     }
-    Ok(document(&title, entry, base, &main))
+    let home = outline.map_or_else(|| BOOK.path.to_owned(), |name| format!("/v/{name}"));
+    let page = Shell {
+        title: &title,
+        entry,
+        base,
+        view: Some(BOOK),
+        side: Some(book_side(&book, base, &home, None)),
+        query: "",
+    };
+    Ok(shell(&page, &main))
+}
+
+/// The page of the search `query`: the narratives of the book whose
+/// paragraphs, at the version that the book gives, hold each word, each
+/// linked to its first paragraph that holds them all; then each other
+/// claim that `boom search --all` gives, each linked to its page in the
+/// claims view (narrative-page, "A search from the page", "A narrative
+/// found links to its paragraph").
+pub fn search_page(
+    conn: &rusqlite::Connection,
+    query: &str,
+    context: &Context,
+) -> Result<String, Failure> {
+    let (state, book) = book_of(conn, None)?;
+    let (entry, _) = store::head_entry(conn)?;
+    let base = &context.base;
+    let given: Vec<String> = query.split_whitespace().map(str::to_owned).collect();
+    let words = crate::search::words(&given);
+    let mut main = String::from("<h1>Search</h1>\n");
+    if words.is_empty() {
+        let _ = writeln!(
+            main,
+            "<p class=\"hint\">{}.</p>",
+            escape(crate::search::NO_WORD)
+        );
+    } else {
+        let _ = writeln!(
+            main,
+            "<p class=\"meta\">“{}”, across the book and every repository, at entry {entry} of the store's log</p>",
+            escape(&words.join(" "))
+        );
+        main.push_str(&found_narratives(conn, &state, &book, &words, base)?);
+        main.push_str(&found_claims(conn, &words, base)?);
+    }
+    let page = Shell {
+        title: "Search",
+        entry,
+        base,
+        view: None,
+        side: Some(book_side(&book, base, BOOK.path, None)),
+        query,
+    };
+    Ok(shell(&page, &main))
+}
+
+/// The narratives of `book` whose paragraphs hold each of `words`, in
+/// the book's order, each with a link to the first paragraph that holds
+/// them all and that paragraph's words.
+fn found_narratives(
+    conn: &rusqlite::Connection,
+    state: &State,
+    book: &Book,
+    words: &[String],
+    base: &str,
+) -> Result<String, Failure> {
+    let order = book.order();
+    let mut documents = Vec::with_capacity(order.len());
+    for entry in &order {
+        let body = state
+            .named(&entry.narrative)
+            .first()
+            .and_then(|claim| claim.version(&entry.version))
+            .and_then(|version| version.proposal.body.clone());
+        let body = body_text(conn, body.as_deref())?;
+        documents.push(
+            narrative::paragraphs(&body)
+                .iter()
+                .map(Paragraph::words)
+                .collect::<Vec<_>>(),
+        );
+    }
+    let found = crate::search::paragraphs(&documents, words)?;
+    let mut html = format!(
+        "<h2>Narratives of the book</h2>\n<p class=\"hint\">{}</p>\n",
+        count_words(
+            found.len(),
+            "narrative holds",
+            "narratives hold",
+            "each word"
+        )
+    );
+    if found.is_empty() {
+        return Ok(html);
+    }
+    html.push_str("<ul class=\"list found\">\n");
+    for (place, held) in found {
+        let entry = order[place];
+        let name = escape(&entry.narrative);
+        let (at, excerpt) = match held {
+            crate::search::Held::Paragraph(n) => (
+                format!("#p{}", n + 1),
+                Some(format!("¶{} {}", n + 1, documents[place][n])),
+            ),
+            crate::search::Held::Across(excerpt) => (String::new(), excerpt),
+        };
+        let _ = write!(
+            html,
+            "<li data-narrative=\"{name}\"><a class=\"title\" href=\"{base}/n/{name}{at}\">{}</a><div class=\"meta\">narrative <code>{name}@{}</code> · <span class=\"status\">{}</span></div>",
+            escape(&entry.title),
+            entry.version,
+            entry.status,
+        );
+        if let Some(excerpt) = excerpt {
+            let _ = write!(html, "<p class=\"quote\">{}</p>", escape(&excerpt));
+        }
+        html.push_str("</li>\n");
+    }
+    html.push_str("</ul>\n");
+    Ok(html)
+}
+
+/// Each claim that `boom search --all` gives for `words`, in its order,
+/// but the narratives, which [`found_narratives`] gives: its kind,
+/// `<name>@<version>`, status, statement and excerpt, as a link to its
+/// page in the claims view.
+fn found_claims(
+    conn: &rusqlite::Connection,
+    words: &[String],
+    base: &str,
+) -> Result<String, Failure> {
+    let found: Vec<crate::search::Standing> = crate::search::standing(conn, None, &[], words)?
+        .into_iter()
+        .filter(|found| found.claim.kind != Kind::Narrative)
+        .collect();
+    let mut html = format!(
+        "<h2>Claims that stand</h2>\n<p class=\"hint\">{}</p>\n",
+        count_words(found.len(), "claim holds", "claims hold", "each word")
+    );
+    if found.is_empty() {
+        return Ok(html);
+    }
+    html.push_str("<ul class=\"list found\">\n");
+    for found in &found {
+        let at = format!(
+            "{}@{}",
+            escape(&found.claim.name),
+            found.version.proposal.version
+        );
+        let _ = write!(
+            html,
+            "<li data-claim=\"{name}\"><div class=\"meta\">{kind} <a href=\"{base}/claims/{at}\"><code>{at}</code></a> · <span class=\"status\">{status}</span> · binds {binds}</div><a class=\"title\" href=\"{base}/claims/{at}\">{statement}</a>",
+            name = escape(&found.claim.name),
+            kind = found.claim.kind.as_str(),
+            status = judge::Status::Accepted.as_str(),
+            binds = escape(&binds(&found.version)),
+            statement = escape(&found.version.proposal.statement),
+        );
+        if let Some(excerpt) = &found.excerpt {
+            let _ = write!(html, "<p class=\"quote\">{}</p>", escape(excerpt));
+        }
+        html.push_str("</li>\n");
+    }
+    html.push_str("</ul>\n");
+    Ok(html)
+}
+
+/// A count in words: "No narrative holds each word", "1 claim holds
+/// each word", "3 claims hold each word".
+fn count_words(count: usize, one: &str, many: &str, what: &str) -> String {
+    match count {
+        0 => format!("No {one} {what}."),
+        1 => format!("1 {one} {what}."),
+        n => format!("{n} {many} {what}."),
+    }
 }
 
 /// The claim `name` of `state`, an outline.
@@ -986,6 +1359,18 @@ impl Server {
             }
             ("GET" | "HEAD", None) if rest.is_empty() => {
                 self.read(|conn| book_page(conn, None, &self.context))
+            }
+            ("GET" | "HEAD", None) if rest == "search" => {
+                let query = url
+                    .split_once('?')
+                    .map(|(_, query)| query.split('#').next().unwrap_or_default())
+                    .unwrap_or_default();
+                let words = form(query)
+                    .into_iter()
+                    .find(|(name, _)| name == "q")
+                    .map(|(_, words)| words)
+                    .unwrap_or_default();
+                self.read(|conn| search_page(conn, &words, &self.context))
             }
             ("GET" | "HEAD", None) if rest.starts_with("v/") && !rest[2..].contains('/') => {
                 self.read(|conn| book_page(conn, Some(&rest[2..]), &self.context))

@@ -100,6 +100,133 @@ pub fn search(claims: &[Claim<'_>], words: &[String]) -> Result<Vec<Found>, Fail
     Ok(found)
 }
 
+/// The words of `boom search`'s refusal of a search with no word that
+/// holds a letter or a digit, which the page gives too.
+pub const NO_WORD: &str = "boom search needs a word holding a letter or a digit";
+
+/// Where a document's paragraphs hold the words searched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Held {
+    /// The first paragraph that holds each word, its place from 0.
+    Paragraph(usize),
+    /// No one paragraph holds each word, and the paragraphs together do,
+    /// with the passage of the whole where the words fall.
+    Across(Option<String>),
+}
+
+/// Searches `documents`, each a list of paragraphs' words, for every one
+/// of `words`, with [`search`]'s matching: each paragraph a row, then
+/// each document a row. Gives each document found, in the order given,
+/// with the first paragraph that holds each word, or [`Held::Across`].
+pub fn paragraphs(
+    documents: &[Vec<String>],
+    words: &[String],
+) -> Result<Vec<(usize, Held)>, Failure> {
+    let mut rows = Vec::new();
+    let mut of = Vec::new();
+    for (document, paragraphs) in documents.iter().enumerate() {
+        for (place, text) in paragraphs.iter().enumerate() {
+            rows.push(Claim {
+                body: Some(text),
+                ..Claim::default()
+            });
+            of.push((document, place));
+        }
+    }
+    let mut first: Vec<Option<usize>> = vec![None; documents.len()];
+    for found in search(&rows, words)? {
+        let (document, place) = of[found.place];
+        first[document] = Some(first[document].map_or(place, |earlier| earlier.min(place)));
+    }
+    let wholes: Vec<String> = documents
+        .iter()
+        .map(|paragraphs| paragraphs.join("\n\n"))
+        .collect();
+    let rows: Vec<Claim<'_>> = wholes
+        .iter()
+        .map(|whole| Claim {
+            body: Some(whole),
+            ..Claim::default()
+        })
+        .collect();
+    let mut found: Vec<(usize, Held)> = search(&rows, words)?
+        .into_iter()
+        .map(|found| {
+            let held = match first[found.place] {
+                Some(place) => Held::Paragraph(place),
+                None => Held::Across(found.excerpt),
+            };
+            (found.place, held)
+        })
+        .collect();
+    found.sort_by_key(|(document, _)| *document);
+    Ok(found)
+}
+
+/// A claim that stands, found by a search: the claim, its accepted
+/// version, its imported number or id, and the passage of its body.
+#[derive(Debug, Clone)]
+pub struct Standing {
+    /// The claim.
+    pub claim: crate::judge::Claim,
+    /// Its accepted version.
+    pub version: crate::judge::Version,
+    /// Its imported record's number or rule's id, where it has one.
+    pub legacy: Option<String>,
+    /// The passage of its body where the words fall.
+    pub excerpt: Option<String>,
+}
+
+/// The claims that stand for `repository` and its `contexts`, or every
+/// claim that stands where none is named, whose words hold every one of
+/// `words`, best first: `boom search`'s answer, read from the views on
+/// `conn` (claim-search).
+pub fn standing(
+    conn: &Connection,
+    repository: Option<&str>,
+    contexts: &[String],
+    words: &[String],
+) -> Result<Vec<Standing>, Failure> {
+    let accepted = crate::store::accepted_for(conn, repository, contexts)?;
+    // A body that is not text is searched as holding no word; one whose
+    // bytes no longer match its fingerprint stops the search.
+    let bodies = accepted
+        .iter()
+        .map(|(_, version)| match &version.proposal.body {
+            Some(fingerprint) => Ok(String::from_utf8(crate::store::blob(conn, fingerprint)?).ok()),
+            None => Ok(None),
+        })
+        .collect::<Result<Vec<_>, Failure>>()?;
+    let searched: Vec<Claim<'_>> = accepted
+        .iter()
+        .zip(&bodies)
+        .map(|((claim, version), body)| {
+            let imported = version.imported.as_ref();
+            Claim {
+                name: &claim.name,
+                legacy: imported.and_then(|imported| imported.legacy.as_deref()),
+                statement: &version.proposal.statement,
+                section: imported.and_then(|imported| imported.section.as_deref()),
+                scenarios: &version.proposal.scenarios,
+                body: body.as_deref(),
+            }
+        })
+        .collect();
+    let found = search(&searched, words)?;
+    Ok(found
+        .into_iter()
+        .map(|found| {
+            let (claim, version) = &accepted[found.place];
+            Standing {
+                claim: claim.clone(),
+                version: version.clone(),
+                legacy: searched[found.place].legacy.map(str::to_owned),
+                excerpt: found.excerpt,
+            }
+        })
+        .collect())
+}
+
 /// `text` with its runs of whitespace made one space, and none at
 /// either end.
 fn one_line(text: &str) -> String {
@@ -252,6 +379,41 @@ mod tests {
             claim("beta-kept", "Beta is kept."),
         ];
         assert_eq!(places(&claims, &["kept"]), [0, 1, 2]);
+    }
+
+    fn documents(given: &[&[&str]]) -> Vec<Vec<String>> {
+        given
+            .iter()
+            .map(|paragraphs| paragraphs.iter().map(|&text| text.to_owned()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn the_first_paragraph_that_holds_each_word() {
+        let documents = documents(&[
+            &["Nothing here.", "A bolt lands.", "Bolts land on green."],
+            &["No word of it."],
+            &["The bolt waits.", "A bolt is held."],
+        ]);
+        assert_eq!(
+            paragraphs(&documents, &given(&["BOLTS"])).unwrap(),
+            [(0, Held::Paragraph(1)), (2, Held::Paragraph(0))]
+        );
+        assert_eq!(
+            paragraphs(&documents, &given(&["bolt", "green"])).unwrap(),
+            [(0, Held::Paragraph(2))]
+        );
+    }
+
+    #[test]
+    fn words_in_two_paragraphs() {
+        let documents = documents(&[&["A bolt.", "Then", "The landing comes."]]);
+        let found = paragraphs(&documents, &given(&["bolt", "landing"])).unwrap();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(matches!(found[0], (0, Held::Across(_))), "{found:?}");
+        assert!(paragraphs(&documents, &given(&["bolt", "absent"]))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
