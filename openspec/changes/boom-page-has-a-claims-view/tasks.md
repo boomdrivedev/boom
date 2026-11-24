@@ -22,7 +22,7 @@ Each scenario of the delta spec is one test, named by its scenario, in
 
 ## 3. The proposed versions
 
-- [ ] 3.1 Give, at the head of each view, "Proposed, binding nothing": each proposed version of its kinds at its level, in a dashed frame marked "proposed", with `boom accept <name>@<version>`, and one `boom accept` with each version of the list; no rejected or superseded version in any view. Tests for "A proposed decision", "One command for every proposal", "A rejected version" and "Nothing proposed". Proved by `boom:test`
+- [ ] 3.1 Give, at the head of each view, "Proposed, binding nothing": each proposed version of its kinds, grouped by the level it binds, in a dashed frame marked "proposed", with `boom accept <name>@<version>`, and one `boom accept` with each version of the list; no rejected or superseded version in any view. Tests for "A proposed decision", "One command for every proposal", "A rejected version" and "Nothing proposed". Proved by `boom:test`
 - [ ] 3.2 Give the page of a proposed version in a dashed frame marked "proposed, binds nothing", with `boom accept` and `boom reject --why`, and no `POST` form. A test for "The page of a proposed decision". Proved by `boom:test`
 
 ## 4. A claim's page in full
@@ -34,7 +34,7 @@ Each scenario of the delta spec is one test, named by its scenario, in
 
 ## 5. Filters and search
 
-- [ ] 5.1 Give each view a `GET` form with `kind`, `status`, `repository`, `level` and `q`; `status` `accepted` when left out; `q` with the matching of `search::words` and `search::search` over the claims the other fields keep; 400 with the values a field takes for a value it does not take; the count of what the view gives. Tests for "The proposed decisions of boom", "A search in the rules view", "A proposed claim found" and "A kind that is not one". Proved by `boom:test`
+- [ ] 5.1 Give each view a `GET` form with `kind`, `status`, `repository`, `level` and `q`; `status` `both` when left out; `q` with the matching of `search::words` and `search::search` over the claims the other fields keep; 400 with the values a field takes for a value it does not take; the count of what the view gives. Tests for "The proposed decisions of boom", "A search in the rules view", "A proposed claim found" and "A kind that is not one". Proved by `boom:test`
 
 ## 6. What the views keep
 

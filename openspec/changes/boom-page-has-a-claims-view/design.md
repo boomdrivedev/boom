@@ -178,26 +178,30 @@ gives what waits, with the command that accepts it).
      `boom accept <name>@<version>` and
      `boom reject <name>@<version> --why "<why>"`.
 6. **Proposed versions apart from accepted ones.** Each view gives
-   first, under "Proposed, binding nothing", each proposed version of
-   its kinds and levels, each in a dashed frame marked "proposed" in
-   words, with `boom accept <name>@<version>` and, at the head of the
-   list, one `boom accept` with every version of it, which one touch of
-   the key signs. Then it gives the accepted versions, plain. No view
-   gives a rejected or a superseded version: they show only in a
+   first, before its levels, under "Proposed, binding nothing", each
+   proposed version of its kinds, grouped by the level that it binds,
+   each in a dashed frame marked "proposed" in words, with
+   `boom accept <name>@<version>` and, at the head of the list, one
+   `boom accept` with every version of it, which one touch of the key
+   signs. The sidebar gives each level's count of proposed versions.
+   Then the view gives its levels with the accepted versions, plain. No
+   view gives a rejected or a superseded version: they show only in a
    claim's history.
 
    Options:
-   1. A list of the proposed versions at the head of each view
-      (recommended). The person sees what waits where it will bind,
-      and the accepted list stays what binds.
+   1. A list of the proposed versions at the head of each view, grouped
+      by level (recommended). The person sees what waits first, and
+      where it will bind, and the levels below stay what binds.
    2. One view of everything that waits, across kinds. It is one pile,
-      but it leaves the level where a proposal will bind.
-   3. Proposed versions inline, among the accepted ones, marked. A
+      but it parts a proposal from the rules or decisions it joins.
+   3. Proposed versions at the head of their own level. A proposal
+      sits where it binds, but a level far down the view hides it.
+   4. Proposed versions inline, among the accepted ones, marked. A
       reader then reads what binds and what does not as one list.
 7. **Filters and search with no script.** Each view gives a
    `<form method="get">` at its head, with `kind`, `status`,
    `repository` and `level` as `<select>` fields, `q` as a search
-   field, and a button. `status` is `accepted`, `proposed` or both.
+   field, and a button. `status` is `both`, the default, `accepted` or `proposed`.
    `level` is `system`, a repository's name, or `<repository>/<context>`.
    `repository` gives what `boom query` gives that repository. `q`
    keeps the claims whose words hold each word, with the matching of

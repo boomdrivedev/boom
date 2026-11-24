@@ -112,12 +112,12 @@ Each view SHALL give each context as a section under its repository, headed by i
 
 ### Requirement: The proposed versions apart
 
-Each view SHALL give first, under "Proposed, binding nothing", each proposed version of its kinds, at its level, each in a frame of its own marked "proposed" in words, with `boom accept <name>@<version>`. At the head of that list, it SHALL give one `boom accept` that names each version of the list. It SHALL then give the accepted versions. No view SHALL give a rejected or a superseded version.
+Each view SHALL give first, before its levels, under "Proposed, binding nothing", each proposed version of its kinds, grouped by the level that it binds, each in a frame of its own marked "proposed" in words, with `boom accept <name>@<version>`. At the head of that list, it SHALL give one `boom accept` that names each version of the list. It SHALL then give the accepted versions. No view SHALL give a rejected or a superseded version.
 
 #### Scenario: A proposed decision
 
 - **WHEN** `only-an-accepted-version-binds-work@<v1>` is proposed for the whole system, and `<base>/decisions` is asked for
-- **THEN** the page gives it under "Proposed, binding nothing" in Part I, marked "proposed", with `boom accept only-an-accepted-version-binds-work@<v1>`, before the accepted decisions
+- **THEN** the page gives it under "Proposed, binding nothing", in the group of the whole system, marked "proposed", with `boom accept only-an-accepted-version-binds-work@<v1>`, before Part I
 
 #### Scenario: One command for every proposal
 
@@ -181,7 +181,7 @@ The page of a proposed version SHALL give it in a frame of its own marked "propo
 
 ### Requirement: Filters with no script
 
-Each view SHALL give a form that sends `GET` to its own path, with the fields `kind`, `status`, `repository`, `level` and `q`. `status` SHALL take `accepted`, `proposed` or `both`, and `accepted` when left out. `level` SHALL take `system`, a repository's name or `<repository>/<context>`. A value that the field does not take SHALL answer 400 with the values it takes. The view SHALL say how many claims it gives.
+Each view SHALL give a form that sends `GET` to its own path, with the fields `kind`, `status`, `repository`, `level` and `q`. `status` SHALL take `both`, `accepted` or `proposed`, and `both` when left out: the proposed versions apart, then the accepted ones. `level` SHALL take `system`, a repository's name or `<repository>/<context>`. A value that the field does not take SHALL answer 400 with the values it takes. The view SHALL say how many claims it gives.
 
 #### Scenario: The proposed decisions of boom
 
