@@ -202,6 +202,7 @@ fn views_behind_the_log_are_rebuilt_before_an_answer() {
     );
     let entry = boom::entry::Entry {
         at: 1_763_424_600,
+        rules: boom::judge::RULES,
         actor: boom::entry::Actor::Agent {
             provenance: "another-program".to_owned(),
         },
@@ -373,5 +374,5 @@ fn views_of_an_older_form_are_built_again() {
         .sqlite()
         .query_row("SELECT form FROM views_head", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(form, 9);
+    assert_eq!(form, 10);
 }

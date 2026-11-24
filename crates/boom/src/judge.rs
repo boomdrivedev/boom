@@ -10,6 +10,11 @@
 //! the key it registers); for an agent's, an act that is `proposed` and
 //! a provenance; then the act's own rules. A person's note alone carries
 //! the person's name and no signature (narrative-notes).
+//!
+//! An entry is judged by the rules it was written under, never by a rule
+//! that came into force after it: each entry names its rule set, and a
+//! rule that came in with a later set does not hold for it (record-log,
+//! "An entry is judged by the rules it was written under").
 
 use std::collections::BTreeMap;
 
@@ -18,6 +23,23 @@ use ssh_key::PublicKey;
 use crate::claim::{self, Kind, Proposal};
 use crate::entry::{Act, Actor, Attach, Entry, Form, Imported};
 use crate::{repository, sign};
+
+/// The rule set this boom writes each new entry under, and the newest
+/// rule set it judges by. An entry that names no rule set was written
+/// under rule set 0: the rules that each boom held before entries named
+/// their rule set (record-log, "An entry is judged by the rules it was
+/// written under").
+pub const RULES: u32 = 1;
+
+/// The rule set from which a narrative binds one level (narratives, "A
+/// narrative binds one level").
+const ONE_LEVEL: u32 = 1;
+
+/// The rule set from which a draft that a newer draft superseded is not
+/// accepted, rejected or amended again (claim-versions, "A new draft
+/// supersedes the draft it amends"). Under an earlier rule set, no draft
+/// supersedes another, so that draft still waits.
+const ONE_DRAFT_LINE: u32 = 1;
 
 /// A person the store registers.
 #[derive(Debug, Clone)]
@@ -168,6 +190,17 @@ impl Claim {
         self.versions
             .iter()
             .find(|candidate| candidate.proposal.version == version)
+    }
+
+    /// The status of `found`, a version of this claim, under the rule set
+    /// `rules`: before rule set [`ONE_DRAFT_LINE`], a draft that a newer
+    /// draft superseded still waits, and is proposed.
+    fn status_under(&self, found: &Version, rules: u32) -> Status {
+        if rules < ONE_DRAFT_LINE && self.newer_draft(&found.proposal.version).is_some() {
+            Status::Proposed
+        } else {
+            found.status
+        }
     }
 
     /// The newer draft that superseded the draft `version`: the version
@@ -470,6 +503,12 @@ pub fn judge(state: &State, entry: &Entry, signed: &str, proof: Proof<'_>) -> Ve
 }
 
 fn check(state: &State, entry: &Entry, signed: &str, proof: Proof<'_>) -> Result<Verdict, String> {
+    if entry.rules > RULES {
+        return Err(format!(
+            "it was written under rule set {}, and this boom judges by rule set {RULES} at most: a newer boom judges it",
+            entry.rules
+        ));
+    }
     check_form(&entry.act)?;
     match &entry.actor {
         Actor::Person(name) => check_person(state, entry, name, signed, proof)?,
@@ -755,7 +794,7 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
             if let Some(imported) = imported {
                 check_imported(state, claim, imported)?;
             }
-            check_proposal(state, claim, attach.as_ref())
+            check_proposal(state, claim, attach.as_ref(), entry.rules)
         }
         Act::Accepted { versions } => {
             // One act, judged whole: each version counts, or each is
@@ -774,7 +813,7 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
                     claims.push(claim.key());
                 }
                 verdicts.push(
-                    check_accept(state, &named.name, &named.version, accepter)
+                    check_accept(state, &named.name, &named.version, accepter, entry.rules)
                         .map_err(|why| naming(&named.name, &named.version, why))?,
                 );
             }
@@ -799,7 +838,7 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
         }
         Act::Rejected { name, version, .. } => {
             let rejecter = actor_name(&entry.actor).unwrap_or_default();
-            check_reject(state, name, version, rejecter)
+            check_reject(state, name, version, rejecter, entry.rules)
         }
         Act::Repository {
             name,
@@ -958,6 +997,7 @@ fn check_proposal(
     state: &State,
     proposal: &Proposal,
     attach: Option<&Attach>,
+    rules: u32,
 ) -> Result<Verdict, String> {
     let name = &proposal.name;
     if let Some(held) = state.holding(name, &proposal.version) {
@@ -1011,7 +1051,7 @@ fn check_proposal(
             // A draft has one line: a draft that a newer draft
             // superseded is not amended again (claim-versions, "A new
             // draft supersedes the draft it amends").
-            if let Some(newer) = claim.newer_draft(base) {
+            if let Some(newer) = claim.newer_draft(base).filter(|_| rules >= ONE_DRAFT_LINE) {
                 let newer = &newer.proposal.version;
                 return Err(format!(
                     "{name}@{base} is superseded by the newer draft {name}@{newer}: amend that draft, with --amends {newer}"
@@ -1064,7 +1104,9 @@ fn check_proposal(
         }
     }
     if proposal.kind == Kind::Narrative {
-        check_level(proposal, attach)?;
+        if rules >= ONE_LEVEL {
+            check_level(proposal, attach)?;
+        }
         check_answers(state, proposal)?;
     }
     if proposal.kind == Kind::Outline {
@@ -1258,10 +1300,11 @@ fn check_accept(
     name: &str,
     version: &str,
     accepter: &str,
+    rules: u32,
 ) -> Result<Verdict, String> {
     let (claim, found) = find(state, name, version)?;
     let by = found.decided_by.as_deref().unwrap_or_default();
-    match found.status {
+    match claim.status_under(found, rules) {
         Status::Proposed => {}
         // A record that came in as history and was accepted keeps its
         // file's status.
@@ -1321,16 +1364,20 @@ fn check_reject(
     name: &str,
     version: &str,
     rejecter: &str,
+    rules: u32,
 ) -> Result<Verdict, String> {
     let (claim, found) = find(state, name, version)?;
     let by = found.decided_by.as_deref().unwrap_or_default();
-    if let Some(newer) = claim.newer_draft(version) {
+    if let Some(newer) = claim
+        .newer_draft(version)
+        .filter(|_| rules >= ONE_DRAFT_LINE)
+    {
         return Err(format!(
             "{name}@{version} is superseded by the newer draft {name}@{}: only a proposed version is rejected",
             newer.proposal.version
         ));
     }
-    match found.status {
+    match claim.status_under(found, rules) {
         Status::Proposed => Ok(Verdict::Counts),
         // A person's reject carries its reason; a record that came in as
         // history, rejected as its file says, was accepted.
@@ -1720,6 +1767,7 @@ mod tests {
             proposal.version = proposal.fingerprint(None);
             Entry {
                 at: 1,
+                rules: RULES,
                 actor: Actor::Agent {
                     provenance: "run-1".to_owned(),
                 },

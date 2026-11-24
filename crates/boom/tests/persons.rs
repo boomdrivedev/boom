@@ -441,6 +441,7 @@ fn one_of_them_refused_signs_and_appends_nothing() {
 fn one_accept_of(targets: &[&str]) -> boom::entry::Entry {
     boom::entry::Entry {
         at: 1_763_424_500,
+        rules: boom::judge::RULES,
         actor: boom::entry::Actor::Person("ada".to_owned()),
         act: boom::entry::Act::Accepted {
             versions: targets

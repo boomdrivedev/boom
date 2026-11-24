@@ -138,6 +138,7 @@ fn a_repository_named_twice_by_hand_counts_for_nothing() {
     place.made();
     let entry = boom::entry::Entry {
         at: 1_763_424_600,
+        rules: boom::judge::RULES,
         actor: boom::entry::Actor::Agent {
             provenance: "another-program".to_owned(),
         },
@@ -231,6 +232,7 @@ fn the_same_words_for_another_repository_are_refused() {
     // Written by hand under another attachment, it counts for nothing.
     let entry = boom::entry::Entry {
         at: 1_763_424_600,
+        rules: boom::judge::RULES,
         actor: boom::entry::Actor::Agent {
             provenance: "another-program".to_owned(),
         },

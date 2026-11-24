@@ -183,6 +183,7 @@ pub fn write_note(
     }
     let entry = Entry {
         at: env.clock.now(),
+        rules: crate::judge::RULES,
         actor: Actor::Person(person.clone()),
         act: Act::Noted {
             name: name.to_owned(),
