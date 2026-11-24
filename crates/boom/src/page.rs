@@ -29,6 +29,8 @@ use crate::store::{self, Scope, Store};
 use crate::view::Book;
 use crate::Failure;
 
+mod claims;
+
 /// The policy of each response: nothing from another host, no script
 /// but the page's own origin's, which serves Mermaid's alone, the style
 /// the page holds, and forms sent to the page alone.
@@ -332,6 +334,26 @@ pub const BOOK: View = View {
     path: "/",
 };
 
+/// The rules: each accepted invariant and assumption, by level
+/// (claims-view).
+pub const RULES: View = View {
+    words: "The rules",
+    path: "/rules",
+};
+
+/// The decisions: each accepted decision, by level, in the order accepted
+/// (claims-view).
+pub const DECISIONS: View = View {
+    words: "The decisions",
+    path: "/decisions",
+};
+
+/// The terms: each accepted term, by repository (claims-view).
+pub const TERMS: View = View {
+    words: "The terms",
+    path: "/terms",
+};
+
 /// The claims: `<base>/claims/` and `<base>/claims/<name>[@<version>]`.
 pub const CLAIMS: View = View {
     words: "The claims",
@@ -339,8 +361,9 @@ pub const CLAIMS: View = View {
 };
 
 /// Each view that boom serves, in the bar's order (narrative-page, "One
-/// shell for each view"). A later view adds itself here and its routes.
-pub const VIEWS: &[View] = &[BOOK, CLAIMS];
+/// shell for each view"; claims-view, "The views in the bar"). A later
+/// view adds itself here and its routes.
+pub const VIEWS: &[View] = &[BOOK, RULES, DECISIONS, TERMS, CLAIMS];
 
 /// What the shell of a page holds besides its `<main>`.
 struct Shell<'a> {
@@ -497,6 +520,27 @@ nav.book{display:flex;justify-content:space-between;gap:1rem;margin:2.4rem 0 0;p
 .quote{border-left:2px solid var(--line);padding-left:.6rem;color:var(--soft)}
 .found .quote{margin:.3rem 0 0;font:14px/1.5 system-ui,sans-serif;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .box .head a{color:inherit}
+form.filters{display:flex;flex-wrap:wrap;gap:.5rem .8rem;align-items:end;margin:1rem 0;padding:.7rem .8rem;border:1px solid var(--line);border-radius:8px;background:var(--card);font:13px/1.4 system-ui,sans-serif;color:var(--soft)}
+form.filters label{display:flex;flex-direction:column;gap:.2rem}
+form.filters select,form.filters input{font:14px/1.3 system-ui,sans-serif;padding:.25rem .4rem;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink)}
+form.filters button{font:600 13px system-ui,sans-serif;padding:.35rem .8rem;border:1px solid var(--claim-edge);border-radius:6px;background:var(--claim);color:var(--ink);cursor:pointer}
+.count{display:inline-block;min-width:1.4rem;margin-left:.3rem;padding:0 .35rem;border-radius:9px;background:var(--card);border:1px solid var(--line);font-size:11px;text-align:center;color:var(--soft)}
+.item{margin:.5rem 0 .8rem;padding:.55rem .8rem;border-left:3px solid var(--claim-edge);border-radius:0 6px 6px 0;background:var(--claim);font:14px/1.5 system-ui,sans-serif}
+.item p{margin:.2rem 0}
+.item details>summary{cursor:pointer;color:var(--soft);font-size:12px}
+.item.proposed,.waiting.frame{background:transparent;border:1.5px dashed var(--note-edge);border-radius:6px}
+.mark{display:inline-block;padding:0 .4rem;border-radius:4px;background:var(--note);border:1px solid var(--note-edge);font:600 11px/1.6 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.03em;color:var(--ink)}
+.waiting.frame{padding:.6rem .9rem;margin:1rem 0;font:14px/1.5 system-ui,sans-serif}
+section.waiting{margin:1.4rem 0 2rem;padding:.2rem 1rem 1rem;border:1px solid var(--note-edge);border-radius:8px;background:color-mix(in srgb,var(--note) 45%,transparent)}
+section.waiting h2{border-top:0;margin-top:.8rem}
+pre.command{margin:.4rem 0;font-size:12.5px;white-space:pre-wrap;word-break:break-all}
+h3.group{font-size:.9rem;color:var(--soft)}
+ul.edges{padding-left:1.1rem;font:14px/1.55 system-ui,sans-serif}
+ul.edges li{margin:.3rem 0}
+ul.edges li.note-of{list-style:none}
+details.history>summary{cursor:pointer;list-style:none}
+details.history>summary h2{display:inline-block}
+.meta.globs{margin-top:-.1rem}
 .p table,.box table{border-collapse:collapse;margin:.5rem 0;font:15px/1.45 system-ui,sans-serif}
 .p th,.p td,.box th,.box td{border:1px solid var(--line);padding:.35rem .7rem;text-align:left;vertical-align:top}
 .p th,.box th{background:var(--card);font-weight:600}
@@ -1242,6 +1286,13 @@ fn token() -> Result<String, Failure> {
     Ok(crate::hex(&bits))
 }
 
+/// The query of `url`, after its `?` and before its `#`.
+fn query_of(url: &str) -> &str {
+    url.split_once('?')
+        .map(|(_, query)| query.split('#').next().unwrap_or_default())
+        .unwrap_or_default()
+}
+
 /// A form's fields, `application/x-www-form-urlencoded`.
 fn form(body: &str) -> Vec<(String, String)> {
     body.split('&')
@@ -1361,16 +1412,37 @@ impl Server {
                 self.read(|conn| book_page(conn, None, &self.context))
             }
             ("GET" | "HEAD", None) if rest == "search" => {
-                let query = url
-                    .split_once('?')
-                    .map(|(_, query)| query.split('#').next().unwrap_or_default())
-                    .unwrap_or_default();
-                let words = form(query)
+                let words = form(query_of(url))
                     .into_iter()
                     .find(|(name, _)| name == "q")
                     .map(|(_, words)| words)
                     .unwrap_or_default();
                 self.read(|conn| search_page(conn, &words, &self.context))
+            }
+            ("GET" | "HEAD", None) if claims::Of::from_path(rest).is_some() => {
+                let of = claims::Of::from_path(rest).expect("a view of the claims");
+                let fields = form(query_of(url));
+                let answered = Store::open(&self.path).and_then(|mut store| {
+                    store.read(|conn| claims::view_page(conn, of, &fields, &self.context))
+                });
+                match answered {
+                    Ok(Ok(html)) => Reply::page(html),
+                    Ok(Err(words)) => Reply::words(400, &words),
+                    Err(Failure::Refused(why)) => Reply::words(404, &why),
+                    Err(Failure::NotRun(why)) => Reply::words(500, &why),
+                }
+            }
+            ("GET" | "HEAD", None)
+                if rest.len() > "claims/".len()
+                    && rest.starts_with("claims/")
+                    && !rest["claims/".len()..].contains('/') =>
+            {
+                let target = &rest["claims/".len()..];
+                let (name, version) = match target.split_once('@') {
+                    Some((name, version)) => (name, Some(version)),
+                    None => (target, None),
+                };
+                self.read(|conn| claims::claim_page(conn, name, version, &self.context))
             }
             ("GET" | "HEAD", None) if rest.starts_with("v/") && !rest[2..].contains('/') => {
                 self.read(|conn| book_page(conn, Some(&rest[2..]), &self.context))
