@@ -387,3 +387,236 @@ impl Book {
         words
     }
 }
+
+// The claims' views (claims-view): the levels of the book, each with the
+// claims of some kinds that bind it.
+
+/// A level of the claims' views: the whole system, a repository, or a
+/// context under a repository of its globs.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ClaimLevel {
+    /// The whole system.
+    System,
+    /// A repository.
+    Repository(String),
+    /// A context, under one repository of its globs: the repository, then
+    /// the context.
+    Context(String, String),
+}
+
+impl ClaimLevel {
+    /// Its id in a page and in the filter `level`: `system`,
+    /// `<repository>` or `<repository>/<context>`.
+    pub fn id(&self) -> String {
+        match self {
+            ClaimLevel::System => "system".to_owned(),
+            ClaimLevel::Repository(repository) => repository.clone(),
+            ClaimLevel::Context(repository, context) => format!("{repository}/{context}"),
+        }
+    }
+
+    /// Its repository, where it has one.
+    pub fn repository(&self) -> Option<&str> {
+        match self {
+            ClaimLevel::System => None,
+            ClaimLevel::Repository(repository) | ClaimLevel::Context(repository, _) => {
+                Some(repository)
+            }
+        }
+    }
+}
+
+/// A claim and one of its versions.
+pub type Held<'a> = (&'a Claim, &'a Version);
+
+/// A level and the claims that bind it: its accepted versions, and its
+/// proposed versions, each in the order of the claims' names.
+#[derive(Debug, Clone)]
+pub struct LevelClaims<'a> {
+    /// The level.
+    pub level: ClaimLevel,
+    /// The accepted globs of a context's level; none for another.
+    pub globs: Vec<String>,
+    /// The accepted versions that bind it.
+    pub accepted: Vec<Held<'a>>,
+    /// The proposed versions that bind it.
+    pub proposed: Vec<Held<'a>>,
+}
+
+/// The repositories of a context, from its accepted version, else its
+/// newest, and the globs of its accepted version.
+fn context_of(claim: &Claim) -> (Vec<String>, Vec<String>) {
+    let repositories = shown(claim)
+        .map(|version| version.repositories.clone())
+        .unwrap_or_default();
+    let globs = claim
+        .standing
+        .as_deref()
+        .and_then(|standing| claim.version(standing))
+        .map(|version| version.proposal.paths.clone())
+        .unwrap_or_default();
+    (repositories, globs)
+}
+
+/// The levels of the claims' views of `state`: the whole system, then
+/// each repository of `repositories`, of a version or of a context, by
+/// name, each followed by its contexts by name; each with the accepted
+/// and the proposed versions of `kinds` that bind it. A version binds
+/// each repository it names and each context it names, under each
+/// repository of that context, and the whole system where it names
+/// neither, or a context of no repository.
+pub fn claim_levels<'a>(
+    state: &'a State,
+    kinds: &[Kind],
+    repositories: &[String],
+) -> Vec<LevelClaims<'a>> {
+    let contexts: BTreeMap<&str, (Vec<String>, Vec<String>)> = state
+        .claims
+        .values()
+        .filter(|claim| claim.kind == Kind::Context && shown(claim).is_some())
+        .map(|claim| (claim.name.as_str(), context_of(claim)))
+        .collect();
+    let mut named: std::collections::BTreeSet<String> = repositories.iter().cloned().collect();
+    for claim in state.claims.values() {
+        for version in &claim.versions {
+            named.extend(version.repositories.iter().cloned());
+        }
+    }
+    for (found, _) in contexts.values() {
+        named.extend(found.iter().cloned());
+    }
+    let mut levels = vec![LevelClaims {
+        level: ClaimLevel::System,
+        globs: Vec::new(),
+        accepted: Vec::new(),
+        proposed: Vec::new(),
+    }];
+    for repository in &named {
+        levels.push(LevelClaims {
+            level: ClaimLevel::Repository(repository.clone()),
+            globs: Vec::new(),
+            accepted: Vec::new(),
+            proposed: Vec::new(),
+        });
+        for (context, (of, globs)) in &contexts {
+            if of.contains(repository) {
+                levels.push(LevelClaims {
+                    level: ClaimLevel::Context(repository.clone(), (*context).to_owned()),
+                    globs: globs.clone(),
+                    accepted: Vec::new(),
+                    proposed: Vec::new(),
+                });
+            }
+        }
+    }
+    let at: BTreeMap<ClaimLevel, usize> = levels
+        .iter()
+        .enumerate()
+        .map(|(place, level)| (level.level.clone(), place))
+        .collect();
+    let places =
+        |version: &Version| -> Vec<usize> {
+            let mut found: Vec<ClaimLevel> = version
+                .repositories
+                .iter()
+                .map(|repository| ClaimLevel::Repository(repository.clone()))
+                .collect();
+            for context in crate::context::names(&version.contexts) {
+                match contexts.get(context) {
+                    Some((of, _)) if !of.is_empty() => found.extend(of.iter().map(|repository| {
+                        ClaimLevel::Context(repository.clone(), context.to_owned())
+                    })),
+                    _ => found.push(ClaimLevel::System),
+                }
+            }
+            if found.is_empty() {
+                found.push(ClaimLevel::System);
+            }
+            let mut places: Vec<usize> = found
+                .iter()
+                .filter_map(|level| at.get(level).copied())
+                .collect();
+            places.sort_unstable();
+            places.dedup();
+            places
+        };
+    for claim in state
+        .claims
+        .values()
+        .filter(|claim| kinds.contains(&claim.kind))
+    {
+        if let Some(version) = claim
+            .standing
+            .as_deref()
+            .and_then(|standing| claim.version(standing))
+        {
+            for place in places(version) {
+                levels[place].accepted.push((claim, version));
+            }
+        }
+        for version in claim
+            .versions
+            .iter()
+            .filter(|version| version.status == Status::Proposed)
+        {
+            for place in places(version) {
+                levels[place].proposed.push((claim, version));
+            }
+        }
+    }
+    levels
+}
+
+/// A version that names a claim with `--source` or `--changes`.
+#[derive(Debug, Clone)]
+pub struct Naming<'a> {
+    /// The claim whose version names it.
+    pub claim: &'a Claim,
+    /// That version, accepted or proposed.
+    pub version: &'a Version,
+    /// The edge: `source` or `changes`.
+    pub edge: &'static str,
+    /// The version of the named claim that the edge meant.
+    pub meant: String,
+}
+
+/// Each accepted or proposed version of `state` that names the claim
+/// `name` with `--source` or `--changes`, with the version meant, in the
+/// order of the claims' names, then their versions (claims-view, "The
+/// claims that name a claim").
+pub fn naming<'a>(state: &'a State, name: &str) -> Vec<Naming<'a>> {
+    let mut found = Vec::new();
+    for claim in state.claims.values() {
+        for version in claim
+            .versions
+            .iter()
+            .filter(|version| matches!(version.status, Status::Accepted | Status::Proposed))
+        {
+            let edges = version
+                .proposal
+                .source
+                .iter()
+                .map(|edge| ("source", edge))
+                .chain(
+                    version
+                        .proposal
+                        .changes
+                        .iter()
+                        .map(|edge| ("changes", edge)),
+                );
+            for (edge, target) in edges {
+                if let Some((named, meant)) = target.split_once('@') {
+                    if named == name {
+                        found.push(Naming {
+                            claim,
+                            version,
+                            edge,
+                            meant: meant.to_owned(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    found
+}

@@ -1395,3 +1395,981 @@ fn the_book_page() {
     let page = served(&place, &[]);
     runs_no_script(&page.get(&format!("/{}/", page.token)));
 }
+
+// The views of the claims (claims-view).
+
+/// Proposes a claim of `kind` named `name` with `extra`, a decision with
+/// a body, giving its version.
+fn claim_of(place: &Place, kind: &str, name: &str, words: &str, extra: &[&str]) -> String {
+    let body;
+    let mut args = vec!["propose", kind, name, words];
+    if kind == "decision" && !extra.contains(&"--body") {
+        body = place.decision_body();
+        args.extend(["--body", body.as_str()]);
+    }
+    args.extend(extra);
+    args.extend(["--provenance", "run-1"]);
+    version(&place.json(&args))
+}
+
+/// Proposes and accepts a claim of `kind`, giving its version.
+fn accepted_of(
+    place: &Place,
+    key: &str,
+    kind: &str,
+    name: &str,
+    words: &str,
+    extra: &[&str],
+) -> String {
+    let v = claim_of(place, kind, name, words, extra);
+    place.accepted(name, &v, key);
+    v
+}
+
+/// The context `sluice-host-process` with `glob`, accepted.
+fn host_context(place: &Place, key: &str, glob: &str) -> String {
+    accepted_of(
+        place,
+        key,
+        "context",
+        HOST,
+        "The host process of the queue.",
+        &["--path", glob],
+    )
+}
+
+const HOST: &str = "sluice-host-process";
+const WORDS: &str = "the-status-words";
+const BINDS: &str = "only-an-accepted-version-binds-work";
+
+impl Served {
+    /// The view or page at `path` under the token.
+    fn at(&self, path: &str) -> Response {
+        self.get(&format!("/{}/{path}", self.token))
+    }
+
+    fn base(&self) -> String {
+        format!("/{}", self.token)
+    }
+}
+
+/// The part of `html` from the item of the claim `name` to its end.
+fn claim_item(html: &str, name: &str) -> String {
+    let start = html
+        .find(&format!("data-claim=\"{name}\""))
+        .unwrap_or_else(|| panic!("no item {name}: {html}"));
+    let rest = &html[start..];
+    rest[..rest.find("</div>\n").unwrap_or(rest.len())].to_owned()
+}
+
+/// The part of `html` under "Proposed, binding nothing", or nothing.
+fn waiting(html: &str) -> String {
+    html.find("<section class=\"waiting\"")
+        .map(|start| {
+            let rest = &html[start..];
+            rest[..rest.find("</section>").unwrap()].to_owned()
+        })
+        .unwrap_or_default()
+}
+
+/// The part of `html` after "Proposed, binding nothing".
+fn levels_part(html: &str) -> String {
+    let main = &html[html.find("<main>").unwrap()..];
+    match main.find("</section>") {
+        Some(end) => main[end..].to_owned(),
+        None => main.to_owned(),
+    }
+}
+
+#[test]
+fn the_bar_of_the_rules_view() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let page = served(&place, &[]);
+    let html = page.at("rules").body;
+    let bar = bar(&html);
+    let base = page.base();
+    for (words, path) in [
+        ("The book", "/"),
+        ("The rules", "/rules"),
+        ("The decisions", "/decisions"),
+        ("The terms", "/terms"),
+        ("The claims", "/claims/"),
+    ] {
+        assert!(
+            bar.contains(&format!("href=\"{base}{path}\"")),
+            "{words}: {bar}"
+        );
+    }
+    assert!(
+        bar.contains(&format!(
+            "<a href=\"{base}/rules\" aria-current=\"page\">The rules</a>"
+        )),
+        "{bar}"
+    );
+    assert_eq!(bar.matches("aria-current").count(), 1, "{bar}");
+}
+
+#[test]
+fn the_sidebar_of_a_view() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    for name in ["a-one", "a-two", "a-three", "a-four"] {
+        accepted_of(
+            &place,
+            &chuck,
+            "invariant",
+            name,
+            "It holds.",
+            &["--repository", "boom"],
+        );
+    }
+    accepted_of(
+        &place,
+        &chuck,
+        "assumption",
+        "a-five",
+        "It is so.",
+        &["--repository", "boom"],
+    );
+    let page = served(&place, &[]);
+    let side = side(&page.at("rules").body);
+    assert!(
+        side.contains(&format!(
+            "<a href=\"{}/rules#boom\">boom <span class=\"count\">5</span>",
+            page.base()
+        )),
+        "{side}"
+    );
+}
+
+#[test]
+fn a_rule_of_a_repository() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let body = place.file("status.md", "Breaks it: a status field.\n");
+    let v1 = accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        STATUS,
+        "A record never holds its status.",
+        &["--repository", "boom", "--body", &body],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("rules").body;
+    let chapter = &html[html.find("<h3 id=\"boom\">").expect("the chapter boom")..];
+    let item = claim_item(chapter, STATUS);
+    assert!(
+        item.contains(&format!("href=\"{}/claims/{STATUS}@{v1}\"", page.base())),
+        "{item}"
+    );
+    assert!(item.contains("A record never holds its status."), "{item}");
+    assert!(
+        item.contains("<details><summary>details</summary>"),
+        "{item}"
+    );
+    assert!(item.contains("Breaks it: a status field."), "{item}");
+}
+
+#[test]
+fn a_rule_of_a_context() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    host_context(&place, &chuck, "sluice:crates/sluice/src/host/**");
+    accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        "one-host-process",
+        "One process.",
+        &["--context", HOST],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("rules").body;
+    let chapter = html.find("<h3 id=\"sluice\">").expect("the chapter sluice");
+    let section = html
+        .find(&format!("<h4 id=\"sluice/{HOST}\""))
+        .expect("the section");
+    let item = html.find("data-claim=\"one-host-process\"").unwrap();
+    assert!(chapter < section && section < item, "{html}");
+}
+
+#[test]
+fn a_rule_of_two_repositories() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        "both-hold",
+        "Both hold it.",
+        &["--repository", "boom", "--repository", "sluice"],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("rules").body;
+    let boom = html.find("<h3 id=\"boom\">").unwrap();
+    let sluice = html.find("<h3 id=\"sluice\">").unwrap();
+    let main = levels_part(&html);
+    assert_eq!(
+        main.matches("data-claim=\"both-hold\"").count(),
+        2,
+        "{html}"
+    );
+    let first = html.find("data-claim=\"both-hold\"").unwrap();
+    let last = html.rfind("data-claim=\"both-hold\"").unwrap();
+    assert!(boom < first && first < sluice && sluice < last, "{html}");
+}
+
+#[test]
+fn not_a_rule() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    accepted_of(
+        &place,
+        &chuck,
+        "decision",
+        WORDS,
+        "The status words.",
+        &["--repository", "boom"],
+    );
+    accepted_of(
+        &place,
+        &chuck,
+        "term",
+        "bolt",
+        "A batch of units.",
+        &["--repository", "boom"],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("rules").body;
+    assert!(!html.contains(WORDS), "{html}");
+    assert!(!html.contains("data-claim=\"bolt\""), "{html}");
+}
+
+#[test]
+fn the_rules_of_boom() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        "of-the-system",
+        "It holds.",
+        &["--system"],
+    );
+    accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        "of-boom",
+        "It holds.",
+        &["--repository", "boom"],
+    );
+    accepted_of(
+        &place,
+        &chuck,
+        "assumption",
+        "boom-assumes",
+        "It is so.",
+        &["--repository", "boom"],
+    );
+    accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        "of-sluice",
+        "It holds.",
+        &["--repository", "sluice"],
+    );
+    let query = place.json(&["query", "--repository", "boom"]);
+    let mut expected: Vec<String> = query["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|claim| matches!(claim["kind"].as_str(), Some("invariant" | "assumption")))
+        .map(|claim| claim["name"].as_str().unwrap().to_owned())
+        .collect();
+    expected.sort();
+    assert_eq!(expected, ["boom-assumes", "of-boom", "of-the-system"]);
+    let page = served(&place, &[]);
+    let html = page.at("rules?repository=boom").body;
+    let main = levels_part(&html);
+    let mut given: Vec<String> = main
+        .split("data-claim=\"")
+        .skip(1)
+        .map(|rest| rest[..rest.find('"').unwrap()].to_owned())
+        .collect();
+    given.sort();
+    given.dedup();
+    assert_eq!(given, expected, "{html}");
+}
+
+#[test]
+fn decisions_in_the_order_accepted() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    accepted_of(
+        &place,
+        &chuck,
+        "decision",
+        WORDS,
+        "The status words.",
+        &["--repository", "boom"],
+    );
+    accepted_of(
+        &place,
+        &chuck,
+        "decision",
+        "a-term-binds-one-repository",
+        "A term binds one repository.",
+        &["--repository", "boom"],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("decisions").body;
+    let chapter = &html[html.find("<h3 id=\"boom\">").unwrap()..];
+    let words = chapter.find(&format!("data-claim=\"{WORDS}\"")).unwrap();
+    let term = chapter
+        .find("data-claim=\"a-term-binds-one-repository\"")
+        .unwrap();
+    assert!(words < term, "{chapter}");
+    assert!(
+        claim_item(chapter, WORDS).contains("accepted 20"),
+        "{chapter}"
+    );
+}
+
+#[test]
+fn a_newer_version_proposed() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let v1 = accepted_of(
+        &place,
+        &chuck,
+        "decision",
+        WORDS,
+        "The status words.",
+        &["--repository", "boom"],
+    );
+    claim_of(
+        &place,
+        "decision",
+        WORDS,
+        "The four status words.",
+        &["--amends", &v1],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("decisions").body;
+    let item = claim_item(&levels_part(&html), WORDS);
+    assert!(item.contains(&format!("{WORDS}@{v1}")), "{item}");
+    assert!(item.contains("a newer version is proposed"), "{item}");
+}
+
+#[test]
+fn a_term_in_the_terms_view() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    accepted_of(
+        &place,
+        &chuck,
+        "term",
+        "bolt",
+        "A set of units that land together.",
+        &["--repository", "sluice", "--replaces", "batch"],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("terms").body;
+    let chapter = &html[html.find("<h3 id=\"sluice\">").unwrap()..];
+    let item = claim_item(chapter, "bolt");
+    assert!(
+        item.contains("A set of units that land together."),
+        "{item}"
+    );
+    assert!(!html.contains("batch"), "{html}");
+}
+
+#[test]
+fn the_page_of_a_term() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    accepted_of(
+        &place,
+        &chuck,
+        "term",
+        "bolt",
+        "A set of units that land together.",
+        &["--repository", "sluice", "--replaces", "batch"],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("claims/bolt").body;
+    assert!(html.contains("It replaces <code>batch</code>."), "{html}");
+}
+
+#[test]
+fn every_kind() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let boom = ["--repository", "boom"];
+    accepted_of(
+        &place,
+        &chuck,
+        "context",
+        "boom-store",
+        "The store.",
+        &["--path", "boom:crates/boom/src/store.rs"],
+    );
+    accepted_of(&place, &chuck, "term", "e-term", "A word.", &boom);
+    accepted_of(
+        &place,
+        &chuck,
+        "assumption",
+        "d-assumption",
+        "It is so.",
+        &boom,
+    );
+    accepted_of(&place, &chuck, "decision", "c-decision", "A choice.", &boom);
+    accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        "b-invariant",
+        "It holds.",
+        &boom,
+    );
+    place.narrative(NAME, TITLE, NARRATIVE, &boom);
+    let page = served(&place, &[]);
+    let html = page.at("claims/").body;
+    let chapter = &html[html.find("<h3 id=\"boom\">").unwrap()..];
+    let chapter = &chapter[..chapter.find("<h4").unwrap_or(chapter.len())];
+    let places: Vec<usize> = [
+        "b-invariant",
+        "c-decision",
+        "d-assumption",
+        "e-term",
+        "boom-store",
+    ]
+    .iter()
+    .map(|name| {
+        chapter
+            .find(&format!("data-claim=\"{name}\""))
+            .unwrap_or_else(|| panic!("no {name}: {chapter}"))
+    })
+    .collect();
+    assert!(places.windows(2).all(|pair| pair[0] < pair[1]), "{chapter}");
+    assert!(!html.contains(&format!("data-claim=\"{NAME}\"")), "{html}");
+}
+
+#[test]
+fn a_contexts_section() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    host_context(&place, &chuck, "sluice:crates/host/**");
+    let page = served(&place, &[]);
+    let html = page.at("rules").body;
+    let section = &html[html.find(&format!("<h4 id=\"sluice/{HOST}\"")).unwrap()..];
+    let section = &section[..section.find("</p>").unwrap()];
+    assert!(
+        section.contains("<code>sluice:crates/host/**</code>"),
+        "{section}"
+    );
+}
+
+#[test]
+fn a_contexts_page() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    host_context(&place, &chuck, "sluice:crates/host/**");
+    let on = ["--context", HOST];
+    accepted_of(&place, &chuck, "invariant", "host-one", "One.", &on);
+    accepted_of(&place, &chuck, "invariant", "host-two", "Two.", &on);
+    accepted_of(&place, &chuck, "decision", "host-choice", "A choice.", &on);
+    let page = served(&place, &[]);
+    let html = page.at(&format!("claims/{HOST}")).body;
+    assert!(
+        html.contains("<code>sluice:crates/host/**</code>"),
+        "{html}"
+    );
+    for name in ["host-one", "host-two", "host-choice"] {
+        assert!(
+            html.contains(&format!("href=\"{}/claims/{name}@", page.base())),
+            "{name}: {html}"
+        );
+    }
+}
+
+#[test]
+fn a_proposed_decision() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let v1 = claim_of(
+        &place,
+        "decision",
+        BINDS,
+        "Only an accepted version binds work.",
+        &["--system"],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("decisions").body;
+    let waiting = waiting(&html);
+    let group = waiting
+        .find("<h3 class=\"group\">system</h3>")
+        .expect("the group of the whole system");
+    let item = claim_item(&waiting[group..], BINDS);
+    assert!(
+        item.contains("<span class=\"mark\">proposed</span>"),
+        "{item}"
+    );
+    assert!(
+        item.contains(&format!("boom accept {BINDS}@{v1}")),
+        "{item}"
+    );
+    assert!(
+        html.find("Proposed, binding nothing").unwrap() < html.find("<h2 id=\"system\">").unwrap(),
+        "{html}"
+    );
+}
+
+#[test]
+fn one_command_for_every_proposal() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let v1 = claim_of(
+        &place,
+        "decision",
+        BINDS,
+        "Only an accepted version binds work.",
+        &["--system"],
+    );
+    let v2 = claim_of(
+        &place,
+        "decision",
+        WORDS,
+        "The status words.",
+        &["--repository", "boom"],
+    );
+    let page = served(&place, &[]);
+    let waiting = waiting(&page.at("decisions").body);
+    let head = &waiting[..waiting.find("<h3").unwrap()];
+    let command = between(head, "boom accept", "</pre>");
+    assert!(command.contains(&format!("{BINDS}@{v1}")), "{command}");
+    assert!(command.contains(&format!("{WORDS}@{v2}")), "{command}");
+}
+
+#[test]
+fn a_rejected_version() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let v1 = claim_of(
+        &place,
+        "decision",
+        WORDS,
+        "The status words.",
+        &["--repository", "boom"],
+    );
+    place.json(&[
+        "reject",
+        &format!("{WORDS}@{v1}"),
+        "--reason",
+        "Not yet.",
+        "--key",
+        &chuck,
+    ]);
+    let page = served(&place, &[]);
+    for view in ["decisions", "claims/", "rules"] {
+        let html = page.at(view).body;
+        assert!(
+            !html.contains(&format!("data-claim=\"{WORDS}\"")),
+            "{view}: {html}"
+        );
+    }
+}
+
+#[test]
+fn nothing_proposed() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    accepted_of(
+        &place,
+        &chuck,
+        "decision",
+        WORDS,
+        "The status words.",
+        &["--repository", "boom"],
+    );
+    claim_of(
+        &place,
+        "invariant",
+        "a-rule",
+        "It holds.",
+        &["--repository", "boom"],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("decisions").body;
+    assert!(!html.contains("Proposed, binding nothing"), "{html}");
+}
+
+#[test]
+fn the_page_of_a_proposed_decision() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let v1 = claim_of(
+        &place,
+        "decision",
+        BINDS,
+        "Only an accepted version binds work.",
+        &["--system"],
+    );
+    let page = served(&place, &[]);
+    let html = page.at(&format!("claims/{BINDS}@{v1}")).body;
+    assert!(html.contains("proposed, binds nothing"), "{html}");
+    assert!(
+        html.contains(&format!("boom accept {BINDS}@{v1}")),
+        "{html}"
+    );
+    assert!(
+        html.contains(&format!("boom reject {BINDS}@{v1} --reason")),
+        "{html}"
+    );
+    assert!(!html.contains("method=\"post\""), "{html}");
+}
+
+#[test]
+fn the_page_of_an_invariant() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let v1 = place.show(STATUS)["accepted"].as_str().unwrap().to_owned();
+    let page = served(&place, &[]);
+    let response = page.at(&format!("claims/{STATUS}"));
+    assert_eq!(response.status, 200, "{}", response.body);
+    let html = response.body;
+    assert!(
+        html.contains(&format!("invariant <code>{STATUS}@{v1}</code>")),
+        "{html}"
+    );
+    assert!(
+        html.contains("<span class=\"status\">accepted</span>"),
+        "{html}"
+    );
+    assert!(html.contains("A record never holds its status."), "{html}");
+    assert!(
+        html.contains(&format!("href=\"{}/n/{NAME}#p3\"", page.base())),
+        "{html}"
+    );
+    assert!(
+        bar(&html).contains(&format!(
+            "<a href=\"{}/claims/\" aria-current=\"page\">",
+            page.base()
+        )),
+        "{html}"
+    );
+}
+
+#[test]
+fn no_such_claim() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let page = served(&place, &[]);
+    assert_eq!(page.at("claims/no-such-claim").status, 404);
+}
+
+#[test]
+fn a_superseded_and_a_rejected_version() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let v1 = accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        STATUS,
+        "A record never holds its status.",
+        &["--repository", "boom"],
+    );
+    let v2 = place.amended(STATUS, "A record never holds its own status.", &v1);
+    place.accepted(STATUS, &v2, &chuck);
+    let v3 = place.amended(STATUS, "A record holds its standing.", &v2);
+    place.json(&[
+        "reject",
+        &format!("{STATUS}@{v3}"),
+        "--reason",
+        "says standing",
+        "--key",
+        &chuck,
+    ]);
+    let page = served(&place, &[]);
+    let html = page.at(&format!("claims/{STATUS}")).body;
+    let versions = between(&html, "<p class=\"versions\">", "</p>");
+    assert!(versions.contains(&v2), "{versions}");
+    assert!(
+        !versions.contains(&v1) && !versions.contains(&v3),
+        "{versions}"
+    );
+    let history = between(&html, "<details class=\"history\">", "</details>");
+    let first = between(&history, &format!("<li data-version=\"{v1}\">"), "</li>");
+    assert!(first.contains("superseded"), "{first}");
+    let third = between(&history, &format!("<li data-version=\"{v3}\">"), "</li>");
+    assert!(third.contains("rejected"), "{third}");
+    assert!(third.contains("says standing"), "{third}");
+}
+
+#[test]
+fn a_claim_named_as_a_source() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let v1 = accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        WORDS,
+        "The status words.",
+        &["--repository", "boom"],
+    );
+    let meant = format!("{WORDS}@{v1}");
+    claim_of(
+        &place,
+        "decision",
+        BINDS,
+        "Only an accepted version binds work.",
+        &["--system", "--source", &meant],
+    );
+    let v2 = place.amended(WORDS, "The four status words.", &v1);
+    place.accepted(WORDS, &v2, &chuck);
+    let page = served(&place, &[]);
+    let html = page.at(&format!("claims/{WORDS}")).body;
+    let named = between(&html, "<ul class=\"edges\" id=\"named-by\">", "</ul>");
+    let item = between(&named, &format!("<li data-claim=\"{BINDS}\">"), "</li>");
+    assert!(item.contains(&format!("<code>@{v1}</code>")), "{item}");
+    assert!(
+        item.contains(&format!("out of date: accepted now {v2}")),
+        "{item}"
+    );
+}
+
+#[test]
+fn a_kept_file() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let brief = place.file("claim-status-brief.md", "The brief.\n");
+    claim_of(
+        &place,
+        "invariant",
+        WORDS,
+        "The status words.",
+        &["--repository", "boom", "--origin", &brief],
+    );
+    let fingerprint = boom::sha256_hex(b"The brief.\n");
+    let page = served(&place, &[]);
+    let html = page.at(&format!("claims/{WORDS}")).body;
+    let origin = between(&html, "<h2>Origin</h2>", "</ul>");
+    assert!(origin.contains("claim-status-brief.md"), "{origin}");
+    assert!(origin.contains(&fingerprint), "{origin}");
+    assert!(
+        origin.contains(&format!("boom show --artifact {fingerprint}")),
+        "{origin}"
+    );
+    assert!(!origin.contains("href"), "{origin}");
+}
+
+#[test]
+fn a_note_on_a_paragraph_that_includes_the_claim() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let events = "events-are-appended-never-changed";
+    accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        events,
+        "boom appends an event.",
+        &["--system"],
+    );
+    let v1 = version(&place.narrative(
+        LOG,
+        "The drive's log",
+        &format!("# The log\n\nEach entry stays: `{events}`.\n"),
+        &["--system", "--includes", events],
+    ));
+    place.noted(&format!("{LOG}@{v1}"), 2, DRIVE);
+    let page = served(&place, &[]);
+    let html = page.at(&format!("claims/{events}")).body;
+    let narratives = between(&html, "<h2>Narratives that include it</h2>", "</ul>\n");
+    let note = between(&narratives, "<li class=\"note-of\">", "</li>");
+    assert!(note.contains(DRIVE), "{note}");
+    assert!(note.contains(" · open"), "{note}");
+    assert!(note.contains("chuck"), "{note}");
+    assert!(note.contains(" UTC"), "{note}");
+    assert!(
+        note.contains(&format!("href=\"{}/n/{LOG}#p2\"", page.base())),
+        "{note}"
+    );
+}
+
+#[test]
+fn the_proposed_decisions_of_boom() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    claim_of(
+        &place,
+        "decision",
+        "of-the-system",
+        "A choice.",
+        &["--system"],
+    );
+    claim_of(
+        &place,
+        "decision",
+        "of-boom",
+        "A choice.",
+        &["--repository", "boom"],
+    );
+    claim_of(
+        &place,
+        "decision",
+        "of-sluice",
+        "A choice.",
+        &["--repository", "sluice"],
+    );
+    accepted_of(
+        &place,
+        &chuck,
+        "decision",
+        "boom-accepted",
+        "A choice.",
+        &["--repository", "boom"],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("decisions?status=proposed&repository=boom").body;
+    let main = &html[html.find("<main>").unwrap()..];
+    assert!(main.contains("data-claim=\"of-the-system\""), "{main}");
+    assert!(main.contains("data-claim=\"of-boom\""), "{main}");
+    assert!(!main.contains("data-claim=\"of-sluice\""), "{main}");
+    assert!(!main.contains("data-claim=\"boom-accepted\""), "{main}");
+}
+
+#[test]
+fn a_search_in_the_rules_view() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        STATUS,
+        "A record never holds its status.",
+        &["--repository", "boom"],
+    );
+    accepted_of(
+        &place,
+        &chuck,
+        "invariant",
+        "money-has-currency",
+        "Every amount names its currency.",
+        &["--repository", "boom"],
+    );
+    let searched = place.json(&["search", "RECORDS", "--all"]);
+    assert_eq!(searched["claims"][0]["name"], STATUS);
+    let page = served(&place, &[]);
+    let main = levels_part(&page.at("rules?q=RECORDS").body);
+    assert!(main.contains(&format!("data-claim=\"{STATUS}\"")), "{main}");
+    assert!(
+        !main.contains("data-claim=\"money-has-currency\""),
+        "{main}"
+    );
+}
+
+#[test]
+fn a_proposed_claim_found() {
+    let place = Place::new();
+    place.made_by("chuck");
+    claim_of(
+        &place,
+        "decision",
+        "a-card-on-the-rail",
+        "A waiting proposal is a card on the rail.",
+        &["--repository", "boom"],
+    );
+    claim_of(
+        &place,
+        "decision",
+        "another-choice",
+        "Another choice.",
+        &["--repository", "boom"],
+    );
+    let page = served(&place, &[]);
+    let html = page.at("decisions?status=both&q=rail").body;
+    let item = claim_item(&waiting(&html), "a-card-on-the-rail");
+    assert!(
+        item.contains("<span class=\"mark\">proposed</span>"),
+        "{item}"
+    );
+    assert!(!html.contains("data-claim=\"another-choice\""), "{html}");
+}
+
+#[test]
+fn a_kind_that_is_not_one() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let page = served(&place, &[]);
+    let response = page.at("claims/?kind=rule");
+    assert_eq!(response.status, 400, "{}", response.body);
+    for kind in ["invariant", "decision", "assumption", "term", "context"] {
+        assert!(response.body.contains(kind), "{kind}: {}", response.body);
+    }
+}
+
+#[test]
+fn a_claim_accepted_while_the_view_is_served() {
+    let place = Place::new();
+    let chuck = place.made_by("chuck");
+    let v1 = claim_of(
+        &place,
+        "decision",
+        WORDS,
+        "The status words.",
+        &["--repository", "boom"],
+    );
+    let page = served(&place, &[]);
+    let before = page.at("decisions").body;
+    assert!(
+        waiting(&before).contains(&format!("data-claim=\"{WORDS}\"")),
+        "{before}"
+    );
+    place.accepted(WORDS, &v1, &chuck);
+    let after = page.at("decisions").body;
+    assert!(waiting(&after).is_empty(), "{after}");
+    assert!(
+        levels_part(&after).contains(&format!("data-claim=\"{WORDS}\"")),
+        "{after}"
+    );
+}
+
+#[test]
+fn the_rules_view() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let page = served(&place, &[]);
+    runs_no_script(&page.at("rules"));
+}
+
+#[test]
+fn a_view_with_no_token() {
+    let place = Place::new();
+    one_narrative(&place, &[]);
+    let page = served(&place, &[]);
+    for path in ["/rules", "/claims/", "/decisions"] {
+        let response = page.get(path);
+        assert_eq!(response.status, 404, "{path}");
+        assert!(!response.body.contains(STATUS), "{path}: {}", response.body);
+    }
+}
+
+#[test]
+fn a_filters_value_given_back() {
+    let place = Place::new();
+    place.made_by("chuck");
+    let page = served(&place, &[]);
+    let html = page.at("claims/?q=%3Cb%3Ebolt%3C%2Fb%3E").body;
+    assert!(html.contains("value=\"&lt;b&gt;bolt&lt;/b&gt;\""), "{html}");
+    assert!(!html.contains("<b>"), "{html}");
+}

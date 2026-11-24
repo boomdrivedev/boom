@@ -231,6 +231,21 @@ claims that hold.
   the book, each linked to the first paragraph that holds the words,
   then the claims that stand. Each claim that a narrative includes links
   to its own page in the claims view.
+- **The page gives the rules, the decisions, the terms and every
+  claim.** Beside the book, the bar of `boom page` gives The rules, The
+  decisions, The terms and The claims. Each view gives its claims by
+  level: the whole system, each repository, and each context under its
+  repository, with its globs. The rules are the accepted invariants and
+  assumptions, and `?repository=<name>` gives those that `boom query`
+  gives an agent of that repository. The decisions come in the order
+  that a person accepted them. Each view gives its proposed versions
+  first, under "Proposed, binding nothing", with the `boom accept` of
+  each and one `boom accept` of them all, and a form with no script
+  keeps a kind, a status, a repository, a level or words. A claim's page
+  gives its versions, its history, the claims that it rests on and that
+  name it, its origin, and the narratives that include it with their
+  notes. The page accepts and rejects nothing: it gives the command, and
+  a person runs it with the key.
 
 ```sh
 boom init --person ada --key ~/.ssh/id_ed25519_sk
