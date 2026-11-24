@@ -95,10 +95,12 @@ of who agreed to what.
 
 | View | What it is | Made by |
 |---|---|---|
-| rules for a scope | The standing invariants for a repository or a context: the rules an agent reads before it edits. | `boom render rules`, and `boom sync` into each repository |
-| decision records | Each decision as a MADR file, numbered, in `docs/adr/`. | `boom render adrs`, and `boom sync` |
+| rules for a scope | The standing invariants for a repository or a context: the rules an agent reads before it edits. | `boom render rules`, and `boom sync` into each repository; read now on `boom page`, at `/rules` |
+| decision records | Each decision as a MADR file, numbered, in `docs/adr/`. | `boom render adrs`, and `boom sync`; read now on `boom page`, at `/decisions`, in the order a person accepted them |
 | design book | mdBook source: the narratives, the claims that apply in each chapter, a context map, indexes and the history of each supersession, every paragraph anchored by its record's name. | `boom render book` |
 | context map | The contexts and the relationships between them, drawn. | `boom render map` |
+| terms | Each accepted term of a repository: its word and its meaning. | `boom page`, at `/terms` |
+| every claim | Each accepted claim of every kind but narrative and outline, by level, then by kind, with the proposed versions apart and the command that accepts them. | `boom page`, at `/claims/` |
 | check results | Each claim a change touches, and whether the change holds it. | `boom check` |
 
 None of these is the truth: boom computes each one again from the
