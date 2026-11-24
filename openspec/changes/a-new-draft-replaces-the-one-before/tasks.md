@@ -21,4 +21,4 @@
 ## 5. The pages and the gate
 
 - [x] 5.1 Say in `README.md` and `CLAUDE.md`, in Plain, that a new draft supersedes the draft it amends
-- [ ] 5.2 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main`
+- [x] 5.2 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main`
