@@ -7,6 +7,7 @@
 //! refusal and 3 where it could not run, and on 2 and 3 writes nothing.
 //! No command reads its terminal.
 
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -19,7 +20,7 @@ use crate::import::{self, Read, Record};
 use crate::judge::{self, Proof, State, Verdict};
 use crate::sign::{self, Keys, Signer};
 use crate::store::{self, Append, Scope, Store, Written};
-use crate::{context, repository, Failure};
+use crate::{batch, context, repository, Failure};
 
 /// What a command reads from its process: the folders a store's path
 /// is resolved under, the working folder a repository is declared from,
@@ -283,11 +284,26 @@ enum Command {
         person: Option<String>,
     },
     /// Accept one or more versions, as a person, in one entry that their
-    /// security key signs one time: every version, or none.
+    /// security key signs one time: every version, or none. A narrative
+    /// takes each proposed version it includes; `--cause` takes a cause
+    /// and each version that names it; `--waiting` lists what waits on a
+    /// person, and with `--key` takes each of it.
     Accept {
         /// The versions, each `<name>@<version>`.
-        #[arg(required = true, value_name = "TARGET")]
+        #[arg(
+            value_name = "TARGET",
+            required_unless_present_any = ["cause", "waiting"],
+            conflicts_with = "waiting"
+        )]
         targets: Vec<String>,
+        /// A cause, `<name>@<version>`: accept it, where it is proposed,
+        /// with each version whose edge `cause` names it.
+        #[arg(long, value_name = "CAUSE", conflicts_with = "waiting")]
+        cause: Option<String>,
+        /// List each batch that waits on a person; with `--key`, accept
+        /// each batch that Boom does not refuse, in one entry.
+        #[arg(long)]
+        waiting: bool,
         /// The accepting person's security key.
         #[arg(long)]
         key: Option<PathBuf>,
@@ -938,7 +954,25 @@ fn execute(
             note(&path?, &target, paragraph, &words, person.as_deref(), env)
         }
         Command::Page { .. } => unreachable!("boom page serves before a command answers"),
-        Command::Accept { targets, key } => accept(&path?, &targets, key.as_deref(), keys, env),
+        Command::Accept {
+            targets,
+            cause,
+            waiting,
+            key,
+        } => {
+            if waiting {
+                accept_waiting(&path?, key.as_deref(), keys, env)
+            } else {
+                accept(
+                    &path?,
+                    &targets,
+                    cause.as_deref(),
+                    key.as_deref(),
+                    keys,
+                    env,
+                )
+            }
+        }
         Command::Reject {
             target,
             reason,
@@ -1894,6 +1928,7 @@ fn version_target<'a>(command: &str, target: &'a str) -> Result<(&'a str, &'a st
 fn accept(
     path: &Path,
     targets: &[String],
+    cause: Option<&str>,
     key: Option<&Path>,
     keys: &dyn Keys,
     env: &Env,
@@ -1902,19 +1937,136 @@ fn accept(
         .iter()
         .map(|target| version_target("accept", target))
         .collect::<Result<Vec<_>, _>>()?;
+    let cause = cause
+        .map(|cause| version_target("accept --cause", cause))
+        .transpose()?;
     let Some(key) = key else {
         return Err(Failure::refused(
             "only a person accepts: boom accept takes the person's --key",
         ));
     };
     let mut store = Store::open(path)?;
+    let taken = store.read(|conn| accept_takes(conn, &versions, cause))?;
+    let (accepted, words) = accept_versions(&mut store, &taken, key, keys, env)?;
+    Ok(accepted_answer(accepted, words, serde_json::Map::new()))
+}
+
+/// The versions that an accept of `targets` and of `cause` takes, in the
+/// order of its entry, each one time: each target, after a proposed
+/// narrative each proposed version it includes, and the cause with each
+/// version that names it (persons-acts, "The accept of a narrative takes
+/// the claims that it includes" and "The accept of a cause takes its
+/// revision"). A closed include or cause refuses it.
+fn accept_takes(
+    conn: &rusqlite::Connection,
+    targets: &[(&str, &str)],
+    cause: Option<(&str, &str)>,
+) -> Result<Vec<(String, String)>, Failure> {
+    let naming = match cause {
+        Some((name, version)) => store::naming_cause(conn, name, version)?,
+        None => Vec::new(),
+    };
+    let mut names: BTreeSet<String> = targets
+        .iter()
+        .chain(&cause)
+        .map(|(name, _)| (*name).to_owned())
+        .chain(naming.iter().map(|(name, _)| name.clone()))
+        .collect();
+    let first = store::load_state_for(conn, &Scope::names(names.iter().cloned()))?;
+    for &(name, version) in targets {
+        if let Some(found) = first
+            .holding(name, version)
+            .and_then(|c| c.version(version))
+        {
+            names.extend(
+                found
+                    .proposal
+                    .includes
+                    .iter()
+                    .filter_map(|edge| edge.split_once('@'))
+                    .map(|(name, _)| name.to_owned()),
+            );
+        }
+    }
+    let state = store::load_state_for(conn, &Scope::names(names))?;
+    let find = |name: &str, version: &str| {
+        state
+            .holding(name, version)
+            .and_then(|claim| claim.version(version))
+    };
+    let mut entry: Vec<(String, String)> = Vec::new();
+    let mut push = |name: &str, version: &str| {
+        let pair = (name.to_owned(), version.to_owned());
+        if !entry.contains(&pair) {
+            entry.push(pair);
+        }
+    };
+    let mut closed = Vec::new();
+    for &(name, version) in targets {
+        push(name, version);
+        let Some(narrative) = find(name, version).filter(|v| v.proposal.kind == Kind::Narrative)
+        else {
+            continue;
+        };
+        let takes = batch::of_narrative(&state, name, narrative);
+        if narrative.status == judge::Status::Proposed {
+            closed.extend(takes.closed);
+            for named in &takes.versions {
+                push(&named.name, &named.version);
+            }
+        } else {
+            // A narrative accepted already lists again the versions that
+            // its accept took, which its entry accepted with it.
+            for named in takes.accepted.iter().filter(|named| {
+                find(&named.name, &named.version)
+                    .is_some_and(|v| v.decided_in.is_some() && v.decided_in == narrative.decided_in)
+            }) {
+                push(&named.name, &named.version);
+            }
+        }
+    }
+    if let Some((name, version)) = cause {
+        let Some(found) = find(name, version) else {
+            return Err(Failure::refused(format!(
+                "boom accept --cause names a version of the store: {name}@{version} is none"
+            )));
+        };
+        let takes = batch::of_cause(&state, name, found);
+        if takes.versions.len() + takes.accepted.len() + takes.closed.len() < 2 {
+            return Err(Failure::refused(format!(
+                "no version names {name}@{version} as its cause"
+            )));
+        }
+        closed.extend(takes.closed);
+        for named in takes.versions.iter().chain(&takes.accepted) {
+            push(&named.name, &named.version);
+        }
+    }
+    if !closed.is_empty() {
+        return Err(Failure::refused(format!(
+            "boom refuses the accept: {}; its author proposes a new version that names the current one",
+            batch::closed_words(&closed)
+        )));
+    }
+    Ok(entry)
+}
+
+/// Accepts `versions` as the person whose key is `key`: each version
+/// that waits goes into one entry, judged whole, which the key signs one
+/// time once Boom has told the person what it takes. A version this
+/// person accepted already is left out of it. Gives each version as the
+/// answer lists it, and its words.
+fn accept_versions(
+    store: &mut Store,
+    versions: &[(String, String)],
+    key: &Path,
+    keys: &dyn Keys,
+    env: &Env,
+) -> Result<(Vec<Value>, String), Failure> {
     let signer = keys.signer(key)?;
-    let scope = Scope::names(versions.iter().map(|&(name, _)| name));
+    let scope = Scope::names(versions.iter().map(|(name, _)| name.as_str()));
     let state = store.state_for(&scope)?;
     let person = person_of(&state, signer.as_ref(), key)?;
-    // One act of the person: each version that waits goes into one
-    // entry, which is judged whole before the key signs it one time.
-    // A version this person accepted already is left out of it.
     let now = env.clock.now();
     let one = |name: &str, version: &str| Entry {
         at: now,
@@ -1922,8 +2074,8 @@ fn accept(
         act: Act::accepted(name, version),
     };
     let mut waiting = Vec::new();
-    for &(name, version) in &versions {
-        if waiting.iter().any(|named: &Named| named.name == name) {
+    for (name, version) in versions {
+        if waiting.iter().any(|named: &Named| &named.name == name) {
             return Err(Failure::refused(format!(
                 "boom accept names each claim one time: it names {name} twice"
             )));
@@ -1937,8 +2089,8 @@ fn accept(
             Proof::ToBeSigned(signer.public_key()),
         ) {
             Verdict::Counts => waiting.push(Named {
-                name: name.to_owned(),
-                version: version.to_owned(),
+                name: name.clone(),
+                version: version.clone(),
             }),
             Verdict::Refused(why) => return Err(Failure::Refused(naming(name, version, why))),
             Verdict::Repeats(_) => {}
@@ -1947,6 +2099,16 @@ fn accept(
     let state = if waiting.is_empty() {
         store.state_for(&scope)?
     } else {
+        let mut told = format!(
+            "This accept takes {} in one entry:\n",
+            plural(waiting.len(), "version", "versions")
+        );
+        for named in &waiting {
+            let kind = state
+                .holding(&named.name, &named.version)
+                .map_or("claim", |claim| claim.kind.as_str());
+            told.push_str(&format!("  {kind} {}@{}\n", named.name, named.version));
+        }
         let entry = Entry {
             at: now,
             actor: Actor::Person(person.clone()),
@@ -1961,6 +2123,7 @@ fn accept(
         ) {
             return Err(Failure::Refused(why));
         }
+        signer.tell(&told);
         let signature = signer.sign(signed.as_bytes())?;
         store
             .append_all(&[Append {
@@ -1972,16 +2135,19 @@ fn accept(
     };
     let mut accepted = Vec::with_capacity(versions.len());
     let mut words = String::new();
-    for &(name, version) in &versions {
-        let found = state
+    for (name, version) in versions {
+        let claim = state
             .holding(name, version)
-            .and_then(|claim| claim.version(version))
+            .expect("an accept written is in the state");
+        let found = claim
+            .version(version)
             .expect("an accept written is in the state");
         let by = found.decided_by.clone().unwrap_or_default();
         let seq = found.decided_in.unwrap_or_default();
         accepted.push(json!({
             "claim": name,
             "version": version,
+            "kind": claim.kind.as_str(),
             "status": found.status.as_str(),
             "superseded": found.proposal.base,
             "by": by,
@@ -1992,6 +2158,21 @@ fn accept(
             found.status.as_str(),
         ));
     }
+    Ok((accepted, words))
+}
+
+/// `n` and its noun, of one or of many.
+fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+/// The answer of an accept: `accepted`, each version, and where it is
+/// one, its fields at the top as before; with `more` besides.
+fn accepted_answer(
+    accepted: Vec<Value>,
+    words: String,
+    more: serde_json::Map<String, Value>,
+) -> Answer {
     let mut object = serde_json::Map::new();
     object.insert("format".into(), json!("boom-accept/2"));
     if let [one] = accepted.as_slice() {
@@ -2000,10 +2181,133 @@ fn accept(
         }
     }
     object.insert("accepted".into(), Value::Array(accepted));
-    Ok(Answer {
+    object.extend(more);
+    Answer {
         json: Value::Object(object),
         words,
+    }
+}
+
+/// A batch as `boom accept --waiting` gives it.
+fn batch_json(batch: &batch::Batch) -> Value {
+    let named = |list: &[batch::Named]| {
+        list.iter()
+            .map(|named| {
+                json!({
+                    "claim": named.name,
+                    "version": named.version,
+                    "kind": named.kind.as_str(),
+                    "status": named.status.as_str(),
+                })
+            })
+            .collect::<Vec<_>>()
+    };
+    json!({
+        "shape": batch.shape.as_str(),
+        "claim": batch.head.name,
+        "version": batch.head.version,
+        "kind": batch.head.kind.as_str(),
+        "title": batch.title,
+        "counts": batch.counts(),
+        "proposer": batch.proposer,
+        "repositories": batch.repositories,
+        "command": batch.command(),
+        "versions": named(&batch.takes.versions),
+        "accepted": named(&batch.takes.accepted),
+        "closed": named(&batch.takes.closed),
     })
+}
+
+/// A batch in words: its shape and head, its title, its counts, and its
+/// command or what refuses it.
+fn batch_words(batch: &batch::Batch) -> String {
+    let mut words = format!(
+        "{} {}: {}\n  {}\n",
+        batch.shape.as_str(),
+        batch.head.target(),
+        batch.title,
+        batch.counts()
+    );
+    match batch.command() {
+        Some(command) => words.push_str(&format!("  {command}\n")),
+        None => words.push_str(&format!(
+            "  refused: {}; its author proposes a new version\n",
+            batch::closed_words(&batch.takes.closed)
+        )),
+    }
+    words
+}
+
+/// `boom accept --waiting`: each batch that waits on a person, and with
+/// `key`, each batch that Boom does not refuse, accepted in one entry
+/// (persons-acts, "boom accept --waiting").
+fn accept_waiting(
+    path: &Path,
+    key: Option<&Path>,
+    keys: &dyn Keys,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    let mut store = Store::open(path)?;
+    let batches = store.read(batch::waiting)?;
+    let mut versions: Vec<(String, String)> = Vec::new();
+    for batch in batches.iter().filter(|batch| batch.command().is_some()) {
+        for named in &batch.takes.versions {
+            let pair = (named.name.clone(), named.version.clone());
+            if !versions.contains(&pair) {
+                versions.push(pair);
+            }
+        }
+    }
+    let listed: Vec<Value> = batches.iter().map(batch_json).collect();
+    let Some(key) = key else {
+        let mut words = if batches.is_empty() {
+            "Nothing waits on a person.\n".to_owned()
+        } else {
+            format!(
+                "{} wait on a person, {}; boom accept --waiting --key <key> accepts each one that Boom does not refuse, in one sign.\n",
+                plural(batches.len(), "batch", "batches"),
+                plural(versions.len(), "version", "versions"),
+            )
+        };
+        for batch in &batches {
+            words.push_str(&batch_words(batch));
+        }
+        return Ok(Answer {
+            json: json!({
+                "format": "boom-waiting/1",
+                "batches": listed,
+                "versions": versions.len(),
+            }),
+            words,
+        });
+    };
+    let left_out: Vec<&batch::Batch> = batches
+        .iter()
+        .filter(|batch| batch.command().is_none())
+        .collect();
+    let (accepted, mut words) = if versions.is_empty() {
+        (
+            Vec::new(),
+            "Nothing waits on a person that Boom does not refuse.\n".to_owned(),
+        )
+    } else {
+        let mut store = Store::open(path)?;
+        accept_versions(&mut store, &versions, key, keys, env)?
+    };
+    for batch in &left_out {
+        words.push_str(&format!(
+            "left out: {} {}: {}\n",
+            batch.shape.as_str(),
+            batch.head.target(),
+            batch::closed_words(&batch.takes.closed)
+        ));
+    }
+    let mut more = serde_json::Map::new();
+    more.insert(
+        "left_out".into(),
+        Value::Array(left_out.iter().map(|batch| batch_json(batch)).collect()),
+    );
+    Ok(accepted_answer(accepted, words, more))
 }
 
 /// A refusal of `name@version` that names it.

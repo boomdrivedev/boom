@@ -1571,6 +1571,35 @@ pub fn artifact_name(conn: &Connection, fingerprint: &str) -> Result<Option<Stri
     }
 }
 
+/// The name of each claim with a proposed version, as the views hold it:
+/// the claims that the batches that wait on a person start from
+/// (narrative-page, "The batches that wait on a person").
+pub fn proposed_names(conn: &Connection) -> Result<std::collections::BTreeSet<String>, Failure> {
+    let mut statement =
+        conn.prepare("SELECT DISTINCT name FROM versions WHERE status = 'proposed'")?;
+    let names = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(names)
+}
+
+/// Each version whose edge `cause` names `name@version`, as the views hold
+/// it, each `(name, version)`.
+pub fn naming_cause(
+    conn: &Connection,
+    name: &str,
+    version: &str,
+) -> Result<Vec<(String, String)>, Failure> {
+    let mut statement = conn.prepare(
+        "SELECT name, version FROM edges WHERE edge = 'cause' AND target_name = ?1 \
+         AND target_version = ?2 ORDER BY name, version",
+    )?;
+    let rows = statement
+        .query_map([name, version], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// The entry the views were built at, `(number, hash)`: the log's last
 /// entry inside [`Store::read`].
 pub fn head_entry(conn: &Connection) -> Result<(u64, String), Failure> {

@@ -2,8 +2,9 @@ No task adds a part of the repository. The work is in the crate `boom`,
 so this change adds no moon project. Each task names the moon task that
 proves it, run as `sluice exec main -- moon run <project>:<task>`. Each
 scenario of the delta specs is one test, named by its scenario:
-`persons-acts` in `crates/boom/tests/batches.rs`, `claim-edges` in
-`crates/boom/tests/edges.rs`, and `narrative-page` in
+`persons-acts` and the batches of `narrative-page` in
+`crates/boom/tests/batches.rs`, `claim-edges` in
+`crates/boom/tests/edges.rs`, and the pages of `narrative-page` in
 `crates/boom/tests/page.rs`.
 
 ## 1. The edge cause
@@ -13,14 +14,14 @@ scenario of the delta specs is one test, named by its scenario:
 
 ## 2. The batches
 
-- [ ] 2.1 Add `batch.rs`: the batches that wait, computed from the views, each with its shape, its versions, its counts, its command and what refuses it, the oldest first. Tests for "The three shapes" and "A version that a narrative includes is no ruling". Proved by `boom:test`
+- [x] 2.1 Add `batch.rs`: the batches that wait, computed from the views, each with its shape, its versions, its counts, its command and what refuses it, the oldest first. Tests for "The three shapes" and "A version that a narrative includes is no ruling". Proved by `boom:test`
 
 ## 3. The accept
 
-- [ ] 3.1 In `cli.rs`, take for each target that is a narrative its proposed includes, refuse a closed include, and keep each version one time. Tests for "A narrative and its proposed claim", "A narrative that includes a rejected version", "A narrative that includes a superseded draft", "Two narratives that include one claim" and "A narrative accepted again". Proved by `boom:test`
-- [ ] 3.2 Add `boom accept --cause`. Tests for "A cause and its two versions", "A superseded draft is left out" and "A cause that no version names". Proved by `boom:test`
-- [ ] 3.3 Write the list of what an accept takes on standard error before the key signs, and list each version under `accepted`. Test for "The list before the key". Proved by `boom:test`
-- [ ] 3.4 Add `boom accept --waiting`. Tests for "The batches listed", "Nothing waits", "Each batch in one sign" and "A refused batch is left out". Proved by `boom:test`
+- [x] 3.1 In `cli.rs`, take for each target that is a narrative its proposed includes, refuse a closed include, and keep each version one time. Tests for "A narrative and its proposed claim", "A narrative that includes a rejected version", "A narrative that includes a superseded draft", "Two narratives that include one claim" and "A narrative accepted again". Proved by `boom:test`
+- [x] 3.2 Add `boom accept --cause`. Tests for "A cause and its two versions", "A superseded draft is left out" and "A cause that no version names". Proved by `boom:test`
+- [x] 3.3 Write the list of what an accept takes on standard error before the key signs, and list each version under `accepted`. Test for "The list before the key". Proved by `boom:test`
+- [x] 3.4 Add `boom accept --waiting`. Tests for "The batches listed", "Nothing waits", "Each batch in one sign" and "A refused batch is left out". Proved by `boom:test`
 
 ## 4. The page
 

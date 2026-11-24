@@ -84,6 +84,7 @@ pub struct SoftKeys {
     dir: PathBuf,
     keys: RefCell<HashMap<PathBuf, SoftKey>>,
     signatures: Cell<usize>,
+    told: RefCell<String>,
 }
 
 impl SoftKeys {
@@ -93,7 +94,13 @@ impl SoftKeys {
             dir: dir.to_owned(),
             keys: RefCell::new(HashMap::new()),
             signatures: Cell::new(0),
+            told: RefCell::new(String::new()),
         }
+    }
+
+    /// What a signer told the person before its key signed, each time.
+    pub fn told(&self) -> String {
+        self.told.borrow().clone()
     }
 
     /// How many signatures the keys have made.
@@ -166,6 +173,10 @@ impl Signer for SoftSigner<'_> {
     fn sign(&self, message: &[u8]) -> Result<String, Failure> {
         self.keys.counted();
         Ok(self.key.sign(boom::sign::NAMESPACE, message))
+    }
+
+    fn tell(&self, words: &str) {
+        self.keys.told.borrow_mut().push_str(words);
     }
 }
 

@@ -228,7 +228,8 @@ fn a_tools_arguments_are_its_commands() {
                 "includes",
                 "answers",
                 "view",
-                "narratives"
+                "narratives",
+                "cause"
             ]),
             names(&["kind", "name", "statement"])
         )
