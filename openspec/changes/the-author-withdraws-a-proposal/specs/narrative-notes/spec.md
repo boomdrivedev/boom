@@ -26,7 +26,7 @@ The judge SHALL count an entry of a person with no signature only if its act is 
 
 ### Requirement: A note is open until a version answers it
 
-A note SHALL be open until a version of its narrative answers it and no person rejects that version and no author withdraws it. `--answers <note>=<words>` SHALL answer a note in a new version. The answers SHALL be part of the content of the version. Boom SHALL refuse a new version of a narrative that leaves a note of that narrative open, and SHALL name each open note. Boom SHALL refuse an answer to a note that does not exist. Boom SHALL refuse an answer to a note of another narrative or to a note that is not open.
+A note SHALL be open until a version of its narrative answers it, while no person rejects that version and no author withdraws it. `--answers <note>=<words>` SHALL answer a note in a new version, as part of its content. Boom SHALL refuse a new version of a narrative that leaves a note of that narrative open, and SHALL name each open note. Boom SHALL refuse an answer to a note that does not exist, is of another narrative or is not open.
 
 #### Scenario: An amendment answers the note
 

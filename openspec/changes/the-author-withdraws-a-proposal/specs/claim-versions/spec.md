@@ -2,16 +2,7 @@
 
 ### Requirement: Each version's status is read from the log
 
-Boom SHALL compute the status of a version from the log. The status SHALL be one of these:
-
-- `proposed`, until a counted accept, reject or withdrawal.
-- `accepted`, after an accept, while no later version of its claim is accepted.
-- `superseded`, after a later version of its claim is accepted.
-- `rejected`, after a person rejects it.
-- `withdrawn`, after its author withdraws it.
-- For an accepted version that came in as history, the status of its file.
-
-No act makes a version `deprecated` yet. The log SHALL keep each entry.
+Boom SHALL read the status of a version from the log: `proposed` until an accept, a reject or a withdrawal counts; `accepted` while no later version of its claim is accepted; `superseded` after one is; `rejected` after a person rejects it; `withdrawn` after its author withdraws it. An accepted version that came in as history SHALL take the status of its file. No act makes a version `deprecated` yet. The log SHALL keep each entry.
 
 #### Scenario: Proposed, standing, replaced
 
