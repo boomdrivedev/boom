@@ -41,6 +41,7 @@ Run each command from the repository. Add `--json` for one JSON object.
 | The claims for one file, with those of its contexts | `boom query --path <repository>:<path>` |
 | The claims whose words hold some words | `boom search <words>` |
 | The same, in every repository | `boom search --all <words>` |
+| The versions that wait, with their author and age | `boom search --proposed --all` |
 | A claim in full: its versions, edges and body | `boom show <name>` |
 | One version | `boom show <name>@<version>` |
 | The claims that rest on a claim | `boom show <name>` (under `source of:`) |
@@ -77,7 +78,7 @@ written in the person's name:
 
 - `boom accept`: a person accepts versions, a narrative with its
   claims, a cause with its revision, or each batch that waits.
-- `boom reject`: a person rejects a version, with why.
+- `boom reject`: a person rejects one or more versions, with why.
 - `boom note`: a person writes a note on a paragraph of a narrative.
 - `boom init`, `boom register`, `boom repo add` and `boom repo set`:
   an owner sets up the store, its persons and its repositories.

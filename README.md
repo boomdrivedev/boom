@@ -85,9 +85,18 @@ claims that hold.
   its provenance. Only a person accepts or rejects, and signs the entry
   with a security key the store registers to them, the person present
   (record 0006). `ssh-keygen -Y verify` checks that signature with no
-  boom.
+  boom. A person rejects several versions with one reason and one
+  touch of the key.
+- **The author withdraws a proposal.** `boom withdraw
+  <name>@<version>... --reason <text>` closes proposed versions with no
+  key: an agent's with `--provenance`, for the versions that an agent
+  proposed, and a person's with `--person`, for the versions that the
+  person proposed. A withdrawn version leaves each list of what waits.
+  `boom search --proposed` lists the versions that wait, each with its
+  author and its age.
 - **Every answer computed from the log.** boom reads whether a version
-  is proposed, accepted, superseded, rejected or deprecated from the log.
+  is proposed, accepted, superseded, rejected, withdrawn or deprecated
+  from the log.
   A record that came in as history keeps its file's own status. It judges
   each entry it reads as it judges a write, so an entry written by hand
   that breaks a rule counts for nothing.
@@ -263,8 +272,8 @@ claims that hold.
   with the proposed claims that it includes, a revision with its cause,
   and each other proposed claim alone, a ruling. `boom accept
   <narrative>@<version>` accepts the narrative and each proposed version
-  that it includes, and boom refuses it while it includes a rejected or
-  superseded version. `boom propose --cause <claim>` names the claim
+  that it includes, and boom refuses it while it includes a rejected,
+  withdrawn or superseded version. `boom propose --cause <claim>` names the claim
   whose change forced a new version, and `boom accept --cause
   <claim>@<version>` accepts the cause with each version that names it.
   Before the key signs, boom lists each version that the entry takes.
@@ -427,7 +436,7 @@ tag.
 
 | path | what |
 |---|---|
-| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import`, `query`, `search`, `repo`, `terms check` and `mcp` |
+| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `withdraw`, `show`, `log`, `verify`, `import`, `query`, `search`, `repo`, `terms check` and `mcp` |
 | `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom hook session-start`, its `PreToolUse` hook running `boom hook pre-tool-use` and its skills `using-boom`, `proposing-claims` and `writing-narratives`, listed by the marketplace in `.claude-plugin/` |
 | `check-terms.sh` | the gate's terms task: `boom terms check` on the files that a change adds or modifies |
 | `flake.nix`, `nix/` | boom's flake, giving `boom` and `boom-claude-plugin` at one version, and its offline checks |

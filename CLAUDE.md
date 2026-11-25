@@ -20,6 +20,10 @@ repository or every repository.
 A version that amends a draft supersedes that draft, so a person
 accepts the newest draft of a claim, on the nearest version in its line
 of bases that a person accepted.
+The author of a proposed version withdraws it with `boom withdraw`,
+with a reason and no key, and it takes the status `withdrawn`; a person
+rejects several versions in one signed entry, and `boom search
+--proposed` lists the versions that wait, with their author and age.
 Each entry names the rule set that boom wrote it under, and boom judges
 it by those rules alone, so a rule that a later release adds never
 voids an entry or a signature that came before it.

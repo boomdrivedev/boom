@@ -22,7 +22,8 @@ finds a claim violated or unclear, and 2 when it refuses.
 |---|---|
 | [`boom propose`](#boom-propose) | Proposes a claim, or a narrative, context, relationship or term. |
 | [`boom accept`](#boom-accept) | Accepts proposed versions in one sign: a narrative with its claims, a cause with its revision, or what waits. A person's. |
-| [`boom reject`](#boom-reject) | Rejects a proposed version, with a reason. A person's. |
+| [`boom reject`](#boom-reject) | Rejects one or more proposed versions in one sign, with a reason. A person's. |
+| [`boom withdraw`](#boom-withdraw) | Withdraws proposed versions, with a reason and no key. Their author's. |
 | [`boom supersede`](#boom-supersede) | Proposes a claim that replaces a standing one. |
 | [`boom query`](#boom-query) | Lists what applies to a path, a context or a name. |
 | [`boom check`](#boom-check) | Reads a change against the standing claims it touches. |
@@ -99,17 +100,38 @@ status-read-from-events@914dd32ed8dd is accepted, accepted by ada, by entry 12
 ## `boom reject`
 
 ```text
-boom reject <name>[@<version>] --reason <text>
+boom reject <name>@<version>... --reason <text> --key <key>
 ```
+
+A person rejects one or more versions with one reason, in one entry
+that the key signs one time. Boom rejects each version, or none.
 
 ```console
-$ boom reject card-payments-only --reason "We take bank transfers too."
-rejected card-payments-only@0b77e3d
-recorded in shop-ledger at 91cd3a2
+$ boom reject card-payments-only@0b77e3d1a2b3 cash-only@5c6d7e8f9a0b \
+    --reason "We take bank transfers too." --key ~/.ssh/id_ed25519_sk
+card-payments-only@0b77e3d1a2b3 is rejected
+cash-only@5c6d7e8f9a0b is rejected
+rejected by ada: We take bank transfers too., by entry 14
 ```
 
-```json
-{ "event": "rejected", "record": { "name": "card-payments-only", "version": "0b77e3d" }, "status": "rejected", "commit": "91cd3a2" }
+## `boom withdraw`
+
+```text
+boom withdraw <name>@<version>... --reason <text> (--provenance <text> | --person <name>)
+```
+
+The author of a proposed version withdraws it, with a reason and no
+key: an agent the versions that an agent proposed, with
+`--provenance`, and a person the versions that the person proposed,
+with `--person`. A withdrawn version is closed. No one accepts or
+rejects it, and it leaves each list of what waits.
+`boom search --proposed` lists the versions that wait, each with its
+author and its age.
+
+```console
+$ boom withdraw cash-only@5c6d7e8f9a0b --reason "a duplicate" --provenance run-2
+cash-only@5c6d7e8f9a0b is withdrawn
+withdrawn by its author: a duplicate, by entry 15
 ```
 
 ## `boom supersede`
