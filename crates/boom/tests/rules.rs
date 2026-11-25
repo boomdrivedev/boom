@@ -66,8 +66,10 @@ fn accept(name: &str, version: &str) -> Act {
 
 fn reject(name: &str, version: &str) -> Act {
     Act::Rejected {
-        name: name.to_owned(),
-        version: version.to_owned(),
+        versions: vec![Named {
+            name: name.to_owned(),
+            version: version.to_owned(),
+        }],
         reason: "The newer draft says it better.".to_owned(),
     }
 }

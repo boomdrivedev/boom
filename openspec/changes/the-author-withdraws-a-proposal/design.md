@@ -28,7 +28,8 @@ for it and a reader of the history needs it.
 **Non-Goals:**
 
 - No withdrawal of a version that is not proposed.
-- No tool of `boom mcp` withdraws: the tools stay as they are.
+- No tool of `boom mcp` withdraws. The tool `search` takes `proposed`, as
+  its command does.
 - No transition code: nothing names an entry, a store or a claim.
 
 ## Decisions

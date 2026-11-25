@@ -71,6 +71,10 @@ pub(crate) const ABSENT: &[(&str, &str)] = &[
         "terms check",
         "the hook of the plugin runs it on what an agent writes, and the gate on what a change touches",
     ),
+    (
+        "withdraw",
+        "an author withdraws its own proposal from the command line in this release",
+    ),
     ("mcp", "it is the server itself"),
     (
         "hook session-start",

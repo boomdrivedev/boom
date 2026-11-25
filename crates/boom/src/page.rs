@@ -650,11 +650,7 @@ pub fn narrative_page(
         escape(&actor_words(&shown.proposer)),
     );
     if let Some(by) = &shown.decided_by {
-        let act = if shown.reason.is_some() {
-            "rejected"
-        } else {
-            "accepted"
-        };
+        let act = shown.decided_word();
         let _ = write!(main, " · {act} by {}", escape(by));
     }
     if let Some(amended) = &shown.proposal.base {

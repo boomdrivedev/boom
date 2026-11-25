@@ -49,6 +49,8 @@ None.
   when its act is `noted` or `withdrawn`.
 - `claim-search`: a new requirement, "The versions that wait".
 - `command-line`: the commands name `withdraw`.
+- `agent-tools`: the tool `search` takes `proposed`, and requires no
+  word, as its command does.
 
 ## Impact
 
