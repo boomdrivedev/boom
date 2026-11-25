@@ -310,16 +310,39 @@ enum Command {
         #[arg(long)]
         key: Option<PathBuf>,
     },
-    /// Reject a version, with why, as a person signing with their
-    /// security key.
+    /// Reject one or more versions, with one reason, as a person, in one
+    /// entry that their security key signs one time: every version, or
+    /// none.
     Reject {
-        /// The version, `<name>@<version>`.
-        target: String,
-        /// Why it is rejected.
+        /// The versions, each `<name>@<version>`.
+        #[arg(value_name = "TARGET", required = true)]
+        targets: Vec<String>,
+        /// Why they are rejected.
         #[arg(long)]
         reason: Option<String>,
         /// The rejecting person's security key.
         #[arg(long)]
+        key: Option<PathBuf>,
+    },
+    /// Withdraw one or more proposed versions, as their author, with one
+    /// reason and no signature, in one entry: every version, or none. An
+    /// agent withdraws the versions an agent proposed, a person those
+    /// the person proposed.
+    Withdraw {
+        /// The versions, each `<name>@<version>`.
+        #[arg(value_name = "TARGET", required = true)]
+        targets: Vec<String>,
+        /// Why they are withdrawn.
+        #[arg(long)]
+        reason: Option<String>,
+        /// The withdrawing agent's session or run.
+        #[arg(long, value_name = "TEXT", conflicts_with = "person")]
+        provenance: Option<String>,
+        /// The withdrawing person, who proposed each version.
+        #[arg(long, value_name = "NAME")]
+        person: Option<String>,
+        /// Refused: a withdrawal carries no signature.
+        #[arg(long, hide = true)]
         key: Option<PathBuf>,
     },
     /// Show a claim and its versions, or one version, `<name>@<version>`,
@@ -372,9 +395,14 @@ enum Command {
     /// with no index kept.
     Search {
         /// The words, each searched as written; `--` before a word that
-        /// begins with `-`.
-        #[arg(required = true, value_name = "WORD")]
+        /// begins with `-`. With `--proposed`, none gives each version
+        /// that waits.
+        #[arg(required_unless_present = "proposed", value_name = "WORD")]
         words: Vec<String>,
+        /// Search the versions that wait on a person, in place of the
+        /// accepted ones, each with its author and its age.
+        #[arg(long)]
+        proposed: bool,
         /// The repository; by default the one the working folder's
         /// `.config/boom.toml` declares.
         #[arg(long, value_name = "NAME", conflicts_with = "all")]
@@ -980,10 +1008,24 @@ fn execute(
             }
         }
         Command::Reject {
-            target,
+            targets,
             reason,
             key,
-        } => reject(&path?, &target, reason, key.as_deref(), keys, env),
+        } => reject(&path?, &targets, reason, key.as_deref(), keys, env),
+        Command::Withdraw {
+            targets,
+            reason,
+            provenance,
+            person,
+            key,
+        } => {
+            if key.is_some() {
+                return Err(Failure::refused(
+                    "a withdrawal carries no signature: boom withdraw takes no --key",
+                ));
+            }
+            withdraw(&path?, &targets, reason, provenance, person, env)
+        }
         Command::Show {
             target,
             repository,
@@ -1016,10 +1058,19 @@ fn execute(
         } => query(path, repository.as_deref(), if_declared, &paths, env),
         Command::Search {
             words,
+            proposed,
             repository,
             all,
             limit,
-        } => search(&path?, &words, repository.as_deref(), all, limit, env),
+        } => search(
+            &path?,
+            &words,
+            proposed,
+            repository.as_deref(),
+            all,
+            limit,
+            env,
+        ),
         Command::Mcp => unreachable!("boom mcp is served before a store's path is resolved"),
         Command::Hook { .. } => unreachable!("boom hook answers before a store is opened"),
         Command::Terms { .. } => {
@@ -2386,15 +2437,18 @@ fn naming(name: &str, version: &str, why: String) -> String {
     }
 }
 
+/// `boom reject`: one or more versions rejected by a person, with one
+/// reason, in one entry that the key signs one time (persons-acts,
+/// "Several versions rejected together").
 fn reject(
     path: &Path,
-    target: &str,
+    targets: &[String],
     reason: Option<String>,
     key: Option<&Path>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
-    let (name, version) = version_target("reject", target)?;
+    let versions = named_targets("reject", targets)?;
     let Some(key) = key else {
         return Err(Failure::refused(
             "only a person rejects: boom reject takes the person's --key",
@@ -2407,7 +2461,7 @@ fn reject(
     let signer = keys.signer(key)?;
     let (written, state) = write(
         &mut store,
-        &Scope::names([name]),
+        &Scope::names(versions.iter().map(|named| named.name.clone())),
         Some(signer.as_ref()),
         &[],
         |state| {
@@ -2416,35 +2470,133 @@ fn reject(
                 rules: crate::judge::RULES,
                 actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
                 act: Act::Rejected {
-                    name: name.to_owned(),
-                    version: version.to_owned(),
+                    versions: versions.clone(),
                     reason,
                 },
             })
         },
     )?;
-    let rejected = state
-        .holding(name, version)
-        .and_then(|claim| claim.version(version))
-        .expect("a reject written is in the state");
-    let by = rejected.decided_by.clone().unwrap_or_default();
-    let why = rejected.reason.clone().unwrap_or_default();
-    Ok(Answer {
-        json: json!({
-            "format": "boom-reject/2",
-            "claim": name,
-            "version": version,
-            "status": rejected.status.as_str(),
-            "by": by,
-            "reason": why,
-            "entry": written.seq(),
-        }),
-        words: format!(
-            "{name}@{version} is {}, rejected by {by}: {why}, by entry {}\n",
-            rejected.status.as_str(),
-            written.seq()
+    Ok(closed_answer("reject", &versions, &state, written.seq()))
+}
+
+/// `boom withdraw`: one or more proposed versions withdrawn by their
+/// author, with one reason and no signature (claim-versions, "The author
+/// withdraws a proposed version").
+fn withdraw(
+    path: &Path,
+    targets: &[String],
+    reason: Option<String>,
+    provenance: Option<String>,
+    person: Option<String>,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    let versions = named_targets("withdraw", targets)?;
+    let actor = match (provenance, person) {
+        (Some(provenance), None) if !provenance.trim().is_empty() => Actor::Agent { provenance },
+        (None, Some(person)) => Actor::Person(person),
+        _ => return Err(Failure::refused(
+            "a withdrawal names its author: an agent's with --provenance, a person's with --person",
+        )),
+    };
+    let Some(reason) = reason.filter(|reason| !reason.trim().is_empty()) else {
+        return Err(Failure::refused(
+            "a withdrawal gives its reason, with --reason",
+        ));
+    };
+    let mut store = Store::open(path)?;
+    let (written, state) = write(
+        &mut store,
+        &Scope::names(versions.iter().map(|named| named.name.clone())),
+        None,
+        &[],
+        |_| {
+            Ok(Entry {
+                at: env.clock.now(),
+                rules: crate::judge::RULES,
+                actor,
+                act: Act::Withdrawn {
+                    versions: versions.clone(),
+                    reason,
+                },
+            })
+        },
+    )?;
+    Ok(closed_answer("withdraw", &versions, &state, written.seq()))
+}
+
+/// The versions of `targets`, each `<name>@<version>`.
+fn named_targets(command: &str, targets: &[String]) -> Result<Vec<Named>, Failure> {
+    targets
+        .iter()
+        .map(|target| {
+            version_target(command, target).map(|(name, version)| Named {
+                name: name.to_owned(),
+                version: version.to_owned(),
+            })
+        })
+        .collect()
+}
+
+/// The answer of a reject or a withdrawal: each version with its status,
+/// then who closed them, the reason and the entry.
+fn closed_answer(command: &str, versions: &[Named], state: &State, seq: u64) -> Answer {
+    let closed: Vec<&judge::Version> = versions
+        .iter()
+        .map(|named| {
+            state
+                .holding(&named.name, &named.version)
+                .and_then(|claim| claim.version(&named.version))
+                .expect("a version closed is in the state")
+        })
+        .collect();
+    let first = closed[0];
+    let reason = first.reason.clone().unwrap_or_default();
+    let (format, key, by) = match command {
+        "reject" => (
+            "boom-reject/3",
+            "rejected",
+            first.decided_by.clone().unwrap_or_default(),
         ),
-    })
+        _ => (
+            "boom-withdraw/1",
+            "withdrawn",
+            first
+                .decided_by
+                .clone()
+                .unwrap_or_else(|| "its author".to_owned()),
+        ),
+    };
+    let listed: Vec<Value> = versions
+        .iter()
+        .zip(&closed)
+        .map(|(named, version)| {
+            json!({
+                "claim": named.name,
+                "version": named.version,
+                "status": version.status.as_str(),
+            })
+        })
+        .collect();
+    let mut words = String::new();
+    for (named, version) in versions.iter().zip(&closed) {
+        words.push_str(&format!(
+            "{}@{} is {}\n",
+            named.name,
+            named.version,
+            version.status.as_str()
+        ));
+    }
+    words.push_str(&format!("{key} by {by}: {reason}, by entry {seq}\n"));
+    Answer {
+        json: json!({
+            "format": format,
+            key: listed,
+            "by": by,
+            "reason": reason,
+            "entry": seq,
+        }),
+        words,
+    }
 }
 
 fn actor_words(actor: &Actor) -> String {
@@ -2455,10 +2607,12 @@ fn actor_words(actor: &Actor) -> String {
 }
 
 fn version_json(view: &store::VersionView) -> serde_json::Map<String, Value> {
-    // A person's reject carries its reason; every other decision is an
-    // accept, a record that came in as history among them.
-    let rejected = view.reason.is_some();
-    let accepted = view.decided_by.is_some() && !rejected;
+    // A person's reject and an author's withdrawal carry their reason;
+    // every other decision is an accept, a record that came in as history
+    // among them.
+    let withdrawn = view.status == judge::Status::Withdrawn.as_str();
+    let rejected = view.reason.is_some() && !withdrawn;
+    let accepted = view.decided_by.is_some() && view.reason.is_none();
     let mut object = serde_json::Map::new();
     object.insert("version".into(), json!(view.version));
     object.insert("status".into(), json!(view.status));
@@ -2491,7 +2645,12 @@ fn version_words(view: &store::VersionView) -> String {
         actor_words(&view.proposer),
         view.proposed_in
     ));
-    if let (Some(by), Some(seq)) = (&view.decided_by, view.decided_in) {
+    if view.status == judge::Status::Withdrawn.as_str() {
+        let by = view.decided_by.as_deref().unwrap_or("its author");
+        if let Some(seq) = view.decided_in {
+            words.push_str(&format!("; withdrawn by {by} in entry {seq}"));
+        }
+    } else if let (Some(by), Some(seq)) = (&view.decided_by, view.decided_in) {
         let act = if view.reason.is_some() {
             "rejected"
         } else {
@@ -3696,15 +3855,19 @@ fn elaboration_notes(
 fn search(
     path: &Path,
     given: &[String],
+    proposed: bool,
     named: Option<&str>,
     all: bool,
     limit: u64,
     env: &Env,
 ) -> Result<Answer, Failure> {
     let words = crate::search::words(given);
-    if words.is_empty() {
+    // With --proposed, no word gives each version that waits; a word
+    // with no letter or digit is still refused.
+    if words.is_empty() && !(proposed && given.is_empty()) {
         return Err(Failure::refused(crate::search::NO_WORD));
     }
+    let now = env.clock.now();
     let mut store = Store::open(path)?;
     // One read of the views: the repository of the session, then the
     // claims.
@@ -3733,8 +3896,11 @@ fn search(
             Some(repository) => store::contexts_in(conn, repository)?,
             None => Vec::new(),
         };
-        let found =
-            crate::search::standing(conn, repository.as_deref(), &contexts, &words)?;
+        let found = if proposed {
+            crate::search::proposed(conn, repository.as_deref(), &contexts, &words)?
+        } else {
+            crate::search::standing(conn, repository.as_deref(), &contexts, &words)?
+        };
         let (number, hash) = store::head_entry(conn)?;
         let total = found.len();
         let shown = usize::try_from(limit).unwrap_or(usize::MAX);
@@ -3747,15 +3913,40 @@ fn search(
             let mut object = standing_json(claim, version);
             object.insert("excerpt".into(), json!(found.excerpt));
             object.insert("legacy".into(), json!(legacy));
-            claims.push(Value::Object(object));
             let binds = context::binds_words(&version.repositories, &version.contexts);
-            lines.push_str(&format!(
-                "{} {}@{}, for {binds}: {}\n",
-                claim.kind.as_str(),
-                claim.name,
-                proposal.version,
-                proposal.statement
-            ));
+            if proposed {
+                let at = store::entry_at(conn, version.proposed_in)?;
+                let days = now.saturating_sub(at) / 86_400;
+                object.insert("accepted".into(), Value::Null);
+                object.insert("status".into(), json!(version.status.as_str()));
+                object.insert("proposer".into(), json!(version.proposer));
+                object.insert("proposed_in".into(), json!(version.proposed_in));
+                object.insert("proposed_at".into(), json!(at));
+                object.insert("age_days".into(), json!(days));
+                let age = if days == 1 {
+                    "1 day".to_owned()
+                } else {
+                    format!("{days} days")
+                };
+                lines.push_str(&format!(
+                    "{} {}@{}, for {binds}, proposed by {} in entry {}, {age} ago: {}\n",
+                    claim.kind.as_str(),
+                    claim.name,
+                    proposal.version,
+                    actor_words(&version.proposer),
+                    version.proposed_in,
+                    proposal.statement
+                ));
+            } else {
+                lines.push_str(&format!(
+                    "{} {}@{}, for {binds}: {}\n",
+                    claim.kind.as_str(),
+                    claim.name,
+                    proposal.version,
+                    proposal.statement
+                ));
+            }
+            claims.push(Value::Object(object));
             if let Some(excerpt) = &found.excerpt {
                 lines.push_str(&format!("  excerpt: {excerpt}\n"));
             }
@@ -3766,10 +3957,13 @@ fn search(
                 ));
             }
         }
-        let matches = match total {
-            0 => "No claim matches".to_owned(),
-            1 => "1 claim matches".to_owned(),
-            n => format!("{n} claims match"),
+        let matches = match (proposed, total) {
+            (false, 0) => "No claim matches".to_owned(),
+            (false, 1) => "1 claim matches".to_owned(),
+            (false, n) => format!("{n} claims match"),
+            (true, 0) => "No version waits".to_owned(),
+            (true, 1) => "1 version waits".to_owned(),
+            (true, n) => format!("{n} versions wait"),
         };
         let scope = repository.as_deref().map_or_else(
             || "across every repository".to_owned(),
@@ -3780,18 +3974,26 @@ fn search(
         } else {
             String::new()
         };
+        let mut json = json!({
+            "format": "boom-search/2",
+            "words": words,
+            "repository": repository,
+            "head": {"number": number, "hash": hash},
+            "total": total,
+            "claims": claims,
+        });
+        if proposed {
+            json["proposed"] = json!(true);
+        }
+        let searched = if words.is_empty() {
+            String::new()
+        } else {
+            format!(" \"{}\"", words.join(" "))
+        };
         Ok(Answer {
-            json: json!({
-                "format": "boom-search/2",
-                "words": words,
-                "repository": repository,
-                "head": {"number": number, "hash": hash},
-                "total": total,
-                "claims": claims,
-            }),
+            json,
             words: format!(
-                "{matches} \"{}\" {scope}, at entry {number} of the store's log{follow}.\n{lines}",
-                words.join(" ")
+                "{matches}{searched} {scope}, at entry {number} of the store's log{follow}.\n{lines}"
             ),
         })
     })

@@ -305,8 +305,8 @@ fn a_tools_arguments_are_its_commands() {
     assert_eq!(
         arguments(search),
         (
-            names(&["words", "repository", "all", "limit"]),
-            names(&["words"])
+            names(&["words", "proposed", "repository", "all", "limit"]),
+            names(&[])
         )
     );
     let properties = &search["inputSchema"]["properties"];

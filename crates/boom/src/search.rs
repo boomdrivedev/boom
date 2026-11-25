@@ -227,6 +227,70 @@ pub fn standing(
         .collect())
 }
 
+/// The versions that wait on a person for `repository` and its
+/// `contexts`, or every one where none is named: with `words`, those
+/// whose words hold each, best first; with none, each, the oldest first
+/// (claim-search, "The versions that wait").
+pub fn proposed(
+    conn: &Connection,
+    repository: Option<&str>,
+    contexts: &[String],
+    words: &[String],
+) -> Result<Vec<Standing>, Failure> {
+    let waiting = crate::store::proposed_for(conn, repository, contexts)?;
+    let legacy = |version: &crate::judge::Version| {
+        version
+            .imported
+            .as_ref()
+            .and_then(|imported| imported.legacy.clone())
+    };
+    if words.is_empty() {
+        return Ok(waiting
+            .into_iter()
+            .map(|(claim, version)| Standing {
+                legacy: legacy(&version),
+                claim,
+                version,
+                excerpt: None,
+            })
+            .collect());
+    }
+    let bodies = waiting
+        .iter()
+        .map(|(_, version)| match &version.proposal.body {
+            Some(fingerprint) => Ok(String::from_utf8(crate::store::blob(conn, fingerprint)?).ok()),
+            None => Ok(None),
+        })
+        .collect::<Result<Vec<_>, Failure>>()?;
+    let searched: Vec<Claim<'_>> = waiting
+        .iter()
+        .zip(&bodies)
+        .map(|((claim, version), body)| {
+            let imported = version.imported.as_ref();
+            Claim {
+                name: &claim.name,
+                legacy: imported.and_then(|imported| imported.legacy.as_deref()),
+                statement: &version.proposal.statement,
+                section: imported.and_then(|imported| imported.section.as_deref()),
+                scenarios: &version.proposal.scenarios,
+                body: body.as_deref(),
+            }
+        })
+        .collect();
+    Ok(search(&searched, words)?
+        .into_iter()
+        .map(|found| {
+            let (claim, version) = &waiting[found.place];
+            Standing {
+                claim: claim.clone(),
+                version: version.clone(),
+                legacy: legacy(version),
+                excerpt: found.excerpt,
+            }
+        })
+        .collect())
+}
+
 /// `text` with its runs of whitespace made one space, and none at
 /// either end.
 fn one_line(text: &str) -> String {

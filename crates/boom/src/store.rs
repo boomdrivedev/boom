@@ -695,12 +695,14 @@ impl Scope {
                             .map(|(name, _)| name.to_owned()),
                     );
                 }
-                Act::Accepted { versions } => {
+                Act::Accepted { versions }
+                | Act::Rejected { versions, .. }
+                | Act::Withdrawn { versions, .. } => {
                     scope
                         .names
                         .extend(versions.iter().map(|named| named.name.clone()));
                 }
-                Act::Rejected { name, .. } | Act::Noted { name, .. } => {
+                Act::Noted { name, .. } => {
                     scope.names.insert(name.clone());
                 }
                 Act::Repository { .. } => {}
@@ -979,13 +981,14 @@ fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), 
         Act::Proposed { claim, .. } => {
             write_claim(conn, holding(state, &claim.name, &claim.version))
         }
-        Act::Accepted { versions } => {
+        Act::Accepted { versions }
+        | Act::Rejected { versions, .. }
+        | Act::Withdrawn { versions, .. } => {
             for named in versions {
                 write_claim(conn, holding(state, &named.name, &named.version))?;
             }
             Ok(())
         }
-        Act::Rejected { name, version, .. } => write_claim(conn, holding(state, name, version)),
         Act::Repository { name, .. } => write_repository(conn, &state.repositories[name]),
         Act::Noted {
             name,
@@ -1683,6 +1686,55 @@ pub fn accepted_for(
             (claim, version.clone())
         })
         .collect())
+}
+
+/// Each version that waits on a person, with its claim: for
+/// `Some(repository)`, those that bind that repository, a context named
+/// in `contexts`, or the whole system; for `None`, every one. The oldest
+/// first (claim-search, "The versions that wait").
+pub fn proposed_for(
+    conn: &Connection,
+    repository: Option<&str>,
+    contexts: &[String],
+) -> Result<Vec<(Claim, Version)>, Failure> {
+    let mut state = State::default();
+    load_claims(
+        conn,
+        &mut state,
+        "WHERE EXISTS (SELECT 1 FROM versions WHERE versions.name = claims.name \
+         AND versions.term = claims.term AND versions.status = 'proposed')",
+        [],
+    )?;
+    let mut waiting: Vec<(Claim, Version)> = state
+        .claims
+        .values()
+        .flat_map(|claim| {
+            claim
+                .versions
+                .iter()
+                .filter(|version| version.status == judge::Status::Proposed)
+                .filter(|version| {
+                    repository.is_none_or(|repository| version.binds(repository, contexts))
+                })
+                .map(move |version| {
+                    let mut shown = claim.clone();
+                    shown.versions.clear();
+                    (shown, version.clone())
+                })
+        })
+        .collect();
+    waiting.sort_by_key(|(_, version)| version.proposed_in);
+    Ok(waiting)
+}
+
+/// When the entry numbered `seq` was made, in Unix seconds, as its
+/// maker's clock read: one entry read.
+pub fn entry_at(conn: &Connection, seq: u64) -> Result<u64, Failure> {
+    let row = row_at(conn, seq)?
+        .ok_or_else(|| Failure::not_run(format!("the log holds no entry {seq}")))?;
+    let entry = Entry::parse(&row.signed)
+        .map_err(|why| Failure::not_run(format!("entry {seq} does not read: {why}")))?;
+    Ok(entry.at)
 }
 
 fn load_persons(conn: &Connection) -> Result<State, Failure> {

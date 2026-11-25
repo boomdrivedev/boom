@@ -7,9 +7,10 @@
 //! (`validated-on-read`). Its rules, in order: the entry's form; for a
 //! person's entry, a signature that verifies by the key registered to
 //! that person before it, with presence (for the store's first entry,
-//! the key it registers); for an agent's, an act that is `proposed` and
-//! a provenance; then the act's own rules. A person's note alone carries
-//! the person's name and no signature (narrative-notes).
+//! the key it registers); for an agent's, an act that is `proposed` or
+//! `withdrawn`, and a provenance; then the act's own rules. A person's
+//! note or withdrawal alone carries the person's name and no signature
+//! (narrative-notes; claim-versions).
 //!
 //! An entry is judged by the rules it was written under, never by a rule
 //! that came into force after it: each entry names its rule set, and a
@@ -86,6 +87,9 @@ pub enum Status {
     /// Retired with nothing in its place. Only a record that came in as
     /// history, deprecated as its file says, has it; no act makes it yet.
     Deprecated,
+    /// Withdrawn by its author, with a reason and no signature
+    /// (claim-versions, "The author withdraws a proposed version").
+    Withdrawn,
 }
 
 impl Status {
@@ -97,6 +101,7 @@ impl Status {
             Status::Superseded,
             Status::Rejected,
             Status::Deprecated,
+            Status::Withdrawn,
         ]
         .into_iter()
         .find(|status| status.as_str() == name)
@@ -110,6 +115,7 @@ impl Status {
             Status::Superseded => "superseded",
             Status::Rejected => "rejected",
             Status::Deprecated => "deprecated",
+            Status::Withdrawn => "withdrawn",
         }
     }
 }
@@ -131,11 +137,12 @@ pub struct Version {
     pub proposed_in: u64,
     /// Its status.
     pub status: Status,
-    /// The person who accepted or rejected it.
+    /// The person who accepted, rejected or withdrew it; none for a
+    /// version that an agent withdrew.
     pub decided_by: Option<String>,
-    /// The entry that accepted or rejected it.
+    /// The entry that accepted, rejected or withdrew it.
     pub decided_in: Option<u64>,
-    /// Why it was rejected.
+    /// Why it was rejected or withdrawn.
     pub reason: Option<String>,
     /// Where it came in from, for a version an import proposed.
     pub imported: Option<Imported>,
@@ -172,6 +179,18 @@ impl Version {
             || crate::context::names(&self.contexts)
                 .iter()
                 .any(|name| contexts.iter().any(|context| context == name))
+    }
+
+    /// The act that decided it, in words: `withdrawn`, `rejected` or
+    /// `accepted`, a record that came in as history among the accepted.
+    pub fn decided_word(&self) -> &'static str {
+        if self.status == Status::Withdrawn {
+            "withdrawn"
+        } else if self.reason.is_some() {
+            "rejected"
+        } else {
+            "accepted"
+        }
     }
 
     /// Whether a person accepted it to stand: it is accepted, or a later
@@ -318,14 +337,14 @@ impl State {
     }
 
     /// The version of its narrative that answers `note`, with the answer:
-    /// the first, in the order proposed, that a person did not reject.
-    /// None where the note is open.
+    /// the first, in the order proposed, that a person did not reject and
+    /// its author did not withdraw. None where the note is open.
     pub fn answer_of(&self, note: &Note) -> Option<(&Version, &str)> {
         let claim = self.named(&note.narrative).into_iter().next()?;
         claim
             .versions
             .iter()
-            .filter(|version| version.status != Status::Rejected)
+            .filter(|version| !matches!(version.status, Status::Rejected | Status::Withdrawn))
             .find_map(|version| {
                 version
                     .proposal
@@ -585,14 +604,8 @@ fn check_form(act: &Act) -> Result<(), String> {
                 )),
             }
         }
-        Act::Rejected { name, reason, .. } => {
-            claim::check_name(name)?;
-            if reason.trim().is_empty() {
-                Err("a reject gives its reason".to_owned())
-            } else {
-                Ok(())
-            }
-        }
+        Act::Rejected { versions, reason } => check_versions("reject", versions, reason),
+        Act::Withdrawn { versions, reason } => check_versions("withdrawal", versions, reason),
         Act::Noted {
             name,
             version,
@@ -617,6 +630,27 @@ fn check_form(act: &Act) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+/// The form of a reject or a withdrawal: one version at least, each
+/// named one time, and its reason.
+fn check_versions(act: &str, versions: &[crate::entry::Named], reason: &str) -> Result<(), String> {
+    if versions.is_empty() {
+        return Err(format!("a {act} names a version"));
+    }
+    for (at, named) in versions.iter().enumerate() {
+        claim::check_name(&named.name)?;
+        if versions[..at].contains(named) {
+            return Err(format!(
+                "a {act} names each version one time: it names {}@{} twice",
+                named.name, named.version
+            ));
+        }
+    }
+    if reason.trim().is_empty() {
+        return Err(format!("a {act} gives its reason"));
+    }
+    Ok(())
 }
 
 /// An attachment's form: a repository or a context at least; each
@@ -705,15 +739,21 @@ fn check_person(
     signed: &str,
     proof: Proof<'_>,
 ) -> Result<(), String> {
-    if let Act::Noted { .. } = &entry.act {
-        // A note binds nothing: it is the person's name and no signature
-        // (narrative-notes, "Only a note counts with no signature").
+    let unsigned = match &entry.act {
+        Act::Noted { .. } => Some("a note"),
+        Act::Withdrawn { .. } => Some("a withdrawal"),
+        _ => None,
+    };
+    if let Some(act) = unsigned {
+        // A note or a withdrawal binds nothing: it is the person's name
+        // and no signature (narrative-notes, "Only a note or a withdrawal
+        // counts with no signature").
         if !state.persons.contains_key(name) {
             return Err(format!("no person {name} is registered"));
         }
         return match proof {
             Proof::Unsigned => Ok(()),
-            _ => Err("a note carries the person's name and no signature".to_owned()),
+            _ => Err(format!("{act} carries the person's name and no signature")),
         };
     }
     let key = if state.persons.is_empty() {
@@ -758,8 +798,9 @@ fn check_agent(act: &Act, provenance: &str, proof: Proof<'_>) -> Result<(), Stri
     if !matches!(proof, Proof::Unsigned) {
         return Err("an agent's entry carries no signature".to_owned());
     }
-    match act {
-        Act::Proposed { .. } => {}
+    let what = match act {
+        Act::Proposed { .. } => "proposal",
+        Act::Withdrawn { .. } => "withdrawal",
         Act::Accepted { .. } => {
             return Err("only a person accepts: a person's act needs their signature".to_owned())
         }
@@ -777,9 +818,11 @@ fn check_agent(act: &Act, provenance: &str, proof: Proof<'_>) -> Result<(), Stri
             )
         }
         Act::Noted { .. } => return Err("only a person writes a note".to_owned()),
-    }
+    };
     if provenance.trim().is_empty() {
-        return Err("an agent's proposal names its provenance, with --provenance".to_owned());
+        return Err(format!(
+            "an agent's {what} names its provenance, with --provenance"
+        ));
     }
     Ok(())
 }
@@ -828,28 +871,28 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
                         .map_err(|why| naming(&named.name, &named.version, why))?,
                 );
             }
-            match verdicts.as_slice() {
-                [Verdict::Repeats(seq), rest @ ..]
-                    if rest.iter().all(|v| matches!(v, Verdict::Repeats(_))) =>
-                {
-                    Ok(Verdict::Repeats(*seq))
-                }
-                _ => match versions
-                    .iter()
-                    .zip(&verdicts)
-                    .find(|(_, verdict)| matches!(verdict, Verdict::Repeats(_)))
-                {
-                    Some((named, _)) => Err(format!(
-                        "{}@{} is accepted already: an accept of several versions names only versions that wait",
-                        named.name, named.version
-                    )),
-                    None => Ok(Verdict::Counts),
-                },
-            }
+            whole("accept", "accepted", versions, &verdicts)
         }
-        Act::Rejected { name, version, .. } => {
+        Act::Rejected { versions, .. } => {
             let rejecter = actor_name(&entry.actor).unwrap_or_default();
-            check_reject(state, name, version, rejecter, entry.rules)
+            let mut verdicts = Vec::with_capacity(versions.len());
+            for named in versions {
+                verdicts.push(
+                    check_reject(state, &named.name, &named.version, rejecter, entry.rules)
+                        .map_err(|why| naming(&named.name, &named.version, why))?,
+                );
+            }
+            whole("reject", "rejected", versions, &verdicts)
+        }
+        Act::Withdrawn { versions, .. } => {
+            let mut verdicts = Vec::with_capacity(versions.len());
+            for named in versions {
+                verdicts.push(
+                    check_withdraw(state, &named.name, &named.version, &entry.actor)
+                        .map_err(|why| naming(&named.name, &named.version, why))?,
+                );
+            }
+            whole("withdrawal", "withdrawn", versions, &verdicts)
         }
         Act::Repository {
             name,
@@ -872,6 +915,35 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
             };
             check_note(state, &meant, words, person)
         }
+    }
+}
+
+/// The verdict of one act on several versions, judged whole: it counts
+/// where each version counts, and repeats where each repeats; a mix of
+/// the two is refused, naming the first version that repeats.
+fn whole(
+    act: &str,
+    done: &str,
+    versions: &[crate::entry::Named],
+    verdicts: &[Verdict],
+) -> Result<Verdict, String> {
+    match verdicts {
+        [Verdict::Repeats(seq), rest @ ..]
+            if rest.iter().all(|v| matches!(v, Verdict::Repeats(_))) =>
+        {
+            Ok(Verdict::Repeats(*seq))
+        }
+        _ => match versions
+            .iter()
+            .zip(verdicts)
+            .find(|(_, verdict)| matches!(verdict, Verdict::Repeats(_)))
+        {
+            Some((named, _)) => Err(format!(
+                "{}@{} is {done} already: an {act} of several versions names only versions that wait",
+                named.name, named.version
+            )),
+            None => Ok(Verdict::Counts),
+        },
     }
 }
 
@@ -1174,7 +1246,7 @@ fn check_outline(
             other.kind == Kind::Outline
                 && other.name != proposal.name
                 && other.versions.iter().any(|version| {
-                    version.status != Status::Rejected
+                    !matches!(version.status, Status::Rejected | Status::Withdrawn)
                         && version.proposal.view.as_deref() == Some(claim::BOOK)
                 })
         }) {
@@ -1346,6 +1418,7 @@ fn check_accept(
         }
         Status::Rejected => return Err(format!("{name}@{version} is rejected, by {by}")),
         Status::Deprecated => return Err(format!("{name}@{version} is deprecated")),
+        Status::Withdrawn => return Err(withdrawn_words(name, version, found)),
     }
     if found.proposer == Actor::Person(accepter.to_owned()) {
         return Err(format!(
@@ -1398,8 +1471,59 @@ fn check_reject(
         Status::Rejected if found.reason.is_some() => {
             Err(format!("{name}@{version} is rejected already, by {by}"))
         }
+        Status::Withdrawn => Err(withdrawn_words(name, version, found)),
         status => Err(format!(
             "only a proposed version is rejected: {name}@{version} is {}",
+            status.as_str()
+        )),
+    }
+}
+
+/// `name@version is withdrawn`, with its reason.
+fn withdrawn_words(name: &str, version: &str, found: &Version) -> String {
+    format!(
+        "{name}@{version} is withdrawn by its author: {}",
+        found.reason.as_deref().unwrap_or_default()
+    )
+}
+
+/// A withdrawal of `name@version` by `actor`: a proposed version, which
+/// its author withdraws, an agent a version that an agent proposed and a
+/// person a version that this person proposed; a version withdrawn
+/// already, a repeat (claim-versions, "The author withdraws a proposed
+/// version").
+fn check_withdraw(
+    state: &State,
+    name: &str,
+    version: &str,
+    actor: &Actor,
+) -> Result<Verdict, String> {
+    let (claim, found) = find(state, name, version)?;
+    if let Some(newer) = claim.newer_draft(version) {
+        return Err(format!(
+            "{name}@{version} is superseded by the newer draft {name}@{}: only a proposed version is withdrawn",
+            newer.proposal.version
+        ));
+    }
+    let author = match (&found.proposer, actor) {
+        (Actor::Agent { .. }, Actor::Agent { .. }) => true,
+        (Actor::Person(proposer), Actor::Person(withdrawer)) => proposer == withdrawer,
+        _ => false,
+    };
+    if !author {
+        let by = match &found.proposer {
+            Actor::Person(person) => person.clone(),
+            Actor::Agent { .. } => "an agent".to_owned(),
+        };
+        return Err(format!(
+            "only its author withdraws {name}@{version}: {by} proposed it"
+        ));
+    }
+    match found.status {
+        Status::Proposed => Ok(Verdict::Counts),
+        Status::Withdrawn => Ok(Verdict::Repeats(found.decided_in.unwrap_or_default())),
+        status => Err(format!(
+            "only a proposed version is withdrawn: {name}@{version} is {}",
             status.as_str()
         )),
     }
@@ -1486,21 +1610,15 @@ pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
                 },
             );
         }
-        Act::Rejected {
-            name,
-            version,
-            reason,
-        } => {
-            let claim = state
-                .holding_mut(name, version)
-                .expect("a counted reject's claim");
-            let rejected = claim
-                .version_mut(version)
-                .expect("a counted reject's version");
-            rejected.status = Status::Rejected;
-            rejected.decided_by = actor;
-            rejected.decided_in = Some(seq);
-            rejected.reason = Some(reason.clone());
+        Act::Rejected { versions, reason } => {
+            for named in versions {
+                close(state, seq, named, Status::Rejected, actor.clone(), reason);
+            }
+        }
+        Act::Withdrawn { versions, reason } => {
+            for named in versions {
+                close(state, seq, named, Status::Withdrawn, actor.clone(), reason);
+            }
         }
         Act::Noted {
             name,
@@ -1573,6 +1691,28 @@ pub fn replay_with<'a>(
         })
         .collect();
     (state, judgments)
+}
+
+/// A counted reject or withdrawal of `named`, applied to the state: its
+/// status, who decided it where a person did, the entry and the reason.
+fn close(
+    state: &mut State,
+    seq: u64,
+    named: &crate::entry::Named,
+    status: Status,
+    by: Option<String>,
+    reason: &str,
+) {
+    let claim = state
+        .holding_mut(&named.name, &named.version)
+        .expect("a counted close's claim");
+    let closed = claim
+        .version_mut(&named.version)
+        .expect("a counted close's version");
+    closed.status = status;
+    closed.decided_by = by;
+    closed.decided_in = Some(seq);
+    closed.reason = Some(reason.to_owned());
 }
 
 /// A counted accept of `name@version`, applied to the state.

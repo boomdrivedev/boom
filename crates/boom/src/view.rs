@@ -103,12 +103,12 @@ pub fn shown(claim: &Claim) -> Option<&Version> {
 }
 
 /// The outline of the design book: the outline with a version of the
-/// view `book` that is not rejected, the first by name.
+/// view `book` that is not rejected or withdrawn, the first by name.
 pub fn book_outline(state: &State) -> Option<&Claim> {
     state.claims.values().find(|claim| {
         claim.kind == Kind::Outline
             && claim.versions.iter().any(|version| {
-                version.status != Status::Rejected
+                !matches!(version.status, Status::Rejected | Status::Withdrawn)
                     && version.proposal.view.as_deref() == Some(claim::BOOK)
             })
     })
@@ -199,7 +199,7 @@ pub fn book(state: &State, outline: Option<&str>) -> Book {
         let rejected = claim
             .versions
             .iter()
-            .all(|version| version.status == Status::Rejected);
+            .all(|version| matches!(version.status, Status::Rejected | Status::Withdrawn));
         if position.is_none() && rejected {
             continue;
         }
