@@ -158,10 +158,26 @@ CREATE TABLE approvals (
     plan TEXT NOT NULL,
     covers TEXT NOT NULL
 );
+CREATE TABLE changes (
+    act_hash TEXT PRIMARY KEY,
+    seq INTEGER NOT NULL,
+    repository TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    base TEXT
+);
+CREATE INDEX changes_name ON changes (repository, name);
+CREATE TABLE change_files (
+    act_hash TEXT NOT NULL,
+    path TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    PRIMARY KEY (act_hash, path)
+);
+CREATE INDEX change_files_sha256 ON change_files (sha256);
 ";
 
 /// The views' tables, each dropped and made again by a rebuild.
-const VIEW_TABLES: [&str; 13] = [
+const VIEW_TABLES: [&str; 15] = [
     "views_head",
     "persons",
     "claims",
@@ -175,6 +191,8 @@ const VIEW_TABLES: [&str; 13] = [
     "acts",
     "links",
     "approvals",
+    "changes",
+    "change_files",
 ];
 
 /// The views' form, kept in `views_head`. Views of another form are
@@ -677,6 +695,9 @@ pub struct Scope {
     /// of another tool, which the judge finds among the counted entries
     /// (record-log, "A link names an entry that the log holds").
     pub acts: std::collections::BTreeSet<String>,
+    /// The change records named, each by its repository and its name
+    /// (change-records).
+    pub changes: std::collections::BTreeSet<(String, String)>,
 }
 
 impl Scope {
@@ -688,6 +709,7 @@ impl Scope {
             notes: std::collections::BTreeSet::new(),
             outlines: false,
             acts: std::collections::BTreeSet::new(),
+            changes: std::collections::BTreeSet::new(),
         }
     }
 
@@ -700,6 +722,18 @@ impl Scope {
                 Act::Registered { .. } => {}
                 Act::Other { .. } => {
                     scope.acts.insert(entry::act_hash(&entry.signed_part()));
+                }
+                Act::Recorded { change, .. } => {
+                    scope
+                        .changes
+                        .insert((change.repository.clone(), change.name.clone()));
+                    scope.names.extend(
+                        change
+                            .covers
+                            .iter()
+                            .filter_map(|covered| covered.split_once('@'))
+                            .map(|(name, _)| name.to_owned()),
+                    );
                 }
                 Act::Approved { covers, .. } => {
                     scope.names.extend(
@@ -758,6 +792,7 @@ impl Scope {
         self.notes.extend(other.notes);
         self.outlines |= other.outlines;
         self.acts.extend(other.acts);
+        self.changes.extend(other.changes);
     }
 }
 
@@ -1028,7 +1063,7 @@ fn catch_up(conn: &Connection, path: &Path, mut scope: Scope) -> Result<State, F
 fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), Failure> {
     match &entry.act {
         // Their rows are written with the entry's act hash (write_act).
-        Act::Other { .. } | Act::Approved { .. } => Ok(()),
+        Act::Other { .. } | Act::Approved { .. } | Act::Recorded { .. } => Ok(()),
         Act::Registered { person, .. } => write_person(conn, &state.persons[person]),
         Act::Proposed { claim, .. } => {
             write_claim(conn, holding(state, &claim.name, &claim.version))
@@ -1089,6 +1124,26 @@ fn write_act(
                 params![entry::act_hash(signed), sql_int(seq), plan, to_json(covers)],
             )?;
         }
+        if let Act::Recorded { change, .. } = &entry.act {
+            conn.execute(
+                "INSERT OR REPLACE INTO changes (act_hash, seq, repository, name, version, base) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    entry::act_hash(signed),
+                    sql_int(seq),
+                    change.repository,
+                    change.name,
+                    change.version,
+                    change.base
+                ],
+            )?;
+            for file in &change.files {
+                conn.execute(
+                    "INSERT OR REPLACE INTO change_files (act_hash, path, sha256) VALUES (?1, ?2, ?3)",
+                    params![entry::act_hash(signed), file.path, file.sha256],
+                )?;
+            }
+        }
         for (position, target) in entry.act.links().iter().enumerate() {
             conn.execute(
                 "INSERT OR REPLACE INTO links (seq, position, target) VALUES (?1, ?2, ?3)",
@@ -1126,6 +1181,92 @@ fn load_acts<P: rusqlite::Params>(
         });
     }
     Ok(())
+}
+
+/// Reads into `state` the change record `(repository, name)`, with each of
+/// its versions and the version a counted landing links first; nothing
+/// where the store holds none (change-records).
+fn load_change(
+    conn: &Connection,
+    state: &mut State,
+    repository: &str,
+    name: &str,
+) -> Result<(), Failure> {
+    let key = (repository.to_owned(), name.to_owned());
+    if state.changes.contains_key(&key) {
+        return Ok(());
+    }
+    let mut statement = conn.prepare_cached(
+        "SELECT act_hash, seq, version, base FROM changes WHERE repository = ?1 AND name = ?2 ORDER BY seq",
+    )?;
+    let versions = statement
+        .query_map([repository, name], |row| {
+            Ok(judge::ChangeVersion {
+                act_hash: row.get(0)?,
+                seq: u64::try_from(row.get::<_, i64>(1)?).unwrap_or(0),
+                version: row.get(2)?,
+                base: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    if versions.is_empty() {
+        return Ok(());
+    }
+    let landed: Option<String> = conn
+        .query_row(
+            "SELECT changes.version FROM changes JOIN links ON links.target = changes.act_hash \
+             JOIN acts ON acts.seq = links.seq \
+             WHERE changes.repository = ?1 AND changes.name = ?2 AND acts.act = ?3 AND acts.counted = 1 \
+             ORDER BY acts.seq LIMIT 1",
+            params![repository, name, judge::LANDED],
+            |row| row.get(0),
+        )
+        .optional()?;
+    for version in &versions {
+        state.recorded.insert(
+            version.act_hash.clone(),
+            (key.0.clone(), key.1.clone(), version.version.clone()),
+        );
+    }
+    state.changes.insert(
+        key,
+        judge::ChangeRecord {
+            repository: repository.to_owned(),
+            name: name.to_owned(),
+            versions,
+            landed,
+        },
+    );
+    Ok(())
+}
+
+/// The change record `(repository, name)` as the views hold it, or none.
+pub fn change_record(
+    conn: &Connection,
+    repository: &str,
+    name: &str,
+) -> Result<Option<judge::ChangeRecord>, Failure> {
+    let mut state = State::default();
+    load_change(conn, &mut state, repository, name)?;
+    Ok(state
+        .changes
+        .remove(&(repository.to_owned(), name.to_owned())))
+}
+
+/// The change records whose versions `filter` selects, each by its
+/// repository and its name.
+fn change_names<P: rusqlite::Params>(
+    conn: &Connection,
+    filter: &str,
+    params: P,
+) -> Result<Vec<(String, String)>, Failure> {
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT DISTINCT repository, name FROM changes {filter} ORDER BY repository, name"
+    ))?;
+    let names = statement
+        .query_map(params, |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(names)
 }
 
 /// Reads every counted approval of a plan into `state` (plan-approvals).
@@ -1725,10 +1866,21 @@ pub fn artifact_name(conn: &Connection, fingerprint: &str) -> Result<Option<Stri
             |row| row.get(0),
         )
         .optional()?;
-    match origin.as_deref().map(from_json::<Origin>).transpose()? {
-        Some(Origin::File { name, .. }) => Ok(Some(name)),
-        _ => Ok(None),
+    if let Some(Origin::File { name, .. }) =
+        origin.as_deref().map(from_json::<Origin>).transpose()?
+    {
+        return Ok(Some(name));
     }
+    // A file of a change's folder, by the last part of its path
+    // (change-records).
+    let path: Option<String> = conn
+        .query_row(
+            "SELECT path FROM change_files WHERE sha256 = ?1 ORDER BY act_hash, path LIMIT 1",
+            [fingerprint],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(path.map(|path| path.rsplit('/').next().unwrap_or(&path).to_owned()))
 }
 
 /// The name of each claim with a proposed version, as the views hold it:
@@ -1775,6 +1927,9 @@ pub fn load_state(conn: &Connection) -> Result<State, Failure> {
     load_notes(conn, &mut state, "", [])?;
     load_acts(conn, &mut state, "", [])?;
     load_approvals(conn, &mut state)?;
+    for (repository, name) in change_names(conn, "", [])? {
+        load_change(conn, &mut state, &repository, &name)?;
+    }
     read_all_paragraphs(conn, &mut state);
     Ok(state)
 }
@@ -1808,6 +1963,14 @@ pub fn load_state_for(conn: &Connection, scope: &Scope) -> Result<State, Failure
     }
     for act in &scope.acts {
         load_acts(conn, &mut state, "AND act_hash = ?1", [act.as_str()])?;
+        // The change record of a version that an entry links, for a
+        // landing to mark it landed.
+        for (repository, name) in change_names(conn, "WHERE act_hash = ?1", [act.as_str()])? {
+            load_change(conn, &mut state, &repository, &name)?;
+        }
+    }
+    for (repository, name) in &scope.changes {
+        load_change(conn, &mut state, repository, name)?;
     }
     load_approvals(conn, &mut state)?;
     read_all_paragraphs(conn, &mut state);

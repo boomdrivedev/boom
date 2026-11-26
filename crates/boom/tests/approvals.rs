@@ -326,3 +326,23 @@ fn the_line_of_an_approval_names_its_plan_and_its_person() {
         format!("{entry} approved plan {} by ada", &fingerprint[..12])
     );
 }
+
+#[test]
+fn no_tool_of_boom_mcp_approves() {
+    let place = Place::new();
+    place.made();
+    let answers = place.mcp(&[
+        support::initialize(1),
+        support::request(
+            2,
+            "tools/call",
+            serde_json::json!({"name": "approve", "arguments": {}}),
+        ),
+    ]);
+    let message = answers[1]["error"]["message"].as_str().unwrap();
+    assert!(message.contains("no tool is named approve"), "{message}");
+    assert!(
+        message.contains("only a person approves a plan"),
+        "{message}"
+    );
+}

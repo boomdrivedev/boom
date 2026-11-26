@@ -191,6 +191,7 @@ fn the_tools_listed() {
             "log",
             "propose",
             "query",
+            "record_change",
             "search",
             "show"
         ]

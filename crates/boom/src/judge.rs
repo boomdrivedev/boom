@@ -303,6 +303,45 @@ pub struct Approval {
     pub covers: Vec<String>,
 }
 
+/// A change record: its versions in the order recorded, and the version
+/// a landing links, where one does (change-records).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangeRecord {
+    /// Its repository.
+    pub repository: String,
+    /// Its name.
+    pub name: String,
+    /// Its versions, in the order recorded.
+    pub versions: Vec<ChangeVersion>,
+    /// The version that a counted `sluice.landed` entry links first.
+    pub landed: Option<String>,
+}
+
+/// A version of a change record, as the log holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangeVersion {
+    /// The version.
+    pub version: String,
+    /// The version it amends.
+    pub base: Option<String>,
+    /// The entry that recorded it.
+    pub seq: u64,
+    /// That entry's act hash.
+    pub act_hash: String,
+}
+
+impl ChangeRecord {
+    /// Its newest version.
+    pub fn newest(&self) -> Option<&ChangeVersion> {
+        self.versions.last()
+    }
+}
+
+/// The type of the entry by which sluice records a landing, which links
+/// the versions of the change records it lands (change-records, "The
+/// status of a change record").
+pub const LANDED: &str = "sluice.landed";
+
 /// The key of a claim among a state's claims: its name, and the
 /// repository of a term or nothing for the other kinds.
 pub type Key = (String, String);
@@ -348,6 +387,11 @@ pub struct State {
     pub acts: BTreeMap<String, Acted>,
     /// The counted approvals of plans, by their act hash.
     pub approvals: BTreeMap<String, Approval>,
+    /// The change records, by their repository and name.
+    pub changes: BTreeMap<(String, String), ChangeRecord>,
+    /// The change record and version of each counted `recorded` entry,
+    /// by its act hash.
+    pub recorded: BTreeMap<String, (String, String, String)>,
 }
 
 impl State {
@@ -576,6 +620,12 @@ fn check(state: &State, entry: &Entry, signed: &str, proof: Proof<'_>) -> Result
             ));
         }
     }
+    if let (Act::Recorded { .. }, Actor::Person(_)) = (&entry.act, &entry.actor) {
+        return Err(
+            "no person records or accepts a change record: an agent records it, with its provenance"
+                .to_owned(),
+        );
+    }
     match &entry.actor {
         Actor::Person(name) => check_person(state, entry, name, signed, proof)?,
         Actor::Agent { provenance } => check_agent(&entry.act, provenance, proof)?,
@@ -756,6 +806,13 @@ fn check_form(act: &Act) -> Result<(), String> {
                         "an approval covers each claim once: it covers {name} twice"
                     ));
                 }
+            }
+            Ok(())
+        }
+        Act::Recorded { change, origin } => {
+            check_change_form(change)?;
+            if let Some(origin) = origin {
+                claim::Origin::git(origin)?;
             }
             Ok(())
         }
@@ -948,6 +1005,7 @@ fn check_agent(act: &Act, provenance: &str, proof: Proof<'_>) -> Result<(), Stri
         Act::Proposed { .. } => "proposal",
         Act::Withdrawn { .. } => "withdrawal",
         Act::Other { .. } => "entry",
+        Act::Recorded { .. } => "change record",
         Act::Accepted { .. } => {
             return Err("only a person accepts: a person's act needs their signature".to_owned())
         }
@@ -1076,6 +1134,7 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
             covers,
             ..
         } => check_approval(state, plan, links, covers),
+        Act::Recorded { change, .. } => check_recorded(state, change),
     }
 }
 
@@ -1690,6 +1749,133 @@ fn check_withdraw(
     }
 }
 
+/// A path in a change's folder: relative, its parts named, and no `..`.
+fn check_change_path(path: &str) -> Result<(), String> {
+    let parts_named = path
+        .split('/')
+        .all(|part| !part.is_empty() && part != "." && part != "..");
+    if parts_named && !path.contains(['\\', '\n', '\r']) {
+        Ok(())
+    } else {
+        Err(format!(
+            "a change's file is named by its relative path in the change's folder: {path} is not"
+        ))
+    }
+}
+
+/// The form of a version of a change record (change-records).
+fn check_change_form(change: &crate::entry::Change) -> Result<(), String> {
+    repository::check_name(&change.repository)?;
+    claim::check_name(&change.name)?;
+    for (what, name) in [("unit", &change.unit), ("bolt", &change.bolt)] {
+        claim::check_name(name).map_err(|_| {
+            format!("a change record names its {what} by one kebab name: {name} is not")
+        })?;
+    }
+    if change.version != change.fingerprint() {
+        return Err(format!(
+            "the version of {} is the fingerprint of its content, {}: it names {}",
+            change.record(),
+            change.fingerprint(),
+            change.version
+        ));
+    }
+    if let Some(base) = &change.base {
+        claim::edge(&format!("a@{base}"))
+            .map_err(|_| format!("a version of a change record amends a version, 12 hexadecimal characters: {base} is not"))?;
+    }
+    check_link_form(std::slice::from_ref(&change.approval))?;
+    for (at, covered) in change.covers.iter().enumerate() {
+        let (name, _) = claim::edge(covered)?;
+        if change.covers[..at]
+            .iter()
+            .any(|before| before.split_once('@').map(|(n, _)| n) == Some(name))
+        {
+            return Err(format!(
+                "a change record covers each claim once: it covers {name} twice"
+            ));
+        }
+    }
+    if change.files.is_empty() {
+        return Err(format!("the change {} holds no file", change.record()));
+    }
+    for (at, file) in change.files.iter().enumerate() {
+        check_change_path(&file.path)?;
+        check_link_form(std::slice::from_ref(&file.sha256)).map_err(|_| {
+            format!(
+                "a change's file is named by the SHA-256 of its bytes: {} names {}",
+                file.path, file.sha256
+            )
+        })?;
+        if at > 0 && change.files[at - 1].path >= file.path {
+            return Err(format!(
+                "a change names its files once each, sorted by path: {} comes after {}",
+                file.path,
+                change.files[at - 1].path
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A version of a change record: it links a counted approval, covers
+/// only what that approval covers, and amends the newest version of a
+/// change that has not landed; the same version repeats (change-records).
+fn check_recorded(state: &State, change: &crate::entry::Change) -> Result<Verdict, String> {
+    let short = change.approval.get(..12).unwrap_or(&change.approval);
+    let Some(approval) = state
+        .acts
+        .get(&change.approval)
+        .filter(|acted| acted.act == "approved")
+        .and_then(|_| state.approvals.get(&change.approval))
+    else {
+        return Err(format!(
+            "{} is not an approved entry: a change record links the approval of its plan",
+            change.approval
+        ));
+    };
+    for covered in &change.covers {
+        if !approval.covers.contains(covered) {
+            return Err(format!(
+                "{covered} is a claim that the approval {short} does not cover"
+            ));
+        }
+    }
+    let record = change.record();
+    match state
+        .changes
+        .get(&(change.repository.clone(), change.name.clone()))
+    {
+        None => match &change.base {
+            Some(base) => Err(format!(
+                "{record} has no version to amend: a first version names no --amends, and this one amends {base}"
+            )),
+            None => Ok(Verdict::Counts),
+        },
+        Some(existing) => {
+            if let Some(same) = existing
+                .versions
+                .iter()
+                .find(|version| version.version == change.version)
+            {
+                return Ok(Verdict::Repeats(same.seq));
+            }
+            if let Some(landed) = &existing.landed {
+                return Err(format!(
+                    "a landed change never changes: {record} landed at {landed}"
+                ));
+            }
+            let newest = &existing.newest().expect("a change record has a version").version;
+            if change.base.as_ref() != Some(newest) {
+                return Err(format!(
+                    "a new version of {record} amends its newest version: --amends {newest}"
+                ));
+            }
+            Ok(Verdict::Counts)
+        }
+    }
+}
+
 /// An approval of a plan: it covers a claim or links an entry, each
 /// version it covers is accepted and its proposal linked, and no counted
 /// approval approves its plan (plan-approvals).
@@ -1757,7 +1943,45 @@ pub fn apply(state: &mut State, seq: u64, signed: &str, entry: &Entry) {
             act: entry.act.name().to_owned(),
         });
     match &entry.act {
-        Act::Other { .. } => {}
+        Act::Other { act, links, .. } => {
+            if act == LANDED {
+                for link in links {
+                    if let Some((repository, name, version)) = state.recorded.get(link).cloned() {
+                        if let Some(record) = state.changes.get_mut(&(repository, name)) {
+                            record.landed.get_or_insert(version);
+                        }
+                    }
+                }
+            }
+        }
+        Act::Recorded { change, .. } => {
+            let hash = crate::entry::act_hash(signed);
+            let key = (change.repository.clone(), change.name.clone());
+            state
+                .changes
+                .entry(key)
+                .or_insert_with(|| ChangeRecord {
+                    repository: change.repository.clone(),
+                    name: change.name.clone(),
+                    versions: Vec::new(),
+                    landed: None,
+                })
+                .versions
+                .push(ChangeVersion {
+                    version: change.version.clone(),
+                    base: change.base.clone(),
+                    seq,
+                    act_hash: hash.clone(),
+                });
+            state.recorded.insert(
+                hash,
+                (
+                    change.repository.clone(),
+                    change.name.clone(),
+                    change.version.clone(),
+                ),
+            );
+        }
         Act::Approved { plan, covers, .. } => {
             state.approvals.insert(
                 crate::entry::act_hash(signed),

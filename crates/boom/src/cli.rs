@@ -472,6 +472,12 @@ enum Command {
         #[command(subcommand)]
         what: ImportCommand,
     },
+    /// Record a version of a change record, as an agent: no person
+    /// accepts it.
+    Record {
+        #[command(subcommand)]
+        what: RecordCommand,
+    },
     /// Register a repository, change its settings, or show them: the
     /// settings an owner signs in the log.
     Repo {
@@ -541,6 +547,45 @@ enum OnOff {
     On,
     /// Off.
     Off,
+}
+
+#[derive(Subcommand, Debug)]
+enum RecordCommand {
+    /// Record a version of a change record, `<repository>:<name>`, as an
+    /// agent: each file of its folder kept by its fingerprint, the
+    /// approval of its plan, its unit and its bolt, and the claims it
+    /// covers. No person accepts it.
+    Change {
+        /// The change record, `<repository>:<name>`.
+        target: String,
+        /// The act hash of the `approved` entry of its plan.
+        #[arg(long, value_name = "ACT_HASH")]
+        approval: Option<String>,
+        /// The unit's name in the approved plan.
+        #[arg(long, value_name = "NAME")]
+        unit: Option<String>,
+        /// The bolt's name in the approved plan.
+        #[arg(long, value_name = "NAME")]
+        bolt: Option<String>,
+        /// A claim it covers, `<name>` for the version the approval
+        /// covers or `<name>@<version>`; any number of times.
+        #[arg(long = "covers", value_name = "CLAIM")]
+        covers: Vec<String>,
+        /// The version this one amends: the newest version.
+        #[arg(long, value_name = "VERSION")]
+        amends: Option<String>,
+        /// The change's folder; by default `openspec/changes/<name>` of
+        /// the working folder.
+        #[arg(long, value_name = "PATH")]
+        folder: Option<PathBuf>,
+        /// The commit the folder came from,
+        /// `git:<repository>@<commit>:<path>`, kept out of the version.
+        #[arg(long, value_name = "REFERENCE")]
+        origin: Option<String>,
+        /// The agent's session or run.
+        #[arg(long, value_name = "TEXT")]
+        provenance: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -845,7 +890,7 @@ fn artifact(json: bool, path: Result<PathBuf, Failure>, fingerprint: &str) -> Ou
         store.read(|conn| {
             let Some(name) = store::artifact_name(conn, fingerprint)? else {
                 return Err(Failure::refused(format!(
-                    "no artifact has the fingerprint {fingerprint}: boom keeps the files that an --origin names"
+                    "no artifact has the fingerprint {fingerprint}: boom keeps the files that an --origin names, and the files of each change record"
                 )));
             };
             Ok((name, store::blob(conn, fingerprint)?))
@@ -1157,6 +1202,32 @@ fn execute(
         Command::Hook { .. } => unreachable!("boom hook answers before a store is opened"),
         Command::Terms { .. } => {
             unreachable!("boom terms check is run before a command answers")
+        }
+        Command::Record {
+            what:
+                RecordCommand::Change {
+                    target,
+                    approval,
+                    unit,
+                    bolt,
+                    covers,
+                    amends,
+                    folder,
+                    origin,
+                    provenance,
+                },
+        } => {
+            let given = Recording {
+                approval,
+                unit,
+                bolt,
+                covers,
+                amends,
+                folder,
+                origin,
+                provenance,
+            };
+            record_change(&path?, &target, given, env)
         }
         Command::Repo { what } => match what {
             RepoCommand::Add {
@@ -2130,6 +2201,11 @@ fn accept(
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
+    if let Some(change) = targets.iter().find(|target| target.contains(':')) {
+        return Err(Failure::refused(format!(
+            "no person accepts a change record: an agent records {change}, and no one accepts it"
+        )));
+    }
     let versions = targets
         .iter()
         .map(|target| version_target("accept", target))
@@ -2749,6 +2825,9 @@ fn version_words(view: &store::VersionView) -> String {
 fn show(path: &Path, target: &str, repository: Option<&str>) -> Result<Answer, Failure> {
     let mut store = Store::open(path)?;
     store.read(|conn| {
+        if target.contains(':') {
+            return show_change(conn, target);
+        }
         let named;
         let (name, version) = if !target.is_empty() && target.bytes().all(|b| b.is_ascii_digit()) {
             named = entry_target(conn, target)?;
@@ -3437,6 +3516,348 @@ fn entry_target(conn: &rusqlite::Connection, number: &str) -> Result<(String, St
     }
 }
 
+/// What `boom record change` is given besides its change record.
+struct Recording {
+    approval: Option<String>,
+    unit: Option<String>,
+    bolt: Option<String>,
+    covers: Vec<String>,
+    amends: Option<String>,
+    folder: Option<PathBuf>,
+    origin: Option<String>,
+    provenance: Option<String>,
+}
+
+/// The largest file of a change's folder that boom keeps.
+const CHANGE_FILE_LIMIT: u64 = 1024 * 1024;
+
+/// `<repository>:<name>`, each kebab case.
+fn change_target(target: &str) -> Result<(String, String), Failure> {
+    let (repository, name) = target
+        .split_once(':')
+        .filter(|(repository, name)| {
+            repository::check_name(repository).is_ok() && crate::claim::check_name(name).is_ok()
+        })
+        .ok_or_else(|| {
+            Failure::refused(format!(
+                "a change record is named <repository>:<name>, each kebab case: {target} is not"
+            ))
+        })?;
+    Ok((repository.to_owned(), name.to_owned()))
+}
+
+/// Each file under `folder`, by its path in it with `/` between its
+/// parts, with its bytes, sorted by path: refused for an empty folder, a
+/// symbolic link, and a file of more than 1 MiB (change-records).
+fn change_files(folder: &Path) -> Result<Vec<(String, Vec<u8>)>, Failure> {
+    fn walk(root: &Path, dir: &Path, found: &mut Vec<(String, Vec<u8>)>) -> Result<(), Failure> {
+        let unreadable = |error: std::io::Error| {
+            Failure::refused(format!(
+                "the change's folder {} could not be read: {error}",
+                dir.display()
+            ))
+        };
+        for item in std::fs::read_dir(dir).map_err(unreadable)? {
+            let path = item.map_err(unreadable)?.path();
+            let meta = std::fs::symlink_metadata(&path).map_err(unreadable)?;
+            let relative = path
+                .strip_prefix(root)
+                .ok()
+                .and_then(|relative| {
+                    relative
+                        .components()
+                        .map(|part| part.as_os_str().to_str())
+                        .collect::<Option<Vec<_>>>()
+                })
+                .map(|parts| parts.join("/"))
+                .ok_or_else(|| {
+                    Failure::refused(format!("{} is not a path boom names", path.display()))
+                })?;
+            if meta.file_type().is_symlink() {
+                return Err(Failure::refused(format!(
+                    "the change's folder holds the symbolic link {relative}: boom keeps no link"
+                )));
+            }
+            if meta.is_dir() {
+                walk(root, &path, found)?;
+            } else if meta.len() > CHANGE_FILE_LIMIT {
+                return Err(Failure::refused(format!(
+                    "{relative} is more than 1 MiB: boom keeps a change's file of 1 MiB or less"
+                )));
+            } else {
+                found.push((relative, std::fs::read(&path).map_err(unreadable)?));
+            }
+        }
+        Ok(())
+    }
+    let mut found = Vec::new();
+    walk(folder, folder, &mut found)?;
+    if found.is_empty() {
+        return Err(Failure::refused(format!(
+            "the change's folder {} holds no file",
+            folder.display()
+        )));
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(found)
+}
+
+/// `boom record change`: an agent's version of a change record
+/// (change-records).
+fn record_change(
+    path: &Path,
+    target: &str,
+    given: Recording,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    let (repository, name) = change_target(target)?;
+    let Some(provenance) = given
+        .provenance
+        .filter(|provenance| !provenance.trim().is_empty())
+    else {
+        return Err(Failure::refused(
+            "a change record names its provenance, with --provenance: an agent records it",
+        ));
+    };
+    let named = |value: Option<String>, what: &str| {
+        value.ok_or_else(|| {
+            Failure::refused(format!("a change record names its {what}, with --{what}"))
+        })
+    };
+    let approval = named(given.approval, "approval")?;
+    let unit = named(given.unit, "unit")?;
+    let bolt = named(given.bolt, "bolt")?;
+    let origin = given
+        .origin
+        .map(|origin| Origin::git(&origin).map(|origin| origin.words()))
+        .transpose()
+        .map_err(Failure::Refused)?;
+    let folder = match given.folder {
+        Some(folder) => folder,
+        None => env
+            .cwd
+            .as_ref()
+            .ok_or_else(|| Failure::not_run("the working folder could not be read"))?
+            .join("openspec/changes")
+            .join(&name),
+    };
+    let read = change_files(&folder)?;
+    let mut store = Store::open(path)?;
+    let short = approval.get(..12).unwrap_or(&approval).to_owned();
+    let mut scope = Scope::default();
+    scope.acts.insert(approval.clone());
+    let approved: Option<Vec<String>> = store.read(|conn| {
+        let state = store::load_state_for(conn, &scope)?;
+        Ok(state
+            .approvals
+            .get(&approval)
+            .map(|found| found.covers.clone()))
+    })?;
+    let Some(approved) = approved else {
+        return Err(Failure::refused(format!(
+            "{approval} is not an approved entry: a change record links the approval of its plan"
+        )));
+    };
+    let mut covers = Vec::with_capacity(given.covers.len());
+    for covered in &given.covers {
+        if covered.contains('@') {
+            covers.push(covered.clone());
+            continue;
+        }
+        let found = approved
+            .iter()
+            .find(|approved| approved.split_once('@').map(|(n, _)| n) == Some(covered.as_str()))
+            .ok_or_else(|| {
+                Failure::refused(format!(
+                    "{covered} is a claim that the approval {short} does not cover"
+                ))
+            })?;
+        covers.push(found.clone());
+    }
+    let covers = claim_once(covers);
+    let mut change = crate::entry::Change {
+        repository: repository.clone(),
+        name: name.clone(),
+        version: String::new(),
+        base: given.amends,
+        approval: approval.clone(),
+        unit,
+        bolt,
+        covers: covers.clone(),
+        files: read
+            .iter()
+            .map(|(path, bytes)| crate::entry::ChangeFile {
+                path: path.clone(),
+                sha256: crate::sha256_hex(bytes),
+            })
+            .collect(),
+    };
+    change.version = change.fingerprint();
+    scope.names.extend(
+        covers
+            .iter()
+            .filter_map(|covered| covered.split_once('@'))
+            .map(|(name, _)| name.to_owned()),
+    );
+    scope.changes.insert((repository.clone(), name.clone()));
+    let blobs: Vec<&[u8]> = read.iter().map(|(_, bytes)| bytes.as_slice()).collect();
+    let record = change.record();
+    let version = change.version.clone();
+    let base = change.base.clone();
+    let (written, _) = write(&mut store, &scope, None, &blobs, |_| {
+        Ok(Entry {
+            at: env.clock.now(),
+            rules: judge::RULES,
+            actor: Actor::Agent { provenance },
+            act: Act::Recorded {
+                change: Box::new(change),
+                origin,
+            },
+        })
+    })?;
+    let repeats = matches!(written, Written::Repeats(_));
+    let words = if repeats {
+        format!(
+            "{record}@{version} is recorded already, by entry {}: nothing is appended\n",
+            written.seq()
+        )
+    } else {
+        format!(
+            "{record}@{version} is recorded, by entry {}\n",
+            written.seq()
+        )
+    };
+    Ok(Answer {
+        json: json!({
+            "format": "boom-record-change/1",
+            "change": record,
+            "version": version,
+            "base": base,
+            "entry": written.seq(),
+            "repeats": repeats,
+            "files": read.len(),
+        }),
+        words,
+    })
+}
+
+/// `boom show <repository>:<name>[@<version>]`: a change record, its
+/// status and its versions (change-records, "boom show gives a change
+/// record").
+fn show_change(conn: &rusqlite::Connection, target: &str) -> Result<Answer, Failure> {
+    let (record, only) = match target.split_once('@') {
+        Some((record, version)) => (record, Some(version)),
+        None => (target, None),
+    };
+    let (repository, name) = change_target(record)?;
+    let found = store::change_record(conn, &repository, &name)?
+        .ok_or_else(|| Failure::refused(format!("no change record has the name {record}")))?;
+    if let Some(only) = only {
+        if !found.versions.iter().any(|version| version.version == only) {
+            return Err(Failure::refused(format!("{record} has no version {only}")));
+        }
+    }
+    let status = if found.landed.is_some() {
+        "landed"
+    } else {
+        "written"
+    };
+    let mut words = match &found.landed {
+        Some(landed) => format!("change {record}, landed at {landed}\n"),
+        None => format!("change {record}, written\n"),
+    };
+    let mut versions = Vec::new();
+    for version in found
+        .versions
+        .iter()
+        .filter(|version| only.is_none_or(|only| only == version.version))
+    {
+        let row = store::row_at(conn, version.seq)?
+            .ok_or_else(|| Failure::not_run(format!("the log holds no entry {}", version.seq)))?;
+        let Ok(Entry {
+            act: Act::Recorded { change, origin },
+            actor,
+            ..
+        }) = Entry::parse(&row.signed)
+        else {
+            return Err(Failure::not_run(format!(
+                "entry {} is not the record its version names",
+                version.seq
+            )));
+        };
+        words.push_str(&format!(
+            "\nversion {}, {}, by {} in entry {}\n",
+            change.version,
+            change
+                .base
+                .as_ref()
+                .map_or("a first version".to_owned(), |base| format!(
+                    "amends {base}"
+                )),
+            actor_words(&actor),
+            version.seq
+        ));
+        words.push_str(&format!("approval: {}\n", change.approval));
+        words.push_str(&format!("unit: {}, bolt: {}\n", change.unit, change.bolt));
+        let mut covers = Vec::new();
+        for covered in &change.covers {
+            let (claim, meant) = covered.split_once('@').unwrap_or((covered, ""));
+            let accepted = store::claim_views(conn, claim)?
+                .into_iter()
+                .find_map(|view| view.standing);
+            let out_of_date = accepted
+                .as_deref()
+                .is_some_and(|accepted| accepted != meant);
+            words.push_str(&format!(
+                "covers: {covered}{}\n",
+                match (&accepted, out_of_date) {
+                    (Some(accepted), true) =>
+                        format!(", out of date: {claim}@{accepted} is accepted"),
+                    _ => String::new(),
+                }
+            ));
+            covers.push(json!({
+                "claim": claim,
+                "version": meant,
+                "out_of_date": out_of_date,
+                "accepted": accepted,
+            }));
+        }
+        for file in &change.files {
+            words.push_str(&format!("file: {}, sha256 {}\n", file.path, file.sha256));
+        }
+        if let Some(origin) = &origin {
+            words.push_str(&format!("origin: {origin}\n"));
+        }
+        versions.push(json!({
+            "version": change.version,
+            "base": change.base,
+            "entry": version.seq,
+            "act_hash": version.act_hash,
+            "actor": actor,
+            "approval": change.approval,
+            "unit": change.unit,
+            "bolt": change.bolt,
+            "covers": covers,
+            "files": change.files,
+            "origin": origin,
+        }));
+    }
+    Ok(Answer {
+        json: json!({
+            "format": "boom-change/1",
+            "change": record,
+            "repository": repository,
+            "name": name,
+            "status": status,
+            "landed": found.landed,
+            "newest": found.newest().map(|version| version.version.clone()),
+            "versions": versions,
+        }),
+        words,
+    })
+}
+
 /// What `boom approve` is given besides its plan and its key.
 struct Approval<'a> {
     links: &'a [String],
@@ -3735,6 +4156,12 @@ fn log(path: &Path) -> Result<Answer, Failure> {
                 }) = &parsed
                 {
                     format!(" plan {}", plan.get(..12).unwrap_or(plan))
+                } else if let Ok(Entry {
+                    act: Act::Recorded { change, .. },
+                    ..
+                }) = &parsed
+                {
+                    format!(" {}@{}", change.record(), change.version)
                 } else if !targets.is_empty() {
                     format!(" {}", targets.join(", "))
                 } else if !links.is_empty() {
@@ -4393,6 +4820,7 @@ fn import(
         notes: std::collections::BTreeSet::new(),
         outlines: false,
         acts: BTreeSet::new(),
+        changes: BTreeSet::new(),
     };
     let mut judged = store.state_for(&scope)?;
     let mut entries = Vec::new();

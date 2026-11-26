@@ -17,8 +17,8 @@
 
 ## 4. The change record
 
-- [ ] 4.1 In `entry.rs` and `judge.rs`, add the act `recorded`, its version, its files and its refusals. `boom:test` proves the scenarios of "An agent records a version of a change record", "Boom keeps the change's files by their fingerprints", "A version is the fingerprint of the change's files and links", "A new version amends the newest version" and "A version links its approval and covers what its approval covers"
-- [ ] 4.2 In `store.rs` and `cli.rs`, keep the view `changes`, add `boom record change`, and give a change record and its status in `boom show` and its line in `boom log`. `boom:test` proves the scenarios of "The status of a change record", "boom show gives a change record" and "The log names a version of a change record"
+- [x] 4.1 In `entry.rs` and `judge.rs`, add the act `recorded`, its version, its files and its refusals. `boom:test` proves the scenarios of "An agent records a version of a change record", "Boom keeps the change's files by their fingerprints", "A version is the fingerprint of the change's files and links", "A new version amends the newest version" and "A version links its approval and covers what its approval covers"
+- [x] 4.2 In `store.rs` and `cli.rs`, keep the view `changes`, add `boom record change`, and give a change record and its status in `boom show` and its line in `boom log`. `boom:test` proves the scenarios of "The status of a change record", "boom show gives a change record" and "The log names a version of a change record"
 
 ## 5. The walk
 
