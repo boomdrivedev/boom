@@ -170,6 +170,22 @@ pub enum Act {
         /// The note's words.
         words: String,
     },
+    /// A person's approval of a plan, signed: the plan by the SHA-256 of
+    /// its document, the entries it links, its outputs and the claims it
+    /// covers (plan-approvals).
+    Approved {
+        /// The SHA-256 of the plan document's bytes, 64 hexadecimal
+        /// characters.
+        plan: String,
+        /// The act hashes of the entries it links: the entry that
+        /// proposed each version it covers, then each entry the plan took
+        /// in.
+        links: Vec<String>,
+        /// Each output, `git:<repository>@<commit>:<path>`.
+        outputs: Vec<String>,
+        /// Each claim it covers, `<name>@<version>`.
+        covers: Vec<String>,
+    },
     /// An entry of a type that another tool owns, `<tool>.<type>`, which
     /// boom judges by its form, its actor and its links alone (lineage).
     Other {
@@ -187,6 +203,7 @@ impl Act {
     pub fn name(&self) -> &str {
         match self {
             Act::Other { act, .. } => act,
+            Act::Approved { .. } => "approved",
             Act::Registered { .. } => "registered",
             Act::Proposed { .. } => "proposed",
             Act::Accepted { .. } => "accepted",
@@ -202,7 +219,10 @@ impl Act {
     /// withdrawal's each, and none for a registration.
     pub fn targets(&self) -> Vec<(&str, &str)> {
         match self {
-            Act::Registered { .. } | Act::Repository { .. } | Act::Other { .. } => Vec::new(),
+            Act::Registered { .. }
+            | Act::Repository { .. }
+            | Act::Other { .. }
+            | Act::Approved { .. } => Vec::new(),
             Act::Proposed { claim, .. } => vec![(&claim.name, &claim.version)],
             Act::Accepted { versions }
             | Act::Rejected { versions, .. }
@@ -218,7 +238,7 @@ impl Act {
     /// an act that links none (record-log, "Each entry has an act hash").
     pub fn links(&self) -> &[String] {
         match self {
-            Act::Other { links, .. } => links,
+            Act::Other { links, .. } | Act::Approved { links, .. } => links,
             _ => &[],
         }
     }
@@ -361,6 +381,21 @@ struct NotedPart {
 /// A reject of one version keeps the form it always had, `name` and
 /// `version`; a reject of several names them in `versions`, as an accept
 /// does.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApprovedPart {
+    format: String,
+    act: String,
+    at: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    rules: u32,
+    actor: Actor,
+    plan: String,
+    links: Vec<String>,
+    outputs: Vec<String>,
+    covers: Vec<String>,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OtherPart {
@@ -542,6 +577,22 @@ impl Entry {
                 fingerprint: fingerprint.clone(),
                 words: words.clone(),
             }),
+            Act::Approved {
+                plan,
+                links,
+                outputs,
+                covers,
+            } => serde_json::to_string(&ApprovedPart {
+                format,
+                act,
+                at,
+                rules,
+                actor,
+                plan: plan.clone(),
+                links: links.clone(),
+                outputs: outputs.clone(),
+                covers: covers.clone(),
+            }),
             Act::Other { links, content, .. } => serde_json::to_string(&OtherPart {
                 format,
                 act,
@@ -658,6 +709,20 @@ impl Entry {
                     },
                 })
             }
+            Some("approved") => {
+                let part: ApprovedPart = serde_json::from_str(signed).map_err(form)?;
+                Ok(Entry {
+                    at: part.at,
+                    rules: part.rules,
+                    actor: part.actor,
+                    act: Act::Approved {
+                        plan: part.plan,
+                        links: part.links,
+                        outputs: part.outputs,
+                        covers: part.covers,
+                    },
+                })
+            }
             Some(other) if other.contains('.') => {
                 let part: OtherPart = serde_json::from_str(signed).map_err(form)?;
                 Ok(Entry {
@@ -672,7 +737,7 @@ impl Entry {
                 })
             }
             Some(other) => Err(format!(
-                "its act is {other}, none of registered, proposed, accepted, rejected, withdrawn, repository and noted, nor another tool's <tool>.<type>"
+                "its act is {other}, none of registered, proposed, accepted, rejected, withdrawn, repository, noted and approved, nor another tool's <tool>.<type>"
             )),
             None => Err("it names no act".to_owned()),
         }
@@ -1080,6 +1145,29 @@ mod tests {
         assert_eq!(entry.act.name(), "sluice.landed");
         assert_eq!(entry.act.links(), ["a".repeat(64)]);
         assert!(entry.act.targets().is_empty());
+    }
+
+    #[test]
+    fn an_approval_holds_its_plan_links_outputs_and_covers_in_order() {
+        let entry = Entry {
+            at: 1_763_424_300,
+            rules: crate::judge::RULES,
+            actor: Actor::Person("ada".to_owned()),
+            act: Act::Approved {
+                plan: "9".repeat(64),
+                links: vec!["a".repeat(64)],
+                outputs: vec![format!("git:boom@{}:design/narrative.md", "c".repeat(40))],
+                covers: vec!["status-read-from-events@97d0559deafa".to_owned()],
+            },
+        };
+        let signed = entry.signed_part();
+        assert_eq!(
+            keys(&signed),
+            ["format", "act", "at", "rules", "actor", "plan", "links", "outputs", "covers"]
+        );
+        assert_eq!(Entry::parse(&signed), Ok(entry.clone()));
+        assert_eq!(entry.act.name(), "approved");
+        assert_eq!(entry.act.links(), ["a".repeat(64)]);
     }
 
     #[test]

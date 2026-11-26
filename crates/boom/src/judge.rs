@@ -292,6 +292,17 @@ pub struct Acted {
     pub act: String,
 }
 
+/// A counted approval of a plan (plan-approvals).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Approval {
+    /// The entry that holds it.
+    pub seq: u64,
+    /// The SHA-256 of the plan's document.
+    pub plan: String,
+    /// The claims it covers, each `<name>@<version>`.
+    pub covers: Vec<String>,
+}
+
 /// The key of a claim among a state's claims: its name, and the
 /// repository of a term or nothing for the other kinds.
 pub type Key = (String, String);
@@ -335,6 +346,8 @@ pub struct State {
     /// The counted entries, by their act hash: the first counted entry
     /// of each act hash (record-log, "Each entry has an act hash").
     pub acts: BTreeMap<String, Acted>,
+    /// The counted approvals of plans, by their act hash.
+    pub approvals: BTreeMap<String, Approval>,
 }
 
 impl State {
@@ -714,6 +727,38 @@ fn check_form(act: &Act) -> Result<(), String> {
             }
             Ok(())
         }
+        Act::Approved {
+            plan,
+            links,
+            outputs,
+            covers,
+        } => {
+            let fingerprint = plan.len() == 64
+                && plan
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
+            if !fingerprint {
+                return Err(format!(
+                    "an approval names its plan by the SHA-256 of its document, 64 lowercase hexadecimal characters: {plan} is not"
+                ));
+            }
+            check_link_form(links)?;
+            for output in outputs {
+                claim::Origin::git(output)?;
+            }
+            for (at, covered) in covers.iter().enumerate() {
+                let (name, _) = claim::edge(covered)?;
+                if covers[..at]
+                    .iter()
+                    .any(|before| before.split_once('@').map(|(n, _)| n) == Some(name))
+                {
+                    return Err(format!(
+                        "an approval covers each claim once: it covers {name} twice"
+                    ));
+                }
+            }
+            Ok(())
+        }
         Act::Other {
             act,
             links,
@@ -920,6 +965,11 @@ fn check_agent(act: &Act, provenance: &str, proof: Proof<'_>) -> Result<(), Stri
             )
         }
         Act::Noted { .. } => return Err("only a person writes a note".to_owned()),
+        Act::Approved { .. } => {
+            return Err(
+                "only a person approves a plan: a person's act needs their signature".to_owned(),
+            )
+        }
     };
     if provenance.trim().is_empty() {
         return Err(format!(
@@ -1020,6 +1070,12 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
         // Boom judges another tool's entry by its form, its actor and its
         // links alone, checked before.
         Act::Other { .. } => Ok(Verdict::Counts),
+        Act::Approved {
+            plan,
+            links,
+            covers,
+            ..
+        } => check_approval(state, plan, links, covers),
     }
 }
 
@@ -1634,6 +1690,61 @@ fn check_withdraw(
     }
 }
 
+/// An approval of a plan: it covers a claim or links an entry, each
+/// version it covers is accepted and its proposal linked, and no counted
+/// approval approves its plan (plan-approvals).
+fn check_approval(
+    state: &State,
+    plan: &str,
+    links: &[String],
+    covers: &[String],
+) -> Result<Verdict, String> {
+    if covers.is_empty() && links.is_empty() {
+        return Err(
+            "an approval covers a claim or links an entry that the plan took in: this one does neither"
+                .to_owned(),
+        );
+    }
+    if let Some(approved) = state
+        .approvals
+        .values()
+        .find(|approval| approval.plan == plan)
+    {
+        return Err(format!(
+            "the plan {plan} is approved already, by entry {}",
+            approved.seq
+        ));
+    }
+    let mut not_accepted = Vec::new();
+    for covered in covers {
+        let (name, version) = claim::edge(covered)?;
+        let (_, found) = find(state, name, version)?;
+        if found.status != Status::Accepted {
+            not_accepted.push(format!("{covered} is {}", found.status.as_str()));
+            continue;
+        }
+        let linked = links.iter().any(|link| {
+            state
+                .acts
+                .get(link)
+                .is_some_and(|acted| acted.seq == found.proposed_in)
+        });
+        if !linked {
+            return Err(format!(
+                "an approval links the entry that proposed each version it covers: it does not link entry {}, which proposed {covered}",
+                found.proposed_in
+            ));
+        }
+    }
+    if !not_accepted.is_empty() {
+        return Err(format!(
+            "an approval covers only accepted versions: {}",
+            not_accepted.join(", ")
+        ));
+    }
+    Ok(Verdict::Counts)
+}
+
 /// Applies an entry that counts, numbered `seq`, whose signed part as
 /// stored is `signed`, to the state.
 pub fn apply(state: &mut State, seq: u64, signed: &str, entry: &Entry) {
@@ -1647,6 +1758,16 @@ pub fn apply(state: &mut State, seq: u64, signed: &str, entry: &Entry) {
         });
     match &entry.act {
         Act::Other { .. } => {}
+        Act::Approved { plan, covers, .. } => {
+            state.approvals.insert(
+                crate::entry::act_hash(signed),
+                Approval {
+                    seq,
+                    plan: plan.clone(),
+                    covers: covers.clone(),
+                },
+            );
+        }
         Act::Registered { person, key, owner } => {
             let key = registered_key(key).expect("a counted registration's key reads");
             state.first_owner.get_or_insert_with(|| person.clone());
