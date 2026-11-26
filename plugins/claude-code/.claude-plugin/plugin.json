@@ -1,6 +1,6 @@
 {
   "name": "boom",
-  "version": "0.0.0",
+  "version": "0.27.0",
   "description": "Start each agent session in a registered repository with its rules in full and its other claims by name. Before the first edit of a file in a context, give the rules of that context. Stop a write that holds an old word of an accepted term. Teach an agent to use Boom with three skills: using-boom to read and cite claims, proposing-claims to propose each kind, and writing-narratives to explain a design with its claims.",
   "author": { "name": "agentplot" },
   "homepage": "https://agentplot.github.io/boom",
