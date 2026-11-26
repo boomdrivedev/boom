@@ -170,12 +170,23 @@ pub enum Act {
         /// The note's words.
         words: String,
     },
+    /// An entry of a type that another tool owns, `<tool>.<type>`, which
+    /// boom judges by its form, its actor and its links alone (lineage).
+    Other {
+        /// Its type, two kebab names joined by a dot, the tool's first.
+        act: String,
+        /// The act hashes of the entries it links, in the order given.
+        links: Vec<String>,
+        /// One JSON object, as written, which boom never reads.
+        content: String,
+    },
 }
 
 impl Act {
     /// The act's name as an entry writes it.
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> &str {
         match self {
+            Act::Other { act, .. } => act,
             Act::Registered { .. } => "registered",
             Act::Proposed { .. } => "proposed",
             Act::Accepted { .. } => "accepted",
@@ -191,7 +202,7 @@ impl Act {
     /// withdrawal's each, and none for a registration.
     pub fn targets(&self) -> Vec<(&str, &str)> {
         match self {
-            Act::Registered { .. } | Act::Repository { .. } => Vec::new(),
+            Act::Registered { .. } | Act::Repository { .. } | Act::Other { .. } => Vec::new(),
             Act::Proposed { claim, .. } => vec![(&claim.name, &claim.version)],
             Act::Accepted { versions }
             | Act::Rejected { versions, .. }
@@ -200,6 +211,15 @@ impl Act {
                 .map(|named| (named.name.as_str(), named.version.as_str()))
                 .collect(),
             Act::Noted { name, version, .. } => vec![(name, version)],
+        }
+    }
+
+    /// The act hashes of the entries the act links, in order: none for
+    /// an act that links none (record-log, "Each entry has an act hash").
+    pub fn links(&self) -> &[String] {
+        match self {
+            Act::Other { links, .. } => links,
+            _ => &[],
         }
     }
 
@@ -341,6 +361,19 @@ struct NotedPart {
 /// A reject of one version keeps the form it always had, `name` and
 /// `version`; a reject of several names them in `versions`, as an accept
 /// does.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OtherPart {
+    format: String,
+    act: String,
+    at: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    rules: u32,
+    actor: Actor,
+    links: Vec<String>,
+    content: Box<serde_json::value::RawValue>,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RejectedPart {
@@ -509,6 +542,16 @@ impl Entry {
                 fingerprint: fingerprint.clone(),
                 words: words.clone(),
             }),
+            Act::Other { links, content, .. } => serde_json::to_string(&OtherPart {
+                format,
+                act,
+                at,
+                rules,
+                actor,
+                links: links.clone(),
+                content: serde_json::value::RawValue::from_string(content.clone())
+                    .expect("an entry's content is JSON"),
+            }),
         };
         written.expect("an entry's fields are all JSON")
     }
@@ -615,8 +658,21 @@ impl Entry {
                     },
                 })
             }
+            Some(other) if other.contains('.') => {
+                let part: OtherPart = serde_json::from_str(signed).map_err(form)?;
+                Ok(Entry {
+                    at: part.at,
+                    rules: part.rules,
+                    actor: part.actor,
+                    act: Act::Other {
+                        act: part.act,
+                        links: part.links,
+                        content: part.content.get().to_owned(),
+                    },
+                })
+            }
             Some(other) => Err(format!(
-                "its act is {other}, none of registered, proposed, accepted, rejected, withdrawn, repository and noted"
+                "its act is {other}, none of registered, proposed, accepted, rejected, withdrawn, repository and noted, nor another tool's <tool>.<type>"
             )),
             None => Err("it names no act".to_owned()),
         }
@@ -627,6 +683,14 @@ impl Entry {
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_zero(rules: &u32) -> bool {
     *rules == 0
+}
+
+/// An entry's act hash: the SHA-256 of its signed part as stored, which
+/// holds no number, no chain and no signature, so a link to it holds
+/// wherever the entry is ordered (record-log, "Each entry has an act
+/// hash").
+pub fn act_hash(signed: &str) -> String {
+    crate::sha256_hex(signed.as_bytes())
 }
 
 /// An entry's hash: the SHA-256 of its `prev`, a newline, its signed
@@ -982,6 +1046,51 @@ mod tests {
         );
         assert_eq!(Entry::parse(&signed), Ok(entry.clone()));
         assert_eq!(Entry::parse(&signed).unwrap().signed_part(), signed);
+    }
+
+    fn landing(content: &str) -> Entry {
+        Entry {
+            at: 1_763_424_200,
+            rules: crate::judge::RULES,
+            actor: Actor::Agent {
+                provenance: "sluice host deneb".to_owned(),
+            },
+            act: Act::Other {
+                act: "sluice.landed".to_owned(),
+                links: vec!["a".repeat(64)],
+                content: content.to_owned(),
+            },
+        }
+    }
+
+    #[test]
+    fn another_tools_entry_holds_its_links_and_its_content_as_written() {
+        let entry = landing(r#"{"revision": "abc", "a": 1}"#);
+        let signed = entry.signed_part();
+        assert_eq!(
+            keys(&signed),
+            ["format", "act", "at", "rules", "actor", "links", "content"]
+        );
+        assert!(
+            signed.ends_with(r#""content":{"revision": "abc", "a": 1}}"#),
+            "{signed}"
+        );
+        assert_eq!(Entry::parse(&signed), Ok(entry.clone()));
+        assert_eq!(Entry::parse(&signed).unwrap().signed_part(), signed);
+        assert_eq!(entry.act.name(), "sluice.landed");
+        assert_eq!(entry.act.links(), ["a".repeat(64)]);
+        assert!(entry.act.targets().is_empty());
+    }
+
+    #[test]
+    fn the_act_hash_is_the_sha256_of_the_signed_part() {
+        let signed = landing("{}").signed_part();
+        assert_eq!(act_hash(&signed), crate::sha256_hex(signed.as_bytes()));
+        assert_eq!(act_hash(&signed).len(), 64);
+        let chained = hash(GENESIS, &signed, None);
+        assert_ne!(act_hash(&signed), chained);
+        assert_eq!(act_hash(&signed), act_hash(&landing("{}").signed_part()));
+        assert!(proposal().act.links().is_empty());
     }
 
     #[test]

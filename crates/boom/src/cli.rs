@@ -255,6 +255,28 @@ enum Command {
         #[arg(long, hide = true, value_name = "TEXT")]
         provenance: Option<String>,
     },
+    /// Append an entry of a type that another tool owns, `<tool>.<type>`,
+    /// with its links and its content: an agent's, or a registered
+    /// person's with no signature. Boom judges its form, its actor and its
+    /// links, and nothing else.
+    Append {
+        /// The type, `<tool>.<type>`, two kebab names joined by a dot.
+        act: String,
+        /// The act hash of an entry it links; any number of times.
+        #[arg(long = "link", value_name = "ACT_HASH")]
+        links: Vec<String>,
+        /// A file of one JSON object, the entry's content; `{}` where
+        /// absent.
+        #[arg(long, value_name = "FILE")]
+        content: Option<PathBuf>,
+        /// The agent's session or run.
+        #[arg(long, value_name = "TEXT")]
+        provenance: Option<String>,
+        /// A person the store registers, whose entry carries their name
+        /// and no signature.
+        #[arg(long, value_name = "NAME")]
+        person: Option<String>,
+    },
     /// Serve the page of a narrative on 127.0.0.1, where a person reads it
     /// with the claims it includes and writes a note on a paragraph, and
     /// open it in the browser; with no name, the design book.
@@ -1043,6 +1065,21 @@ fn execute(
             )),
         },
         Command::Log => log(&path?),
+        Command::Append {
+            act,
+            links,
+            content,
+            provenance,
+            person,
+        } => append(
+            &path?,
+            &act,
+            &links,
+            content.as_deref(),
+            provenance,
+            person,
+            env,
+        ),
         Command::Verify => verify(&path?),
         Command::Query {
             repository,
@@ -3355,6 +3392,95 @@ fn entry_target(conn: &rusqlite::Connection, number: &str) -> Result<(String, St
     }
 }
 
+/// `boom append`: an entry of another tool's type (lineage, "Another
+/// tool appends its entry").
+fn append(
+    path: &Path,
+    act: &str,
+    links: &[String],
+    content: Option<&Path>,
+    provenance: Option<String>,
+    person: Option<String>,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    judge::check_other_type(act).map_err(Failure::Refused)?;
+    let actor = match (person, provenance) {
+        (Some(_), Some(_)) => {
+            return Err(Failure::refused(
+                "an entry has one actor: boom append takes --person or --provenance, not both",
+            ))
+        }
+        (Some(person), None) => Actor::Person(person),
+        (None, Some(provenance)) => Actor::Agent { provenance },
+        (None, None) => {
+            return Err(Failure::refused(
+                "an entry names its actor: --provenance for an agent, or --person for a person the store registers",
+            ))
+        }
+    };
+    let content = match content {
+        None => "{}".to_owned(),
+        Some(file) => {
+            let text = std::fs::read_to_string(file).map_err(|error| {
+                Failure::refused(format!(
+                    "the content {} could not be read: {error}",
+                    file.display()
+                ))
+            })?;
+            match serde_json::from_str::<&serde_json::value::RawValue>(text.trim()) {
+                Ok(raw) if raw.get().starts_with('{') => raw.get().to_owned(),
+                _ => {
+                    return Err(Failure::refused(format!(
+                        "the content is one JSON object: {} is not",
+                        file.display()
+                    )))
+                }
+            }
+        }
+    };
+    let mut named: Vec<String> = Vec::with_capacity(links.len());
+    for link in links {
+        if !named.contains(link) {
+            named.push(link.clone());
+        }
+    }
+    let entry = Entry {
+        at: env.clock.now(),
+        rules: judge::RULES,
+        actor,
+        act: Act::Other {
+            act: act.to_owned(),
+            links: named.clone(),
+            content,
+        },
+    };
+    let signed = entry.signed_part();
+    let act_hash = crate::entry::act_hash(&signed);
+    let mut store = Store::open(path)?;
+    let (written, _) = store.append(&signed, None, &[])?;
+    let (number, repeats) = match written {
+        Written::Entry(seq) => (seq, false),
+        Written::Repeats(seq) => (seq, true),
+    };
+    let words = if repeats {
+        format!("{act} {act_hash} repeats entry {number}: nothing is appended\n")
+    } else {
+        format!("{act} {act_hash} is appended, by entry {number}\n")
+    };
+    Ok(Answer {
+        json: json!({
+            "format": "boom-append/1",
+            "entry": number,
+            "repeats": repeats,
+            "act": act,
+            "act_hash": act_hash,
+            "links": named,
+            "actor": entry.actor,
+        }),
+        words,
+    })
+}
+
 fn log(path: &Path) -> Result<Answer, Failure> {
     let mut store = Store::open(path)?;
     let path = path.to_owned();
@@ -3387,11 +3513,17 @@ fn log(path: &Path) -> Result<Answer, Failure> {
                 [one] => Some(one.clone()),
                 _ => None,
             };
+            let links: Vec<String> = parsed
+                .as_ref()
+                .map(|entry| entry.act.links().to_vec())
+                .unwrap_or_default();
             entries.push(json!({
                 "number": row.seq,
                 "target": target,
                 "targets": targets,
                 "hash": row.hash,
+                "act_hash": crate::entry::act_hash(&row.signed),
+                "links": links,
                 "prev": row.prev,
                 "format": field("format"),
                 "act": field("act"),
@@ -3410,10 +3542,19 @@ fn log(path: &Path) -> Result<Answer, Failure> {
                 "{} {}{} by {}{}\n",
                 row.seq,
                 act.as_str().unwrap_or("(unreadable)"),
-                if targets.is_empty() {
-                    String::new()
-                } else {
+                if !targets.is_empty() {
                     format!(" {}", targets.join(", "))
+                } else if !links.is_empty() {
+                    format!(
+                        " {}",
+                        links
+                            .iter()
+                            .map(|link| link.get(..12).unwrap_or(link))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                } else {
+                    String::new()
                 },
                 actor,
                 found
@@ -4058,6 +4199,7 @@ fn import(
         imported: true,
         notes: std::collections::BTreeSet::new(),
         outlines: false,
+        acts: BTreeSet::new(),
     };
     let mut judged = store.state_for(&scope)?;
     let mut entries = Vec::new();
@@ -4082,7 +4224,7 @@ fn import(
         let signed = entry.signed_part();
         match judge::judge(&judged, &entry, &signed, Proof::Unsigned) {
             Verdict::Counts => {
-                judge::apply(&mut judged, 0, &entry);
+                judge::apply(&mut judged, 0, &signed, &entry);
                 entries.push((signed, record.body.as_deref()));
             }
             Verdict::Refused(why) => {
