@@ -152,10 +152,16 @@ CREATE TABLE links (
     PRIMARY KEY (seq, position)
 );
 CREATE INDEX links_target ON links (target);
+CREATE TABLE approvals (
+    act_hash TEXT PRIMARY KEY,
+    seq INTEGER NOT NULL,
+    plan TEXT NOT NULL,
+    covers TEXT NOT NULL
+);
 ";
 
 /// The views' tables, each dropped and made again by a rebuild.
-const VIEW_TABLES: [&str; 12] = [
+const VIEW_TABLES: [&str; 13] = [
     "views_head",
     "persons",
     "claims",
@@ -168,6 +174,7 @@ const VIEW_TABLES: [&str; 12] = [
     "notes",
     "acts",
     "links",
+    "approvals",
 ];
 
 /// The views' form, kept in `views_head`. Views of another form are
@@ -694,6 +701,14 @@ impl Scope {
                 Act::Other { .. } => {
                     scope.acts.insert(entry::act_hash(&entry.signed_part()));
                 }
+                Act::Approved { covers, .. } => {
+                    scope.names.extend(
+                        covers
+                            .iter()
+                            .filter_map(|covered| covered.split_once('@'))
+                            .map(|(name, _)| name.to_owned()),
+                    );
+                }
                 Act::Proposed {
                     claim,
                     imported,
@@ -1012,7 +1027,8 @@ fn catch_up(conn: &Connection, path: &Path, mut scope: Scope) -> Result<State, F
 /// Writes the view rows an entry that counts touched.
 fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), Failure> {
     match &entry.act {
-        Act::Other { .. } => Ok(()),
+        // Their rows are written with the entry's act hash (write_act).
+        Act::Other { .. } | Act::Approved { .. } => Ok(()),
         Act::Registered { person, .. } => write_person(conn, &state.persons[person]),
         Act::Proposed { claim, .. } => {
             write_claim(conn, holding(state, &claim.name, &claim.version))
@@ -1067,6 +1083,12 @@ fn write_act(
         params![sql_int(seq), entry::act_hash(signed), act, counted],
     )?;
     if let Some(entry) = entry.filter(|_| counted) {
+        if let Act::Approved { plan, covers, .. } = &entry.act {
+            conn.execute(
+                "INSERT OR REPLACE INTO approvals (act_hash, seq, plan, covers) VALUES (?1, ?2, ?3, ?4)",
+                params![entry::act_hash(signed), sql_int(seq), plan, to_json(covers)],
+            )?;
+        }
         for (position, target) in entry.act.links().iter().enumerate() {
             conn.execute(
                 "INSERT OR REPLACE INTO links (seq, position, target) VALUES (?1, ?2, ?3)",
@@ -1102,6 +1124,32 @@ fn load_acts<P: rusqlite::Params>(
             seq: u64::try_from(seq).unwrap_or(0),
             act,
         });
+    }
+    Ok(())
+}
+
+/// Reads every counted approval of a plan into `state` (plan-approvals).
+fn load_approvals(conn: &Connection, state: &mut State) -> Result<(), Failure> {
+    let mut statement = conn.prepare_cached("SELECT act_hash, seq, plan, covers FROM approvals")?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (hash, seq, plan, covers) in rows {
+        state.approvals.insert(
+            hash,
+            judge::Approval {
+                seq: u64::try_from(seq).unwrap_or(0),
+                plan,
+                covers: from_json(&covers)?,
+            },
+        );
     }
     Ok(())
 }
@@ -1726,6 +1774,7 @@ pub fn load_state(conn: &Connection) -> Result<State, Failure> {
     load_claims(conn, &mut state, "", [])?;
     load_notes(conn, &mut state, "", [])?;
     load_acts(conn, &mut state, "", [])?;
+    load_approvals(conn, &mut state)?;
     read_all_paragraphs(conn, &mut state);
     Ok(state)
 }
@@ -1760,6 +1809,7 @@ pub fn load_state_for(conn: &Connection, scope: &Scope) -> Result<State, Failure
     for act in &scope.acts {
         load_acts(conn, &mut state, "AND act_hash = ?1", [act.as_str()])?;
     }
+    load_approvals(conn, &mut state)?;
     read_all_paragraphs(conn, &mut state);
     Ok(state)
 }

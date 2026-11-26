@@ -346,6 +346,31 @@ enum Command {
         #[arg(long)]
         key: Option<PathBuf>,
     },
+    /// Approve a plan, signed by the person's key: the plan by the SHA-256
+    /// of its document, which boom keeps nothing of, the accepted claims it
+    /// covers, each entry it took in that the log holds, and its outputs.
+    Approve {
+        /// The plan's document.
+        plan: PathBuf,
+        /// The act hash of an entry the plan took in, such as the end of
+        /// an elaboration; any number of times.
+        #[arg(long = "link", value_name = "ACT_HASH")]
+        links: Vec<String>,
+        /// An output, `git:<repository>@<commit>:<path>`; any number of
+        /// times.
+        #[arg(long = "output", value_name = "REFERENCE")]
+        outputs: Vec<String>,
+        /// A claim it covers, `<name>` for its accepted version or
+        /// `<name>@<version>`; any number of times.
+        #[arg(long = "covers", value_name = "CLAIM")]
+        covers: Vec<String>,
+        /// The approving person's security key.
+        #[arg(long)]
+        key: Option<PathBuf>,
+        /// Refused: only a person approves a plan.
+        #[arg(long, hide = true, value_name = "TEXT")]
+        provenance: Option<String>,
+    },
     /// Withdraw one or more proposed versions, as their author, with one
     /// reason and no signature, in one entry: every version, or none. An
     /// agent withdraws the versions an agent proposed, a person those
@@ -1034,6 +1059,26 @@ fn execute(
             reason,
             key,
         } => reject(&path?, &targets, reason, key.as_deref(), keys, env),
+        Command::Approve {
+            plan,
+            links,
+            outputs,
+            covers,
+            key,
+            provenance,
+        } => {
+            if provenance.is_some() {
+                return Err(Failure::refused(
+                    "only a person approves a plan: boom approve takes the person's --key and no --provenance",
+                ));
+            }
+            let given = Approval {
+                links: &links,
+                outputs: &outputs,
+                covers: &covers,
+            };
+            approve(&path?, &plan, &given, key.as_deref(), keys, env)
+        }
         Command::Withdraw {
             targets,
             reason,
@@ -3392,6 +3437,148 @@ fn entry_target(conn: &rusqlite::Connection, number: &str) -> Result<(String, St
     }
 }
 
+/// What `boom approve` is given besides its plan and its key.
+struct Approval<'a> {
+    links: &'a [String],
+    outputs: &'a [String],
+    covers: &'a [String],
+}
+
+/// `boom approve`: a person's signed approval of a plan (plan-approvals).
+fn approve(
+    path: &Path,
+    plan: &Path,
+    given: &Approval<'_>,
+    key: Option<&Path>,
+    keys: &dyn Keys,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    let Some(key) = key else {
+        return Err(Failure::refused(
+            "only a person approves a plan: boom approve takes the person's --key",
+        ));
+    };
+    let bytes = std::fs::read(plan).map_err(|error| {
+        Failure::refused(format!(
+            "the plan {} could not be read: {error}",
+            plan.display()
+        ))
+    })?;
+    let fingerprint = crate::sha256_hex(&bytes);
+    let names: Vec<String> = given
+        .covers
+        .iter()
+        .map(|covered| {
+            covered
+                .split_once('@')
+                .map_or(covered.as_str(), |(name, _)| name)
+                .to_owned()
+        })
+        .collect();
+    let mut store = Store::open(path)?;
+    // Each claim it covers at its version, and the act hash of the entry
+    // that proposed that version.
+    let resolved: Vec<(String, Option<String>)> = store.read(|conn| {
+        let state = store::load_state_for(conn, &Scope::names(names.clone()))?;
+        let mut resolved = Vec::with_capacity(given.covers.len());
+        for covered in given.covers {
+            let (name, version) = match covered.split_once('@') {
+                Some((name, version)) => (name.to_owned(), version.to_owned()),
+                None => {
+                    let standing: Vec<&str> = state
+                        .named(covered)
+                        .into_iter()
+                        .filter_map(|claim| claim.standing.as_deref())
+                        .collect();
+                    match standing.as_slice() {
+                        [one] => (covered.clone(), (*one).to_owned()),
+                        [] if state.named(covered).is_empty() => {
+                            return Err(Failure::refused(format!(
+                                "no claim has the name {covered}"
+                            )))
+                        }
+                        [] => {
+                            return Err(Failure::refused(format!(
+                                "an approval covers only accepted versions: {covered} has no accepted version"
+                            )))
+                        }
+                        _ => {
+                            return Err(Failure::refused(format!(
+                                "{covered} names a term of several repositories: --covers names it as <name>@<version>"
+                            )))
+                        }
+                    }
+                }
+            };
+            let proposed = state
+                .holding(&name, &version)
+                .and_then(|claim| claim.version(&version))
+                .map(|found| found.proposed_in);
+            let hash = match proposed {
+                Some(seq) => store::row_at(conn, seq)?
+                    .map(|row| crate::entry::act_hash(&row.signed)),
+                None => None,
+            };
+            resolved.push((format!("{name}@{version}"), hash));
+        }
+        Ok(resolved)
+    })?;
+    let covers: Vec<String> = claim_once(resolved.iter().map(|(covered, _)| covered.clone()));
+    let links: Vec<String> = claim_once(
+        resolved
+            .iter()
+            .filter_map(|(_, hash)| hash.clone())
+            .chain(given.links.iter().cloned()),
+    );
+    let outputs: Vec<String> = claim_once(given.outputs.iter().cloned());
+    let mut scope = Scope::names(names);
+    scope.acts.extend(links.iter().cloned());
+    let signer = keys.signer(key)?;
+    let (written, _) = write(&mut store, &scope, Some(signer.as_ref()), &[], |state| {
+        Ok(Entry {
+            at: env.clock.now(),
+            rules: judge::RULES,
+            actor: Actor::Person(person_of(state, signer.as_ref(), key)?),
+            act: Act::Approved {
+                plan: fingerprint.clone(),
+                links: links.clone(),
+                outputs: outputs.clone(),
+                covers: covers.clone(),
+            },
+        })
+    })?;
+    let mut words = format!(
+        "plan {fingerprint} is approved, by entry {}\n",
+        written.seq()
+    );
+    for covered in &covers {
+        words.push_str(&format!("covers: {covered}\n"));
+    }
+    for link in &links {
+        words.push_str(&format!("links: {link}\n"));
+    }
+    for output in &outputs {
+        words.push_str(&format!("output: {output}\n"));
+    }
+    Ok(Answer {
+        json: json!({
+            "format": "boom-approve/1",
+            "plan": fingerprint,
+            "entry": written.seq(),
+            "links": links,
+            "outputs": outputs,
+            "covers": covers,
+        }),
+        words,
+    })
+}
+
+/// Each of `items` one time, in the order first given.
+fn claim_once(items: impl IntoIterator<Item = String>) -> Vec<String> {
+    let all: Vec<String> = items.into_iter().collect();
+    crate::claim::once(&all)
+}
+
 /// `boom append`: an entry of another tool's type (lineage, "Another
 /// tool appends its entry").
 fn append(
@@ -3542,7 +3729,13 @@ fn log(path: &Path) -> Result<Answer, Failure> {
                 "{} {}{} by {}{}\n",
                 row.seq,
                 act.as_str().unwrap_or("(unreadable)"),
-                if !targets.is_empty() {
+                if let Ok(Entry {
+                    act: Act::Approved { plan, .. },
+                    ..
+                }) = &parsed
+                {
+                    format!(" plan {}", plan.get(..12).unwrap_or(plan))
+                } else if !targets.is_empty() {
                     format!(" {}", targets.join(", "))
                 } else if !links.is_empty() {
                     format!(

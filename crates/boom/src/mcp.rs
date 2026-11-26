@@ -72,6 +72,10 @@ pub(crate) const ABSENT: &[(&str, &str)] = &[
         "the hook of the plugin runs it on what an agent writes, and the gate on what a change touches",
     ),
     (
+        "approve",
+        "only a person approves a plan, in their own terminal, signing with their security key",
+    ),
+    (
         "append",
         "an entry of another tool's type is that tool's act, which the tool appends from its own program",
     ),

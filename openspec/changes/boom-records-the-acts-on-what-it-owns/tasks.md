@@ -12,8 +12,8 @@
 
 ## 3. A plan's approval
 
-- [ ] 3.1 In `entry.rs` and `judge.rs`, add the act `approved`, signed, with its refusals. `boom:test` proves the scenarios of "A person approves a plan", "An approval links the claims it covers and each elaboration the log holds" and "An approval rests on what the log holds and the person accepted"
-- [ ] 3.2 In `cli.rs`, add `boom approve` and its line in `boom log`. `boom:test` proves the scenario "The line of an approval"
+- [x] 3.1 In `entry.rs` and `judge.rs`, add the act `approved`, signed, with its refusals. `boom:test` proves the scenarios of "A person approves a plan", "An approval links the claims it covers and each elaboration the log holds" and "An approval rests on what the log holds and the person accepted"
+- [x] 3.2 In `cli.rs`, add `boom approve` and its line in `boom log`. `boom:test` proves the scenario "The line of an approval"
 
 ## 4. The change record
 
