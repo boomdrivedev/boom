@@ -94,6 +94,20 @@ claims that hold.
   person proposed. A withdrawn version leaves each list of what waits.
   `boom search --proposed` lists the versions that wait, each with its
   author and its age.
+- **The acts of the lineage that boom owns.** Each entry has an act
+  hash, the SHA-256 of its signed part, and a link names an entry that
+  the log holds by its act hash. `boom approve <plan>` records a
+  person's signed approval of a plan: the plan by the SHA-256 of its
+  document, the accepted claims that it covers, and each end of an
+  elaboration that the log holds. An agent records each version of a
+  change record with `boom record change <repository>:<name>`, and no
+  person accepts it. `boom show <repository>:<name>` gives it as
+  written, or as landed once sluice's landing links it.
+- **Another tool's entries, and the walk.** `boom append
+  <tool>.<type>` appends an entry of a type that another tool owns,
+  and boom judges its form, its actor and its links. `boom lineage
+  <target>` walks the links back to what an entry took in and forward
+  to what took it in.
 - **Every answer computed from the log.** boom reads whether a version
   is proposed, accepted, superseded, rejected, withdrawn or deprecated
   from the log.
@@ -436,7 +450,7 @@ tag.
 
 | path | what |
 |---|---|
-| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `withdraw`, `show`, `log`, `verify`, `import`, `query`, `search`, `repo`, `terms check` and `mcp` |
+| `crates/boom` | the engine, a library, and `boom`, a thin command line over it: `init`, `register`, `propose`, `accept`, `reject`, `withdraw`, `approve`, `record change`, `append`, `show`, `log`, `lineage`, `verify`, `import`, `query`, `search`, `repo`, `terms check` and `mcp` |
 | `plugins/claude-code` | boom's Claude Code plugin, its session hook running `boom hook session-start`, its `PreToolUse` hook running `boom hook pre-tool-use` and its skills `using-boom`, `proposing-claims` and `writing-narratives`, listed by the marketplace in `.claude-plugin/` |
 | `check-terms.sh` | the gate's terms task: `boom terms check` on the files that a change adds or modifies |
 | `flake.nix`, `nix/` | boom's flake, giving `boom` and `boom-claude-plugin` at one version, and its offline checks |

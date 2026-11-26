@@ -188,6 +188,7 @@ fn the_tools_listed() {
         [
             "import_adr",
             "import_rules",
+            "lineage",
             "log",
             "propose",
             "query",
@@ -329,7 +330,7 @@ fn a_tools_arguments_are_its_commands() {
         let name = tool["name"].as_str().unwrap();
         assert_eq!(
             tool["annotations"]["readOnlyHint"],
-            ["show", "log", "query", "search"].contains(&name),
+            ["show", "log", "lineage", "query", "search"].contains(&name),
             "{name}"
         );
     }

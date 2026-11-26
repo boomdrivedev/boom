@@ -22,13 +22,13 @@
 
 ## 5. The walk
 
-- [ ] 5.1 In `lineage.rs` and `cli.rs`, add `boom lineage`. `boom:test` proves the scenarios of "boom lineage walks the links", "The target of a walk" and "The commands"
+- [x] 5.1 In `lineage.rs` and `cli.rs`, add `boom lineage`. `boom:test` proves the scenarios of "boom lineage walks the links", "The target of a walk" and "The commands"
 
 ## 6. The tools of an agent
 
-- [ ] 6.1 In `mcp.rs`, serve `record_change` and `lineage`, and name `approve` and `append` absent. `boom:test` proves the scenarios of "Each tool is one of boom's commands"
+- [x] 6.1 In `mcp.rs`, serve `record_change` and `lineage`, and name `approve` and `append` absent. `boom:test` proves the scenarios of "Each tool is one of boom's commands"
 
 ## 7. The pages and the checks
 
-- [ ] 7.1 Say in `README.md` and `CLAUDE.md`, in Plain, that boom records a plan's approval and each version of a change record, takes another tool's entry, and walks the links
-- [ ] 7.2 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main`
+- [x] 7.1 Say in `README.md` and `CLAUDE.md`, in Plain, that boom records a plan's approval and each version of a change record, takes another tool's entry, and walks the links
+- [x] 7.2 Run `boom:format`, `boom:lint`, `boom:typecheck`, `boom:test`, `root:specs`, `root:changes` and `root:terms` through `sluice exec main`

@@ -19,6 +19,7 @@ pub mod entry;
 pub mod hook;
 pub mod import;
 pub mod judge;
+pub mod lineage;
 pub mod mcp;
 pub mod narrative;
 pub mod page;
