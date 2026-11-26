@@ -1,3 +1,12 @@
+# Spec Delta
+
+## Purpose
+
+Another tool's entry in the drive's one log, which boom judges by its
+form, its actor and its links, and the walk of the links from any entry
+back to the entries that it took in and forward to the entries that took
+it in.
+
 ## ADDED Requirements
 
 ### Requirement: Another tool appends its entry

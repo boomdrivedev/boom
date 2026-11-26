@@ -1,3 +1,12 @@
+# Spec Delta
+
+## Purpose
+
+A person's signed approval of a plan: boom names the plan by the SHA-256
+of its document and keeps nothing of it, covers each claim at its
+accepted version, and links the claims that it covers and each entry
+that the plan took in that the log holds.
+
 ## ADDED Requirements
 
 ### Requirement: A person approves a plan

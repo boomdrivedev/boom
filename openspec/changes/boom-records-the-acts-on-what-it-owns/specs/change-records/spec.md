@@ -1,3 +1,13 @@
+# Spec Delta
+
+## Purpose
+
+Each version of a change record that an agent records with no accept:
+the change's files kept by their fingerprints, a version that is the
+fingerprint of the files and the links, its approval, its unit and its
+bolt, the claims that it covers, and its status, written or landed, read
+from the log.
+
 ## ADDED Requirements
 
 ### Requirement: An agent records a version of a change record
