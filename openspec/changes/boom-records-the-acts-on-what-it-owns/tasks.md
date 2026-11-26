@@ -1,7 +1,7 @@
 ## 1. The claims
 
-- [ ] 1.1 Propose in Boom the invariant `a-link-is-the-hash-of-the-signed-part-it-names` for the whole system, and the invariants `boom-refuses-a-link-to-an-entry-its-log-does-not-hold` and `a-change-record-covers-only-what-its-approval-covers` and the decisions `boom-takes-an-entry-of-another-tools-type-and-judges-only-its-form-and-links` and `a-change-records-version-is-the-fingerprint-of-its-files-and-its-links` for `boom`. Each body passes `ste-lint.py` with 0 hard findings
-- [ ] 1.2 Propose the narrative `boom-records-the-acts-on-what-it-owns` for `boom`, which includes the claims of 1.1 that bind `boom`, and a new version of `the-links-of-the-lineage` that includes `a-link-is-the-hash-of-the-signed-part-it-names` and names each hop's type
+- [x] 1.1 Propose in Boom the invariant `a-link-is-the-hash-of-the-signed-part-it-names` for the whole system, and the invariants `boom-refuses-a-link-to-an-entry-its-log-does-not-hold` and `a-change-record-covers-only-what-its-approval-covers` and the decisions `boom-takes-an-entry-of-another-tools-type-and-judges-only-its-form-and-links`, `a-change-records-version-is-the-fingerprint-of-its-files-and-its-links` and `a-plans-approval-links-the-claims-it-covers-and-each-elaboration-the-log-holds` for `boom`. Each body passes `ste-lint.py` with 0 hard findings
+- [x] 1.2 Propose the narrative `boom-records-the-acts-on-what-it-owns` for `boom`, which includes the claims of 1.1 that bind `boom`, a new version of `the-links-of-the-lineage` that includes `a-link-is-the-hash-of-the-signed-part-it-names` and names each hop's type, and a new version of the outline `boomdrive-design-book` that holds `boom-records-the-acts-on-what-it-owns`
 
 ## 2. The act hash, the links and another tool's entry
 
@@ -12,7 +12,7 @@
 
 ## 3. A plan's approval
 
-- [ ] 3.1 In `entry.rs` and `judge.rs`, add the act `approved`, signed, with its refusals. `boom:test` proves the scenarios of "A person approves a plan" and "An approval rests on what the log holds and the person accepted"
+- [ ] 3.1 In `entry.rs` and `judge.rs`, add the act `approved`, signed, with its refusals. `boom:test` proves the scenarios of "A person approves a plan", "An approval links the claims it covers and each elaboration the log holds" and "An approval rests on what the log holds and the person accepted"
 - [ ] 3.2 In `cli.rs`, add `boom approve` and its line in `boom log`. `boom:test` proves the scenario "The line of an approval"
 
 ## 4. The change record

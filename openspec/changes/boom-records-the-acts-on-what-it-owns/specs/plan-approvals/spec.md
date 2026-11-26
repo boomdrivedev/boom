@@ -2,7 +2,7 @@
 
 ### Requirement: A person approves a plan
 
-`boom approve <plan>` SHALL append an `approved` entry, signed by the person's key, the person present. Its signed part SHALL hold `plan`, the SHA-256 of the bytes of the file `<plan>`; `links`, each `--link <act hash>`; `outputs`, each `--output git:<repository>@<commit>:<path>`; and `covers`, each `--covers <name>[@<version>]` as `<name>@<version>`, each in the order given and once. Boom SHALL keep nothing of the plan's file.
+`boom approve <plan>` SHALL append an `approved` entry, signed by the person's key, the person present. Its signed part SHALL hold `plan`, the SHA-256 of the bytes of the file `<plan>`; `links`; `outputs`, each `--output git:<repository>@<commit>:<path>`; and `covers`, each `--covers <name>[@<version>]` as `<name>@<version>`, each in the order given and once. Boom SHALL keep nothing of the plan's file.
 
 #### Scenario: A plan approved
 
@@ -19,9 +19,23 @@
 - **WHEN** ada approves a plan with `--output git:boom@<40 hexadecimal characters>:design/narrative.md`
 - **THEN** the entry's `outputs` hold that reference as given
 
+### Requirement: An approval links the claims it covers and each elaboration the log holds
+
+The links of an approval SHALL be the act hash of the `proposed` entry of each covered version, in the order of `covers`, then each `--link <act hash>` in the order given, each once. A `--link` SHALL name an entry that the log holds. A plan that came from no elaboration SHALL link only its claims.
+
+#### Scenario: A plan from an elaboration
+
+- **WHEN** the log holds `sounding.elaboration-ended` `<e>`, and `status-read-from-events@<v1>`, proposed by the entry `<p>`, is accepted, and ada runs `boom approve plan.md --link <e> --covers status-read-from-events --key <ada's key>`
+- **THEN** the entry's `links` are `[<p>, <e>]`
+
+#### Scenario: A plan from no elaboration
+
+- **WHEN** `status-read-from-events@<v1>`, proposed by the entry `<p>`, is accepted, and ada runs `boom approve plan.md --covers status-read-from-events --key <ada's key>`
+- **THEN** boom exits 0, and the entry's `links` are `[<p>]`
+
 ### Requirement: An approval rests on what the log holds and the person accepted
 
-Boom SHALL refuse an approval with no link, a covered version that is not accepted, and a second approval of a plan's SHA-256 that the log approves. Boom SHALL name each covered version that is not accepted. An agent SHALL NOT approve.
+Boom SHALL refuse an approval that covers no claim and links no entry, a covered version that is not accepted, and a second approval of a plan's SHA-256 that the log approves. Boom SHALL name each covered version that is not accepted. An agent SHALL NOT approve.
 
 #### Scenario: A covered version that is not accepted
 
@@ -31,7 +45,7 @@ Boom SHALL refuse an approval with no link, a covered version that is not accept
 #### Scenario: An approval with no link
 
 - **WHEN** ada runs `boom approve plan.md --key <ada's key>`
-- **THEN** boom exits 2 and says that an approval links each entry that the plan took in, and boom appends nothing
+- **THEN** boom exits 2 and says that an approval covers a claim or links an entry, and boom appends nothing
 
 #### Scenario: One plan approved two times
 

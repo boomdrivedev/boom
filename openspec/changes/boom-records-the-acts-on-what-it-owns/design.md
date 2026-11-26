@@ -129,25 +129,30 @@ $ boom approve plan.md --link <elaboration-ended> \
 ```
 
 The signed part holds `plan`, the SHA-256 of the plan document's bytes;
-`links`, each entry that the plan took in, such as each
-`sounding.elaboration-ended`; `outputs`, each output as
-`git:<repository>@<commit>:<path>`; and `covers`, each claim as
-`<name>@<version>`. Boom reads the document only to hash it, and keeps
-nothing of it (`boom-never-stores-a-plan-a-unit-or-a-bolt`).
+`links`; `outputs`, each output as `git:<repository>@<commit>:<path>`;
+and `covers`, each claim as `<name>@<version>`. Boom reads the document
+only to hash it, and keeps nothing of it
+(`boom-never-stores-a-plan-a-unit-or-a-bolt`).
+
+The links are the act hash of the `proposed` entry of each covered
+version, which boom adds, then each `--link`, such as each
+`sounding.elaboration-ended` that the log holds. A plan that came from
+no elaboration links only its claims. Each link names an entry that the
+log holds (`a-plans-approval-links-the-claims-it-covers-and-each-elaboration-the-log-holds`).
 
 The key signs it, the person present
 (`a-persons-act-in-boom-is-an-ssh-signature-by-a-security-key`). Boom
 refuses:
 
-- an approval with no link;
+- an approval that covers no claim and links no entry;
 - a covered version that is not accepted, naming it
   (`only-an-accepted-version-binds-work`);
 - a second approval of one plan's hash;
 - an agent's approval, or one that no registered key signed.
 
 A name in `--covers` stores the accepted version of that claim. Boom
-does not read the type of a linked entry: its owner says what it is,
-and `boom lineage` gives it.
+does not read the type of an entry that `--link` names: its owner says
+what it is, and `boom lineage` gives it.
 
 ### 5. A change record: `recorded`
 
@@ -228,9 +233,9 @@ covered claims, each marked where it is out of date. The views `acts`
 and `links` hold each entry's act hash and links, kept in step with the
 log in the same transaction, and built again by `boom verify` (core.2).
 
-From a change record's version, `back` reaches its approval, each entry
-that the plan took in, the route, the intent's answer and the signals,
-as their owners write them. `forward` reaches the landing, the publish
+From a change record's version, `back` reaches its approval, each claim
+version that the approval covers, each entry that the plan took in, the
+route, the intent's answer and the signals, as their owners write them. `forward` reaches the landing, the publish
 and the promotion.
 
 ### 8. What the other tools write
@@ -251,14 +256,16 @@ append`, by a change of its own. Each link is an act hash.
 | `timber.published`, `timber.promoted` | timber | `sluice.landed`; `timber.published` | the attestation |
 
 Boom reads only `sluice.landed`, for a change record's status. Boom's
-own hops are `approved`, which links each `sounding.elaboration-ended`,
-and `recorded`, which links its `approved`.
+own hops are `approved`, which links each claim version that it covers
+and each `sounding.elaboration-ended` that the log holds, and
+`recorded`, which links its `approved`.
 
 ## Risks / Trade-offs
 
 - A tool that does not append its hops leaves a gap. The walk stops at
-  the last entry that the log holds. Boom refuses an approval until the
-  log holds each entry that the plan took in.
+  the last entry that the log holds. An approval links the elaborations
+  that the log holds, and a plan that came from no elaboration links
+  only its claims.
 - Boom's command is the one way in. A tool on a host with no boom
   cannot write the log.
 - `boom-records-the-acts-on-what-it-owns` changes the requirement "Each

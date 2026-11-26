@@ -26,9 +26,9 @@ intent or forward to its landing.
   nothing else of it.
 - **A plan's approval.** `boom approve <plan>` appends an `approved`
   entry, signed by the person's key. It names the plan by the SHA-256
-  of its document, and keeps nothing of the document. It links each
-  entry that the plan took in, names each output commit, and covers
-  each claim at its accepted version.
+  of its document, and keeps nothing of the document. It covers each
+  claim at its accepted version and links it, links each elaboration's
+  end that the log holds, and names each output commit.
 - **A change record.** `boom record change <repository>:<name>`
   appends a `recorded` entry: a version of the change record, with no
   accept. Boom keeps each file of the change's folder by its
