@@ -81,7 +81,7 @@ pub struct Takes {
     /// Each version it names that is accepted already, which the accept
     /// leaves as it is.
     pub accepted: Vec<Named>,
-    /// Each rejected, superseded or deprecated version that refuses the
+    /// Each rejected, superseded, deprecated or withdrawn version that refuses the
     /// accept.
     pub closed: Vec<Named>,
 }
@@ -95,7 +95,9 @@ impl Takes {
         match named.status {
             Status::Proposed => self.versions.push(named),
             Status::Accepted => self.accepted.push(named),
-            Status::Rejected | Status::Superseded | Status::Deprecated => self.closed.push(named),
+            Status::Rejected | Status::Superseded | Status::Deprecated | Status::Withdrawn => {
+                self.closed.push(named);
+            }
         }
     }
 

@@ -344,6 +344,35 @@ fn the_answer_rejected() {
 }
 
 #[test]
+fn the_answer_withdrawn() {
+    let place = Place::new();
+    let (_, v1) = one_narrative(&place);
+    let note = place.noted(&format!("{NAME}@{v1}"), 3, DRIVE)["note"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let outcome = amend(
+        &place,
+        &v1,
+        &["--answers", &format!("{note}=It does now."), "--json"],
+    );
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    let v2 = version(&serde_json::from_str(&outcome.stdout).unwrap());
+    assert_eq!(place.show(NAME)["notes"][0]["status"], "answered");
+    place.json(&[
+        "withdraw",
+        &format!("{NAME}@{v2}"),
+        "--reason",
+        "The answer does not say it.",
+        "--provenance",
+        "run-2",
+    ]);
+    let shown = place.show(NAME);
+    assert_eq!(shown["notes"][0]["status"], "open");
+    assert_eq!(shown["notes"][0]["answer"], Value::Null);
+}
+
+#[test]
 fn a_note_of_another_narrative() {
     let place = Place::new();
     let (_, v1) = one_narrative(&place);

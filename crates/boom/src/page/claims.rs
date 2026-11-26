@@ -816,11 +816,7 @@ pub fn claim_page(
         escape(&actor_words(&shown.proposer)),
     );
     if let Some(by) = &shown.decided_by {
-        let act = if shown.reason.is_some() {
-            "rejected"
-        } else {
-            "accepted"
-        };
+        let act = shown.decided_word();
         let _ = write!(main, " · {act} by {}", escape(by));
     }
     if let Some(amended) = &shown.proposal.base {
@@ -1205,16 +1201,7 @@ fn history_html(claim: &Claim) -> String {
                 let _ = write!(line, " in entry {seq}");
             }
             if let Some(by) = &version.decided_by {
-                let _ = write!(
-                    line,
-                    " · {} by {}",
-                    if version.reason.is_some() {
-                        "rejected"
-                    } else {
-                        "accepted"
-                    },
-                    escape(by)
-                );
+                let _ = write!(line, " · {} by {}", version.decided_word(), escape(by));
             }
             if let Some(why) = &version.reason {
                 let _ = write!(line, " · why: {}", escape(why));

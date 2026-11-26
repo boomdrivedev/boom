@@ -121,6 +121,11 @@ words>"`. A ruling's statement is the person's approved sentence.
   supersedes. Run `boom show <name>`, and amend the accepted version or
   the newest draft on it.
 - The same content gives the same version. Boom appends nothing for it.
+- Withdraw your own proposal when it is wrong, a duplicate or no longer
+  needed, and you have no better version:
+  `boom withdraw <name>@<version> --reason <why> --provenance <session>`.
+  Boom withdraws only a version that an agent proposed and that waits.
+  When you have a better version, amend the draft.
 
 ## Batches
 

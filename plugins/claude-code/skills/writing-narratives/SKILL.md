@@ -59,8 +59,8 @@ that paragraph to choose another option.
 
 A narrative with its claims is one batch. One accept of the narrative
 accepts each proposed version that it includes. Boom refuses that
-accept while the narrative includes a rejected, superseded or
-deprecated version, and names each one.
+accept while the narrative includes a rejected, withdrawn, superseded
+or deprecated version, and names each one.
 
 So, in this order:
 

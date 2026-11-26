@@ -2,7 +2,7 @@
 
 ### Requirement: The commands
 
-Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `approve`, `record change`, `append`, `show`, `log`, `lineage`, `verify`, `import adr`, `import rules`, `repo add`, `repo set`, `repo show`, `terms check`, `note`, `page` and `hook`. Each command SHALL take `--store <path>`, and each but `hook` and `page` SHALL take `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line over the library's engine.
+Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `approve`, `record change`, `append`, `show`, `log`, `lineage`, `verify`, `import adr`, `import rules`, `repo add`, `repo set`, `repo show`, `terms check`, `note`, `withdraw`, `page`, `hook session-start` and `hook pre-tool-use`. Each command SHALL take `--store <path>`, and each but `hook` and `page` SHALL take `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line over the library's engine.
 
 #### Scenario: The version
 

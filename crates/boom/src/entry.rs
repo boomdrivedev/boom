@@ -138,12 +138,21 @@ pub enum Act {
         /// Whether a session in it gets its context at session start.
         session: bool,
     },
-    /// A version rejected, with why.
+    /// One or more versions rejected, with one reason, by one act of a
+    /// person that one signature covers (persons-acts, "Several versions
+    /// rejected together").
     Rejected {
-        /// The claim's name.
-        name: String,
-        /// The version.
-        version: String,
+        /// The versions, in the order the person named them.
+        versions: Vec<Named>,
+        /// Why.
+        reason: String,
+    },
+    /// One or more proposed versions withdrawn by their author, with one
+    /// reason and no signature (claim-versions, "The author withdraws a
+    /// proposed version").
+    Withdrawn {
+        /// The versions, in the order the author named them.
+        versions: Vec<Named>,
         /// Why.
         reason: String,
     },
@@ -182,25 +191,26 @@ impl Act {
             Act::Proposed { .. } => "proposed",
             Act::Accepted { .. } => "accepted",
             Act::Rejected { .. } => "rejected",
+            Act::Withdrawn { .. } => "withdrawn",
             Act::Repository { .. } => "repository",
             Act::Noted { .. } => "noted",
         }
     }
 
     /// The versions the act names, each as its claim's name and its
-    /// version: a proposal's or a reject's one, an accept's each, and
-    /// none for a registration.
+    /// version: a proposal's or a note's one, an accept's, a reject's or a
+    /// withdrawal's each, and none for a registration.
     pub fn targets(&self) -> Vec<(&str, &str)> {
         match self {
             Act::Registered { .. } | Act::Repository { .. } | Act::Other { .. } => Vec::new(),
             Act::Proposed { claim, .. } => vec![(&claim.name, &claim.version)],
-            Act::Accepted { versions } => versions
+            Act::Accepted { versions }
+            | Act::Rejected { versions, .. }
+            | Act::Withdrawn { versions, .. } => versions
                 .iter()
                 .map(|named| (named.name.as_str(), named.version.as_str()))
                 .collect(),
-            Act::Rejected { name, version, .. } | Act::Noted { name, version, .. } => {
-                vec![(name, version)]
-            }
+            Act::Noted { name, version, .. } => vec![(name, version)],
         }
     }
 
@@ -348,6 +358,9 @@ struct NotedPart {
     words: String,
 }
 
+/// A reject of one version keeps the form it always had, `name` and
+/// `version`; a reject of several names them in `versions`, as an accept
+/// does.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OtherPart {
@@ -370,9 +383,46 @@ struct RejectedPart {
     #[serde(default, skip_serializing_if = "is_zero")]
     rules: u32,
     actor: Actor,
-    name: String,
-    version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    versions: Option<Vec<Named>>,
     reason: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WithdrawnPart {
+    format: String,
+    act: String,
+    at: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    rules: u32,
+    actor: Actor,
+    versions: Vec<Named>,
+    reason: String,
+}
+
+/// The versions of an accept or a reject: `name` and `version` for one,
+/// `versions` for several, never both and never one in `versions`.
+fn one_or_several(
+    act: &str,
+    name: Option<String>,
+    version: Option<String>,
+    versions: Option<Vec<Named>>,
+) -> Result<Vec<Named>, String> {
+    match (name, version, versions) {
+        (Some(name), Some(version), None) => Ok(vec![Named { name, version }]),
+        (None, None, Some(several)) if several.len() > 1 => Ok(several),
+        (None, None, Some(_)) => Err(format!(
+            "its form: an {act} of one version names it by `name` and `version`"
+        )),
+        _ => Err(format!(
+            "its form: an {act} names `name` and `version`, or `versions`"
+        )),
+    }
 }
 
 impl Entry {
@@ -448,18 +498,30 @@ impl Entry {
                 remote: remote.clone(),
                 session: *session,
             }),
-            Act::Rejected {
-                name,
-                version,
-                reason,
-            } => serde_json::to_string(&RejectedPart {
+            Act::Rejected { versions, reason } => {
+                let (name, version, versions) = match versions.as_slice() {
+                    [one] => (Some(one.name.clone()), Some(one.version.clone()), None),
+                    several => (None, None, Some(several.to_vec())),
+                };
+                serde_json::to_string(&RejectedPart {
+                    format,
+                    act,
+                    at,
+                    rules,
+                    actor,
+                    name,
+                    version,
+                    versions,
+                    reason: reason.clone(),
+                })
+            }
+            Act::Withdrawn { versions, reason } => serde_json::to_string(&WithdrawnPart {
                 format,
                 act,
                 at,
                 rules,
                 actor,
-                name: name.clone(),
-                version: version.clone(),
+                versions: versions.clone(),
                 reason: reason.clone(),
             }),
             Act::Noted {
@@ -535,21 +597,7 @@ impl Entry {
             }
             Some("accepted") => {
                 let part: AcceptedPart = serde_json::from_str(signed).map_err(form)?;
-                let versions =
-                    match (part.name, part.version, part.versions) {
-                        (Some(name), Some(version), None) => vec![Named { name, version }],
-                        (None, None, Some(several)) if several.len() > 1 => several,
-                        (None, None, Some(_)) => return Err(
-                            "its form: an accept of one version names it by `name` and `version`"
-                                .to_owned(),
-                        ),
-                        _ => {
-                            return Err(
-                                "its form: an accept names `name` and `version`, or `versions`"
-                                    .to_owned(),
-                            )
-                        }
-                    };
+                let versions = one_or_several("accept", part.name, part.version, part.versions)?;
                 Ok(Entry {
                     at: part.at,
                     rules: part.rules,
@@ -572,13 +620,25 @@ impl Entry {
             }
             Some("rejected") => {
                 let part: RejectedPart = serde_json::from_str(signed).map_err(form)?;
+                let versions = one_or_several("reject", part.name, part.version, part.versions)?;
                 Ok(Entry {
                     at: part.at,
                     rules: part.rules,
                     actor: part.actor,
                     act: Act::Rejected {
-                        name: part.name,
-                        version: part.version,
+                        versions,
+                        reason: part.reason,
+                    },
+                })
+            }
+            Some("withdrawn") => {
+                let part: WithdrawnPart = serde_json::from_str(signed).map_err(form)?;
+                Ok(Entry {
+                    at: part.at,
+                    rules: part.rules,
+                    actor: part.actor,
+                    act: Act::Withdrawn {
+                        versions: part.versions,
                         reason: part.reason,
                     },
                 })
@@ -612,7 +672,7 @@ impl Entry {
                 })
             }
             Some(other) => Err(format!(
-                "its act is {other}, none of registered, proposed, accepted, rejected, repository and noted, nor another tool's <tool>.<type>"
+                "its act is {other}, none of registered, proposed, accepted, rejected, withdrawn, repository and noted, nor another tool's <tool>.<type>"
             )),
             None => Err("it names no act".to_owned()),
         }
@@ -860,6 +920,78 @@ mod tests {
         assert_eq!(entry.signed_part().as_bytes(), before.as_bytes());
         assert!(!entry.signed_part().contains("attach"));
         assert_eq!(Entry::parse(&before), Ok(entry));
+    }
+
+    fn named(names: &[&str]) -> Vec<Named> {
+        names
+            .iter()
+            .map(|name| Named {
+                name: (*name).to_owned(),
+                version: "aaaaaaaaaaaa".to_owned(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_reject_of_one_version_keeps_its_form() {
+        let one = Entry {
+            at: 1_763_424_200,
+            rules: 1,
+            actor: Actor::Person("ada".to_owned()),
+            act: Act::Rejected {
+                versions: named(&["a"]),
+                reason: "stray".to_owned(),
+            },
+        };
+        let signed = one.signed_part();
+        assert_eq!(
+            signed,
+            r#"{"format":"boom-entry/1","act":"rejected","at":1763424200,"rules":1,"actor":{"person":"ada"},"name":"a","version":"aaaaaaaaaaaa","reason":"stray"}"#
+        );
+        assert_eq!(Entry::parse(&signed), Ok(one));
+    }
+
+    #[test]
+    fn a_reject_of_several_names_them_in_versions() {
+        let several = Entry {
+            at: 1_763_424_200,
+            rules: 1,
+            actor: Actor::Person("ada".to_owned()),
+            act: Act::Rejected {
+                versions: named(&["a", "b"]),
+                reason: "stray".to_owned(),
+            },
+        };
+        let signed = several.signed_part();
+        assert_eq!(
+            keys(&signed),
+            ["format", "act", "at", "rules", "actor", "versions", "reason"]
+        );
+        assert_eq!(Entry::parse(&signed), Ok(several));
+        let one_in_versions = r#"{"format":"boom-entry/1","act":"rejected","at":1,"actor":{"person":"ada"},"versions":[{"name":"a","version":"aaaaaaaaaaaa"}],"reason":"stray"}"#;
+        let refused = Entry::parse(one_in_versions).unwrap_err();
+        assert!(refused.contains("by `name` and `version`"), "{refused}");
+    }
+
+    #[test]
+    fn a_withdrawal_names_its_versions_and_its_reason() {
+        let withdrawn = Entry {
+            at: 1_763_424_300,
+            rules: 1,
+            actor: Actor::Agent {
+                provenance: "run-2".to_owned(),
+            },
+            act: Act::Withdrawn {
+                versions: named(&["a"]),
+                reason: "a duplicate".to_owned(),
+            },
+        };
+        let signed = withdrawn.signed_part();
+        assert_eq!(
+            signed,
+            r#"{"format":"boom-entry/1","act":"withdrawn","at":1763424300,"rules":1,"actor":{"agent":{"provenance":"run-2"}},"versions":[{"name":"a","version":"aaaaaaaaaaaa"}],"reason":"a duplicate"}"#
+        );
+        assert_eq!(Entry::parse(&signed), Ok(withdrawn));
     }
 
     #[test]

@@ -486,8 +486,8 @@ fn a_rejected_version_gives_who_and_why() {
     let target = format!("money-has-currency@{version}");
     let reason = "An amount in a ledger of one currency names none.";
     let answer = place.json(&["reject", &target, "--reason", reason, "--key", &ada]);
-    assert_eq!(answer["format"], "boom-reject/2");
-    assert_eq!(answer["status"], "rejected");
+    assert_eq!(answer["format"], "boom-reject/3");
+    assert_eq!(answer["rejected"][0]["status"], "rejected");
     let again = place.json(&["reject", &target, "--reason", reason, "--key", &ada]);
     assert_eq!(again, answer);
     assert_eq!(place.acts(), ["registered", "proposed", "rejected"]);
