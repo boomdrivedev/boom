@@ -600,7 +600,7 @@ fn an_agent_records_a_version_through_its_tool() {
     let result = place.call(
         "record_change",
         serde_json::json!({
-            "target": RECORD,
+            "change": RECORD,
             "approval": given.approval,
             "unit": "contexts",
             "bolt": "b-12",
