@@ -152,10 +152,11 @@ branch requires:
 |---|---|---|
 | `check-fast` | the crate's format (rustfmt), lint (clippy -D warnings), type check and tests; the plugin's format and lint (Biome), validation (Claude Code), its session and `PreToolUse` hook tests, and its test of a long stop on the pinned Claude Code; the flake's lint (statix), evaluation and cases; the site's format and lint (Biome), type check (astro check), diagrams and build; the root's format (treefmt), toolchain, terms (the old words of the accepted terms in the files a change touches), specs, open changes, each validated as it would archive, and that check's cases, versions, release workflow and marketplace | main |
 
-Run suites through sluice, so the agents on this host take turns under
-its bound: once your work is committed, `sluice exec main` for the
-gate's checks, and while iterating `sluice exec main -- moon run
-<project>:<task>`. The projects are those `.moon/workspace.yml` lists:
+Run checks through sluice, so the agents on this host take turns under
+its bound. Run the tasks of each project that you changed:
+`sluice exec main -- moon run <project>:<task>`. Then submit. The queue
+runs the full gate one time for each submission. Do not run
+`sluice exec main` without a command before you submit. The projects are those `.moon/workspace.yml` lists:
 `boom` (`crates/boom`), `claude-code` (`plugins/claude-code`), `nix`
 (`nix/`, with `flake.nix` at the root), `site` (`site/`, its own
 `README.md`) and `root`. A quick, narrow call, `cargo check` or one
