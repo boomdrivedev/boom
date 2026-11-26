@@ -346,6 +346,14 @@ enum Command {
         #[arg(long)]
         key: Option<PathBuf>,
     },
+    /// Walk the links from an entry: each entry it reaches back through
+    /// its links, and each entry whose links reach it, forward.
+    Lineage {
+        /// An act hash of 12 characters or more, `<repository>:<name>` for
+        /// the newest version of a change record, or
+        /// `<repository>:<name>@<version>`.
+        target: String,
+    },
     /// Approve a plan, signed by the person's key: the plan by the SHA-256
     /// of its document, which boom keeps nothing of, the accepted claims it
     /// covers, each entry it took in that the log holds, and its outputs.
@@ -1155,6 +1163,13 @@ fn execute(
             )),
         },
         Command::Log => log(&path?),
+        Command::Lineage { target } => {
+            let mut store = Store::open(&path?)?;
+            store.read(|conn| {
+                let (json, words) = crate::lineage::walk(conn, &target)?;
+                Ok(Answer { json, words })
+            })
+        }
         Command::Append {
             act,
             links,

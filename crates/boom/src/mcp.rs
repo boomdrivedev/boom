@@ -28,6 +28,7 @@ pub(crate) const SERVED: &[&str] = &[
     "record change",
     "show",
     "log",
+    "lineage",
     "query",
     "search",
     "import adr",
@@ -132,7 +133,7 @@ boom note; a new version of the narrative answers each open note, with \
 propose and its answers.";
 
 /// The tools that only read, as flume marks `status`.
-const READ_ONLY: &[&str] = &["show", "log", "query", "search"];
+const READ_ONLY: &[&str] = &["show", "log", "lineage", "query", "search"];
 
 /// What a tool's property is, read from its argument's action: a switch
 /// a boolean, a flag taken again and again an array of strings, any

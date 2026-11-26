@@ -92,7 +92,23 @@ repositories or more, Part II a chapter for each repository with its
 contexts, each in the outline's order, then the narratives that it does
 not hold, marked. `boom show <outline>` gives the book, `boom page` with
 no name serves it, and `boom page --view <outline>` serves the view of
-an outline. The other views, a rules page, decision records and a
+an outline.
+Boom records the acts of the lineage on what it owns. Each entry has an
+act hash, the SHA-256 of its signed part, and a link names an entry
+that the log holds by its act hash. `boom approve <plan>` records a
+person's signed approval of a plan: the plan by the SHA-256 of its
+document, which boom keeps nothing of, the accepted claims that it
+covers, linked by the entries that proposed them, and each end of an
+elaboration that the log holds. An agent records each version of a
+change record with `boom record change <repository>:<name>`: boom keeps
+the change's files by their fingerprints, the version links its
+approval and covers only what that approval covers, and `boom show`
+gives it as written, or landed once a `sluice.landed` entry links it.
+`boom append <tool>.<type>` takes an entry of a type that another tool
+owns, judged by its form, its actor and its links, `boom lineage
+<target>` walks the links back and forward, and `boom mcp` serves
+`record_change` and `lineage`.
+The other views, a rules page, decision records and a
 context map, and `boom check` are not built yet.
 
 ## The family
