@@ -120,7 +120,10 @@ fn from_a_change_record_back_and_forward() {
     );
     assert_eq!(walked["back"][0]["hops"], 1);
     assert_eq!(walked["back"][2]["hops"], 2);
-    assert_eq!(hashes(&walked["forward"]), std::slice::from_ref(&chain.landed));
+    assert_eq!(
+        hashes(&walked["forward"]),
+        std::slice::from_ref(&chain.landed)
+    );
 }
 
 #[test]
