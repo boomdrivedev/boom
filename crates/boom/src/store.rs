@@ -138,10 +138,24 @@ CREATE TABLE notes (
     noted_in INTEGER NOT NULL
 );
 CREATE INDEX notes_narrative ON notes (narrative);
+CREATE TABLE acts (
+    seq INTEGER PRIMARY KEY,
+    act_hash TEXT NOT NULL,
+    act TEXT NOT NULL,
+    counted INTEGER NOT NULL
+);
+CREATE INDEX acts_hash ON acts (act_hash);
+CREATE TABLE links (
+    seq INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    target TEXT NOT NULL,
+    PRIMARY KEY (seq, position)
+);
+CREATE INDEX links_target ON links (target);
 ";
 
 /// The views' tables, each dropped and made again by a rebuild.
-const VIEW_TABLES: [&str; 10] = [
+const VIEW_TABLES: [&str; 12] = [
     "views_head",
     "persons",
     "claims",
@@ -152,11 +166,13 @@ const VIEW_TABLES: [&str; 10] = [
     "paths",
     "bindings",
     "notes",
+    "acts",
+    "links",
 ];
 
 /// The views' form, kept in `views_head`. Views of another form are
 /// built again from the whole log.
-const VIEWS_FORM: i64 = 10;
+const VIEWS_FORM: i64 = 11;
 
 thread_local! {
     static ENTRIES_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -460,9 +476,10 @@ impl Store {
                     params![crate::sha256_hex(bytes), bytes],
                 )?;
             }
-            judge::apply(&mut state, seq, entry);
+            judge::apply(&mut state, seq, append.signed, entry);
             read_body_of(&tx, &mut state, entry);
             write_judgment(&tx, seq, &Judgment::counted())?;
+            write_act(&tx, seq, append.signed, Some(entry), true)?;
             write_touched(&tx, &state, entry)?;
             write_head(&tx, seq, &hash)?;
             prev = hash;
@@ -649,6 +666,10 @@ pub struct Scope {
     /// Whether every outline is needed too, which the judge reads for the
     /// one design book of a store (views).
     pub outlines: bool,
+    /// The act hashes the entries link, and the act hash of each entry
+    /// of another tool, which the judge finds among the counted entries
+    /// (record-log, "A link names an entry that the log holds").
+    pub acts: std::collections::BTreeSet<String>,
 }
 
 impl Scope {
@@ -659,6 +680,7 @@ impl Scope {
             imported: false,
             notes: std::collections::BTreeSet::new(),
             outlines: false,
+            acts: std::collections::BTreeSet::new(),
         }
     }
 
@@ -666,8 +688,12 @@ impl Scope {
     pub fn of<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Scope {
         let mut scope = Scope::default();
         for entry in entries {
+            scope.acts.extend(entry.act.links().iter().cloned());
             match &entry.act {
                 Act::Registered { .. } => {}
+                Act::Other { .. } => {
+                    scope.acts.insert(entry::act_hash(&entry.signed_part()));
+                }
                 Act::Proposed {
                     claim,
                     imported,
@@ -714,6 +740,7 @@ impl Scope {
         self.imported |= other.imported;
         self.notes.extend(other.notes);
         self.outlines |= other.outlines;
+        self.acts.extend(other.acts);
     }
 }
 
@@ -962,6 +989,14 @@ fn catch_up(conn: &Connection, path: &Path, mut scope: Scope) -> Result<State, F
     for row in &rows {
         let judgment = judge::step(&mut state, row.seq, &row.signed, row.signature.as_deref());
         write_judgment(conn, row.seq, &judgment)?;
+        let parsed = Entry::parse(&row.signed).ok();
+        write_act(
+            conn,
+            row.seq,
+            &row.signed,
+            parsed.as_ref(),
+            judgment.counted,
+        )?;
         if judgment.counted {
             let entry = Entry::parse(&row.signed).map_err(Failure::not_run)?;
             read_body_of(conn, &mut state, &entry);
@@ -975,6 +1010,7 @@ fn catch_up(conn: &Connection, path: &Path, mut scope: Scope) -> Result<State, F
 /// Writes the view rows an entry that counts touched.
 fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), Failure> {
     match &entry.act {
+        Act::Other { .. } => Ok(()),
         Act::Registered { person, .. } => write_person(conn, &state.persons[person]),
         Act::Proposed { claim, .. } => {
             write_claim(conn, holding(state, &claim.name, &claim.version))
@@ -1002,6 +1038,69 @@ fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), 
             write_note(conn, &state.notes[&note])
         }
     }
+}
+
+/// Writes the act hash of the entry numbered `seq`, whose signed part as
+/// stored is `signed`, and, where it counts, each of its links
+/// (lineage, "The views of the links").
+fn write_act(
+    conn: &Connection,
+    seq: u64,
+    signed: &str,
+    entry: Option<&Entry>,
+    counted: bool,
+) -> Result<(), Failure> {
+    let act = entry.map_or_else(
+        || {
+            serde_json::from_str::<serde_json::Value>(signed)
+                .ok()
+                .and_then(|value| value.get("act")?.as_str().map(str::to_owned))
+                .unwrap_or_default()
+        },
+        |entry| entry.act.name().to_owned(),
+    );
+    conn.execute(
+        "INSERT OR REPLACE INTO acts (seq, act_hash, act, counted) VALUES (?1, ?2, ?3, ?4)",
+        params![sql_int(seq), entry::act_hash(signed), act, counted],
+    )?;
+    if let Some(entry) = entry.filter(|_| counted) {
+        for (position, target) in entry.act.links().iter().enumerate() {
+            conn.execute(
+                "INSERT OR REPLACE INTO links (seq, position, target) VALUES (?1, ?2, ?3)",
+                params![sql_int(seq), sql_int(position as u64), target],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Reads into `state` the counted entries whose act hash `filter`
+/// selects, the first of each act hash.
+fn load_acts<P: rusqlite::Params>(
+    conn: &Connection,
+    state: &mut State,
+    filter: &str,
+    params: P,
+) -> Result<(), Failure> {
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT act_hash, seq, act FROM acts WHERE counted = 1 {filter} ORDER BY seq"
+    ))?;
+    let rows = statement
+        .query_map(params, |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (hash, seq, act) in rows {
+        state.acts.entry(hash).or_insert(judge::Acted {
+            seq: u64::try_from(seq).unwrap_or(0),
+            act,
+        });
+    }
+    Ok(())
 }
 
 fn write_note(conn: &Connection, note: &judge::Note) -> Result<(), Failure> {
@@ -1200,6 +1299,16 @@ fn write_views(
     }
     for (seq, judgment) in judgments {
         write_judgment(conn, *seq, judgment)?;
+    }
+    for (row, (_, judgment)) in rows.iter().zip(judgments) {
+        let parsed = Entry::parse(&row.signed).ok();
+        write_act(
+            conn,
+            row.seq,
+            &row.signed,
+            parsed.as_ref(),
+            judgment.counted,
+        )?;
     }
     let (seq, hash) = rows
         .last()
@@ -1613,6 +1722,7 @@ pub fn load_state(conn: &Connection) -> Result<State, Failure> {
     let mut state = load_persons(conn)?;
     load_claims(conn, &mut state, "", [])?;
     load_notes(conn, &mut state, "", [])?;
+    load_acts(conn, &mut state, "", [])?;
     read_all_paragraphs(conn, &mut state);
     Ok(state)
 }
@@ -1643,6 +1753,9 @@ pub fn load_state_for(conn: &Connection, scope: &Scope) -> Result<State, Failure
     }
     for note in &scope.notes {
         load_notes(conn, &mut state, "WHERE name = ?1", [note.as_str()])?;
+    }
+    for act in &scope.acts {
+        load_acts(conn, &mut state, "AND act_hash = ?1", [act.as_str()])?;
     }
     read_all_paragraphs(conn, &mut state);
     Ok(state)

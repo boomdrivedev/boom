@@ -55,7 +55,7 @@ Boom SHALL judge an entry of another tool's type by its form, its actor and its 
 #### Scenario: The line of a landing
 
 - **WHEN** entry 9 is `sluice.landed` with the link `<r>`, and `boom log` runs
-- **THEN** line 9 is `9 sluice.landed <first 12 characters of r> by an agent`
+- **THEN** line 9 starts with `9 sluice.landed <first 12 characters of r> by an agent`
 
 ### Requirement: boom lineage walks the links
 

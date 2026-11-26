@@ -374,5 +374,5 @@ fn views_of_an_older_form_are_built_again() {
         .sqlite()
         .query_row("SELECT form FROM views_head", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(form, 10);
+    assert_eq!(form, 11);
 }

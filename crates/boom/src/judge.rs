@@ -263,6 +263,16 @@ pub struct Note {
     pub noted_in: u64,
 }
 
+/// A counted entry, as a link finds it by its act hash (record-log, "A
+/// link names an entry that the log holds").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Acted {
+    /// Its number.
+    pub seq: u64,
+    /// Its act, `proposed` or another tool's `<tool>.<type>`.
+    pub act: String,
+}
+
 /// The key of a claim among a state's claims: its name, and the
 /// repository of a term or nothing for the other kinds.
 pub type Key = (String, String);
@@ -303,6 +313,9 @@ pub struct State {
     /// the fingerprint of the body: what the store read from its blobs,
     /// for the judge to check a note against (narratives).
     pub paragraphs: BTreeMap<String, Vec<String>>,
+    /// The counted entries, by their act hash: the first counted entry
+    /// of each act hash (record-log, "Each entry has an act hash").
+    pub acts: BTreeMap<String, Acted>,
 }
 
 impl State {
@@ -521,11 +534,83 @@ fn check(state: &State, entry: &Entry, signed: &str, proof: Proof<'_>) -> Result
         ));
     }
     check_form(&entry.act)?;
+    if let Act::Other { act, .. } = &entry.act {
+        // Only a person's accept, reject, registration and setting carry
+        // a signature (lineage, "Boom judges another tool's entry by its
+        // form, its actor and its links").
+        if !matches!(proof, Proof::Unsigned) {
+            return Err(format!(
+                "the key signs no entry of another tool: {act} carries a signature"
+            ));
+        }
+    }
     match &entry.actor {
         Actor::Person(name) => check_person(state, entry, name, signed, proof)?,
         Actor::Agent { provenance } => check_agent(&entry.act, provenance, proof)?,
     }
+    check_links(state, entry.act.links())?;
+    if let Act::Other { .. } = &entry.act {
+        if let Some(acted) = state.acts.get(&crate::entry::act_hash(signed)) {
+            return Ok(Verdict::Repeats(acted.seq));
+        }
+    }
     check_act(state, entry)
+}
+
+/// Each link names a counted entry before it, by its act hash (record-log,
+/// "A link names an entry that the log holds").
+fn check_links(state: &State, links: &[String]) -> Result<(), String> {
+    for link in links {
+        if !state.acts.contains_key(link) {
+            return Err(format!(
+                "a link names an entry that the log holds before it: no counted entry has the act hash {link}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The form of the links of an entry: each the 64 lowercase hexadecimal
+/// characters of an act hash, and each once.
+pub fn check_link_form(links: &[String]) -> Result<(), String> {
+    for (at, link) in links.iter().enumerate() {
+        let hash = link.len() == 64
+            && link
+                .chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
+        if !hash {
+            return Err(format!(
+                "a link is the 64 lowercase hexadecimal characters of an act hash: {link} is not"
+            ));
+        }
+        if links[..at].contains(link) {
+            return Err(format!(
+                "an entry names each link once: it names {link} twice"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The form of another tool's type: two kebab names joined by a dot, and
+/// a tool other than boom (lineage, "Another tool appends its entry").
+pub fn check_other_type(act: &str) -> Result<(), String> {
+    let Some((tool, kind)) = act.split_once('.') else {
+        return Err(format!(
+            "a type of another tool is <tool>.<type>: {act} names no tool"
+        ));
+    };
+    if tool == "boom" {
+        return Err(format!(
+            "boom names no other tool: a type of boom has no dot, and {act} is not another tool's"
+        ));
+    }
+    for name in [tool, kind] {
+        claim::check_name(name).map_err(|_| {
+            format!("a type of another tool is two kebab names joined by a dot: {act} is not")
+        })?;
+    }
+    Ok(())
 }
 
 /// An act's form: what holds of it whatever the store holds.
@@ -616,6 +701,20 @@ fn check_form(act: &Act) -> Result<(), String> {
             }
             Ok(())
         }
+        Act::Other {
+            act,
+            links,
+            content,
+        } => {
+            check_other_type(act)?;
+            check_link_form(links)?;
+            match serde_json::from_str::<serde_json::Value>(content) {
+                Ok(serde_json::Value::Object(_)) => Ok(()),
+                _ => Err(format!(
+                    "the content of {act} is one JSON object: it is not"
+                )),
+            }
+        }
     }
 }
 
@@ -705,9 +804,10 @@ fn check_person(
     signed: &str,
     proof: Proof<'_>,
 ) -> Result<(), String> {
-    if let Act::Noted { .. } = &entry.act {
+    if let Act::Noted { .. } | Act::Other { .. } = &entry.act {
         // A note binds nothing: it is the person's name and no signature
-        // (narrative-notes, "Only a note counts with no signature").
+        // (narrative-notes, "Only a note counts with no signature"). So is
+        // another tool's entry of a person (lineage).
         if !state.persons.contains_key(name) {
             return Err(format!("no person {name} is registered"));
         }
@@ -760,6 +860,12 @@ fn check_agent(act: &Act, provenance: &str, proof: Proof<'_>) -> Result<(), Stri
     }
     match act {
         Act::Proposed { .. } => {}
+        Act::Other { .. } => {
+            if provenance.trim().is_empty() {
+                return Err("an agent's entry names its provenance, with --provenance".to_owned());
+            }
+            return Ok(());
+        }
         Act::Accepted { .. } => {
             return Err("only a person accepts: a person's act needs their signature".to_owned())
         }
@@ -872,6 +978,9 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
             };
             check_note(state, &meant, words, person)
         }
+        // Boom judges another tool's entry by its form, its actor and its
+        // links alone, checked before.
+        Act::Other { .. } => Ok(Verdict::Counts),
     }
 }
 
@@ -1405,10 +1514,19 @@ fn check_reject(
     }
 }
 
-/// Applies an entry that counts, numbered `seq`, to the state.
-pub fn apply(state: &mut State, seq: u64, entry: &Entry) {
+/// Applies an entry that counts, numbered `seq`, whose signed part as
+/// stored is `signed`, to the state.
+pub fn apply(state: &mut State, seq: u64, signed: &str, entry: &Entry) {
     let actor = actor_name(&entry.actor).map(str::to_owned);
+    state
+        .acts
+        .entry(crate::entry::act_hash(signed))
+        .or_insert_with(|| Acted {
+            seq,
+            act: entry.act.name().to_owned(),
+        });
     match &entry.act {
+        Act::Other { .. } => {}
         Act::Registered { person, key, owner } => {
             let key = registered_key(key).expect("a counted registration's key reads");
             state.first_owner.get_or_insert_with(|| person.clone());
@@ -1538,7 +1656,7 @@ pub fn step(state: &mut State, seq: u64, signed: &str, signature: Option<&str>) 
     };
     let verdict = judge(state, &entry, signed, Proof::of(signature));
     if verdict == Verdict::Counts {
-        apply(state, seq, &entry);
+        apply(state, seq, signed, &entry);
     }
     Judgment::of(verdict)
 }

@@ -5,10 +5,10 @@
 
 ## 2. The act hash, the links and another tool's entry
 
-- [ ] 2.1 In `entry.rs`, read and write an entry of the act `<tool>.<type>` with `links` and `content`, and compute each entry's act hash. `boom:test` proves the scenarios of "Each entry has an act hash" and "Another tool appends its entry"
-- [ ] 2.2 In `judge.rs`, refuse a link to an act hash that no counted entry before it has, and judge another tool's entry by its form, its actor and its links. `boom:test` proves the scenarios of "A link names an entry that the log holds" and "Boom judges another tool's entry by its form, its actor and its links"
-- [ ] 2.3 In `cli.rs`, add `boom append`, give `act_hash` and `links` in `boom log --json`, and the line of another tool's entry in `boom log`. `boom:test` proves the scenario "The line of a landing"
-- [ ] 2.4 In `store.rs`, keep the views `acts` and `links`, and raise the views' form from 10 to 11. `boom:test` proves the scenario "The views built again"
+- [x] 2.1 In `entry.rs`, read and write an entry of the act `<tool>.<type>` with `links` and `content`, and compute each entry's act hash. `boom:test` proves the scenarios of "Each entry has an act hash" and "Another tool appends its entry"
+- [x] 2.2 In `judge.rs`, refuse a link to an act hash that no counted entry before it has, and judge another tool's entry by its form, its actor and its links. `boom:test` proves the scenarios of "A link names an entry that the log holds" and "Boom judges another tool's entry by its form, its actor and its links"
+- [x] 2.3 In `cli.rs`, add `boom append`, give `act_hash` and `links` in `boom log --json`, and the line of another tool's entry in `boom log`. `boom:test` proves the scenario "The line of a landing"
+- [x] 2.4 In `store.rs`, keep the views `acts` and `links`, and raise the views' form from 10 to 11. `boom:test` proves the scenario "The views built again"
 
 ## 3. A plan's approval
 

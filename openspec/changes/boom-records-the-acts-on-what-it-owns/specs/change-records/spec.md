@@ -110,4 +110,4 @@ A change record SHALL be `written` from its first version, and `landed` once a c
 #### Scenario: The line of a change record
 
 - **WHEN** entry 8 records `boom:contexts-own-paths@<v1>` and `boom log` runs
-- **THEN** line 8 is `8 recorded boom:contexts-own-paths@<v1> by an agent`
+- **THEN** line 8 starts with `8 recorded boom:contexts-own-paths@<v1> by an agent`
