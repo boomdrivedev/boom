@@ -11,7 +11,7 @@ nothing, so an agent or another tool can call boom and read its answer
 
 ### Requirement: The commands
 
-Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log`, `verify`, `import adr`, `import rules`, `repo add`, `repo set`, `repo show`, `terms check`, `note`, `page`, `hook session-start` and `hook pre-tool-use`. Each command SHALL take `--store <path>`. Each command other than `hook` and `page` SHALL take `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line that calls the engine of the library.
+Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `approve`, `record change`, `append`, `show`, `log`, `lineage`, `verify`, `import adr`, `import rules`, `repo add`, `repo set`, `repo show`, `terms check`, `note`, `withdraw`, `page`, `hook session-start` and `hook pre-tool-use`. Each command SHALL take `--store <path>`, and each but `hook` and `page` SHALL take `--json`. Boom SHALL keep `boom --version`. Each command SHALL be a thin command line over the library's engine.
 
 #### Scenario: The version
 
@@ -52,6 +52,16 @@ Boom SHALL offer `init`, `register`, `propose`, `accept`, `reject`, `show`, `log
 
 - **WHEN** `boom note <name>@<version> --paragraph 1 "<words>" --store <path> --json` runs on a store that registers one person
 - **THEN** standard output is one JSON object whose `format` is `boom-note/1`, with the name of the note, and boom exits 0
+
+#### Scenario: A walk answered as JSON
+
+- **WHEN** `boom lineage <act hash> --store <path> --json` runs on a store whose log holds that act hash
+- **THEN** standard output is one JSON object whose `format` is `boom-lineage/1`, and boom exits 0
+
+#### Scenario: A change record answered as JSON
+
+- **WHEN** `boom show boom:contexts-own-paths --store <path> --json` runs on a store that holds that change record
+- **THEN** standard output is one JSON object whose `format` is `boom-change/1`, and boom exits 0
 
 ### Requirement: Exit codes
 

@@ -565,7 +565,7 @@ enum RecordCommand {
     /// covers. No person accepts it.
     Change {
         /// The change record, `<repository>:<name>`.
-        target: String,
+        change: String,
         /// The act hash of the `approved` entry of its plan.
         #[arg(long, value_name = "ACT_HASH")]
         approval: Option<String>,
@@ -1221,7 +1221,7 @@ fn execute(
         Command::Record {
             what:
                 RecordCommand::Change {
-                    target,
+                    change,
                     approval,
                     unit,
                     bolt,
@@ -1242,7 +1242,7 @@ fn execute(
                 origin,
                 provenance,
             };
-            record_change(&path?, &target, given, env)
+            record_change(&path?, &change, given, env)
         }
         Command::Repo { what } => match what {
             RepoCommand::Add {
