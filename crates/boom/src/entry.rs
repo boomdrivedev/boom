@@ -186,6 +186,16 @@ pub enum Act {
         /// Each claim it covers, `<name>@<version>`.
         covers: Vec<String>,
     },
+    /// An agent's record of a version of a change record, with no
+    /// signature and no accept (change-records).
+    Recorded {
+        /// The version, boxed so the act is no larger than the others by
+        /// much.
+        change: Box<Change>,
+        /// The commit the change's folder came from,
+        /// `git:<repository>@<commit>:<path>`, out of the version.
+        origin: Option<String>,
+    },
     /// An entry of a type that another tool owns, `<tool>.<type>`, which
     /// boom judges by its form, its actor and its links alone (lineage).
     Other {
@@ -204,6 +214,7 @@ impl Act {
         match self {
             Act::Other { act, .. } => act,
             Act::Approved { .. } => "approved",
+            Act::Recorded { .. } => "recorded",
             Act::Registered { .. } => "registered",
             Act::Proposed { .. } => "proposed",
             Act::Accepted { .. } => "accepted",
@@ -222,7 +233,8 @@ impl Act {
             Act::Registered { .. }
             | Act::Repository { .. }
             | Act::Other { .. }
-            | Act::Approved { .. } => Vec::new(),
+            | Act::Approved { .. }
+            | Act::Recorded { .. } => Vec::new(),
             Act::Proposed { claim, .. } => vec![(&claim.name, &claim.version)],
             Act::Accepted { versions }
             | Act::Rejected { versions, .. }
@@ -239,6 +251,7 @@ impl Act {
     pub fn links(&self) -> &[String] {
         match self {
             Act::Other { links, .. } | Act::Approved { links, .. } => links,
+            Act::Recorded { change, .. } => std::slice::from_ref(&change.approval),
             _ => &[],
         }
     }
@@ -262,6 +275,84 @@ pub struct Named {
     pub name: String,
     /// The version.
     pub version: String,
+}
+
+/// A version of a change record: the change, its base, the approval of
+/// its plan, its unit and its bolt, the claims it covers and its files
+/// (change-records).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Change {
+    /// The repository of the change, kebab case.
+    pub repository: String,
+    /// The change's name, kebab case.
+    pub name: String,
+    /// The version: the first 12 hexadecimal characters of
+    /// [`Change::fingerprint`].
+    pub version: String,
+    /// The version it amends; none for a first version.
+    pub base: Option<String>,
+    /// The act hash of the `approved` entry of its plan.
+    pub approval: String,
+    /// The unit's name in the approved plan.
+    pub unit: String,
+    /// The bolt's name in the approved plan.
+    pub bolt: String,
+    /// The claims it covers, each `<name>@<version>`.
+    pub covers: Vec<String>,
+    /// The files of the change's folder, sorted by path.
+    pub files: Vec<ChangeFile>,
+}
+
+/// A file of a change's folder, by its path in the folder and the
+/// SHA-256 of its bytes.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ChangeFile {
+    /// Its path in the change's folder, with `/` between its parts.
+    pub path: String,
+    /// The SHA-256 of its bytes, 64 hexadecimal characters.
+    pub sha256: String,
+}
+
+/// What a version of a change record is the fingerprint of: all but the
+/// version itself, in this order.
+#[derive(Serialize)]
+struct ChangeContent<'a> {
+    repository: &'a str,
+    name: &'a str,
+    base: Option<&'a str>,
+    approval: &'a str,
+    unit: &'a str,
+    bolt: &'a str,
+    covers: &'a [String],
+    files: &'a [ChangeFile],
+}
+
+impl Change {
+    /// The version its content gives: the first 12 hexadecimal characters
+    /// of the SHA-256 of its repository, name, base, approval, unit, bolt,
+    /// covered claims and files (change-records, "A version is the
+    /// fingerprint of the change's files and links").
+    pub fn fingerprint(&self) -> String {
+        let content = serde_json::to_string(&ChangeContent {
+            repository: &self.repository,
+            name: &self.name,
+            base: self.base.as_deref(),
+            approval: &self.approval,
+            unit: &self.unit,
+            bolt: &self.bolt,
+            covers: &self.covers,
+            files: &self.files,
+        })
+        .expect("a change's fields are all JSON");
+        crate::sha256_hex(content.as_bytes())[..12].to_owned()
+    }
+
+    /// The change record as a person names it, `<repository>:<name>`.
+    pub fn record(&self) -> String {
+        format!("{}:{}", self.repository, self.name)
+    }
 }
 
 /// What a proposed version binds, written after its claim and no part
@@ -394,6 +485,20 @@ struct ApprovedPart {
     links: Vec<String>,
     outputs: Vec<String>,
     covers: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecordedPart {
+    format: String,
+    act: String,
+    at: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    rules: u32,
+    actor: Actor,
+    change: Box<Change>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    origin: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -593,6 +698,15 @@ impl Entry {
                 outputs: outputs.clone(),
                 covers: covers.clone(),
             }),
+            Act::Recorded { change, origin } => serde_json::to_string(&RecordedPart {
+                format,
+                act,
+                at,
+                rules,
+                actor,
+                change: change.clone(),
+                origin: origin.clone(),
+            }),
             Act::Other { links, content, .. } => serde_json::to_string(&OtherPart {
                 format,
                 act,
@@ -723,6 +837,18 @@ impl Entry {
                     },
                 })
             }
+            Some("recorded") => {
+                let part: RecordedPart = serde_json::from_str(signed).map_err(form)?;
+                Ok(Entry {
+                    at: part.at,
+                    rules: part.rules,
+                    actor: part.actor,
+                    act: Act::Recorded {
+                        change: part.change,
+                        origin: part.origin,
+                    },
+                })
+            }
             Some(other) if other.contains('.') => {
                 let part: OtherPart = serde_json::from_str(signed).map_err(form)?;
                 Ok(Entry {
@@ -737,7 +863,7 @@ impl Entry {
                 })
             }
             Some(other) => Err(format!(
-                "its act is {other}, none of registered, proposed, accepted, rejected, withdrawn, repository, noted and approved, nor another tool's <tool>.<type>"
+                "its act is {other}, none of registered, proposed, accepted, rejected, withdrawn, repository, noted, approved and recorded, nor another tool's <tool>.<type>"
             )),
             None => Err("it names no act".to_owned()),
         }
@@ -1168,6 +1294,55 @@ mod tests {
         assert_eq!(Entry::parse(&signed), Ok(entry.clone()));
         assert_eq!(entry.act.name(), "approved");
         assert_eq!(entry.act.links(), ["a".repeat(64)]);
+    }
+
+    fn change() -> Change {
+        let mut change = Change {
+            repository: "boom".to_owned(),
+            name: "contexts-own-paths".to_owned(),
+            version: String::new(),
+            base: None,
+            approval: "a".repeat(64),
+            unit: "contexts".to_owned(),
+            bolt: "b-12".to_owned(),
+            covers: vec!["status-read-from-events@97d0559deafa".to_owned()],
+            files: vec![ChangeFile {
+                path: "proposal.md".to_owned(),
+                sha256: "b".repeat(64),
+            }],
+        };
+        change.version = change.fingerprint();
+        change
+    }
+
+    #[test]
+    fn a_recorded_version_links_its_approval_and_keeps_its_origin_out() {
+        let entry = Entry {
+            at: 1_763_424_400,
+            rules: crate::judge::RULES,
+            actor: Actor::Agent {
+                provenance: "run-1".to_owned(),
+            },
+            act: Act::Recorded {
+                change: Box::new(change()),
+                origin: Some(format!(
+                    "git:boom@{}:openspec/changes/contexts-own-paths",
+                    "c".repeat(40)
+                )),
+            },
+        };
+        let signed = entry.signed_part();
+        assert_eq!(
+            keys(&signed),
+            ["format", "act", "at", "rules", "actor", "change", "origin"]
+        );
+        assert_eq!(Entry::parse(&signed), Ok(entry.clone()));
+        assert_eq!(entry.act.links(), ["a".repeat(64)]);
+        let mut moved = change();
+        moved.unit = "other".to_owned();
+        assert_ne!(moved.fingerprint(), change().version);
+        assert_eq!(change().fingerprint(), change().version);
+        assert_eq!(change().version.len(), 12);
     }
 
     #[test]

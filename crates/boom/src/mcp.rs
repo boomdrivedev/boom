@@ -25,6 +25,7 @@ use crate::Failure;
 /// Each command served as a tool, by its words (design 3).
 pub(crate) const SERVED: &[&str] = &[
     "propose",
+    "record change",
     "show",
     "log",
     "query",
