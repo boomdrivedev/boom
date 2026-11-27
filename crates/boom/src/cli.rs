@@ -2410,8 +2410,12 @@ fn accept_versions(
         act: Act::accepted(name, version),
     };
     let mut waiting = Vec::new();
+    // The judge's own check: each claim one time, by its key, so that
+    // one accept takes a term of each of two repositories with one word.
+    let mut claims: Vec<judge::Key> = Vec::new();
     for (name, version) in versions {
-        if waiting.iter().any(|named: &Named| &named.name == name) {
+        let claim = state.holding(name, version).map(judge::Claim::key);
+        if claim.as_ref().is_some_and(|claim| claims.contains(claim)) {
             return Err(Failure::refused(format!(
                 "boom accept names each claim one time: it names {name} twice"
             )));
@@ -2424,10 +2428,13 @@ fn accept_versions(
             &signed,
             Proof::ToBeSigned(signer.public_key()),
         ) {
-            Verdict::Counts => waiting.push(Named {
-                name: name.clone(),
-                version: version.clone(),
-            }),
+            Verdict::Counts => {
+                claims.extend(claim);
+                waiting.push(Named {
+                    name: name.clone(),
+                    version: version.clone(),
+                });
+            }
             Verdict::Refused(why) => return Err(Failure::Refused(naming(name, version, why))),
             Verdict::Repeats(_) => {}
         }
