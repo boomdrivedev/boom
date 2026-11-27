@@ -28,6 +28,7 @@ fn html(place: &Place, name: &str, version: Option<&str>, person: Option<&str>) 
     let context = Context {
         base: "/t".to_owned(),
         person: person.map(str::to_owned),
+        ..Context::default()
     };
     Store::open(&place.store)
         .unwrap()
@@ -198,6 +199,7 @@ fn book_html(place: &Place, outline: Option<&str>) -> String {
     let context = Context {
         base: "/t".to_owned(),
         person: None,
+        ..Context::default()
     };
     Store::open(&place.store)
         .unwrap()
@@ -494,6 +496,7 @@ fn served(place: &Place, args: &[&str]) -> Served {
         ])
         .current_dir(place.dir.path())
         .env_remove("BOOM_REPOSITORY")
+        .env("XDG_CONFIG_HOME", place.dir.path().join("config"))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1017,6 +1020,7 @@ fn search_html(place: &Place, query: &str) -> String {
     let context = Context {
         base: "/t".to_owned(),
         person: None,
+        ..Context::default()
     };
     Store::open(&place.store)
         .unwrap()
@@ -2386,7 +2390,10 @@ const AMOUNTS: &str = "amounts-in-cents";
 /// A store whose one person is chuck, with a narrative that includes one
 /// proposed claim, a cause with one new version that names it, and one
 /// other proposed claim; giving the narrative's version and the cause's.
-fn three_waiting(place: &Place) -> (String, String) {
+/// A narrative batch, a revision and a ruling that wait: the versions of
+/// the narrative, the cause and the ruling, and the key of chuck, who made
+/// the store.
+fn three_waiting(place: &Place) -> (String, String, String, String) {
     let chuck = place.made_by("chuck");
     place.proposed(STATUS, "A record never holds its status.");
     let story = version(&place.narrative(NAME, TITLE, NARRATIVE, &["--includes", STATUS]));
@@ -2405,14 +2412,14 @@ fn three_waiting(place: &Place) -> (String, String) {
         "--provenance",
         "run-2",
     ]);
-    place.proposed(AMOUNTS, "Amounts are kept in cents.");
-    (story, cause)
+    let amounts = place.proposed(AMOUNTS, "Amounts are kept in cents.");
+    (story, cause, amounts, chuck)
 }
 
 #[test]
 fn the_view_of_three_batches() {
     let place = Place::new();
-    let (story, cause) = three_waiting(&place);
+    let (story, cause, amounts, _) = three_waiting(&place);
     let page = served(&place, &[]);
     let html = page.at("waiting").body;
     let views = between(&bar(&html), "<nav class=\"views\"", "</nav>");
@@ -2445,7 +2452,19 @@ fn the_view_of_three_batches() {
         "{html}"
     );
     assert!(
-        html.contains("boom accept --waiting --key &lt;key&gt;"),
+        html.contains(&format!(
+            "<pre class=\"command\">boom accept {NAME}@{story} {AMOUNTS}@{amounts} --cause {CAUSE}@{cause} --key &lt;key&gt;</pre>"
+        )),
+        "{html}"
+    );
+    assert!(
+        html.contains("<code>boom accept --waiting</code> lists"),
+        "{html}"
+    );
+    // With no key in Boom's settings, the page gives the line that names one.
+    assert!(
+        html.contains("key = { path = &quot;~/.ssh/&lt;your key&gt;&quot;")
+            || html.contains("key = { path = \"~/.ssh/&lt;your key&gt;\""),
         "{html}"
     );
     // A revision gives each claim's old words and its new.
@@ -2555,6 +2574,113 @@ fn an_include_that_refuses_the_accept() {
     );
     assert!(
         !html.contains(&format!("boom accept {NAME}@{story}")),
+        "{html}"
+    );
+}
+
+/// Writes Boom's settings as `boom page` reads them in the place.
+fn page_settings(place: &Place, text: &str) {
+    let folder = place.dir.path().join("config").join("boom");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("config.toml"), text).unwrap();
+}
+
+#[test]
+fn the_page_gives_the_persons_own_command() {
+    let place = Place::new();
+    let (story, cause, amounts, chuck) = three_waiting(&place);
+    page_settings(&place, &format!("key = {{ path = \"{chuck}\" }}\n"));
+    let page = served(&place, &[]);
+    let html = page.at("waiting").body;
+    assert!(!html.contains("--key &lt;key&gt;"), "{html}");
+    assert!(
+        html.contains(&format!(
+            "<pre class=\"command\">boom accept {NAME}@{story}</pre>"
+        )),
+        "{html}"
+    );
+    assert!(
+        html.contains(&format!(
+            "<pre class=\"command\">boom accept --cause {CAUSE}@{cause}</pre>"
+        )),
+        "{html}"
+    );
+    assert!(
+        html.contains(&format!(
+            "<pre class=\"command\">boom accept {NAME}@{story} {AMOUNTS}@{amounts} --cause {CAUSE}@{cause}</pre>"
+        )),
+        "{html}"
+    );
+    assert!(html.contains("the key of chuck"), "{html}");
+    // The page of a proposed claim gives the same command.
+    let claim = page.at(&format!("claims/{AMOUNTS}@{amounts}")).body;
+    assert!(
+        claim.contains(&format!(
+            "<pre class=\"command\">boom accept {AMOUNTS}@{amounts}</pre>"
+        )),
+        "{claim}"
+    );
+}
+
+#[test]
+fn the_person_picks_batches_into_one_command() {
+    let place = Place::new();
+    let (story, cause, _, chuck) = three_waiting(&place);
+    page_settings(&place, &format!("key = {{ path = \"{chuck}\" }}\n"));
+    let page = served(&place, &[]);
+    let html = page.at("waiting").body;
+    assert!(!html.contains("<script"), "{html}");
+    assert!(
+        html.contains(&format!(
+            "<form id=\"pick\" class=\"pick\" method=\"get\" action=\"/{}/waiting#picked\">",
+            page.token
+        )),
+        "{html}"
+    );
+    for value in [
+        format!("narrative-{NAME}"),
+        format!("revision-{CAUSE}"),
+        format!("ruling-{AMOUNTS}"),
+    ] {
+        assert!(
+            html.contains(&format!(
+                "<input type=\"checkbox\" form=\"pick\" name=\"pick\" value=\"{value}\">"
+            )),
+            "{value}: {html}"
+        );
+    }
+    assert!(!html.contains("you picked"), "{html}");
+    let picked = page
+        .at(&format!(
+            "waiting?pick=narrative-{NAME}&pick=revision-{CAUSE}&pick=ruling-gone"
+        ))
+        .body;
+    assert!(
+        picked.contains(&format!(
+            "The 2 batches you picked, in one sign:</p><pre class=\"command\">boom accept {NAME}@{story} --cause {CAUSE}@{cause}</pre>"
+        )),
+        "{picked}"
+    );
+    assert!(
+        picked.contains(&format!("value=\"narrative-{NAME}\" checked>")),
+        "{picked}"
+    );
+    assert!(
+        picked.contains(&format!("value=\"ruling-{AMOUNTS}\">")),
+        "{picked}"
+    );
+}
+
+#[test]
+fn a_key_of_the_settings_that_the_store_does_not_register_is_given() {
+    let place = Place::new();
+    let (story, _, _, _) = three_waiting(&place);
+    let stranger = place.key("stranger", 9);
+    page_settings(&place, &format!("key = {{ path = \"{stranger}\" }}\n"));
+    let page = served(&place, &[]);
+    let html = page.at("waiting").body;
+    assert!(
+        html.contains(&format!("boom accept {NAME}@{story} --key &lt;key&gt;")),
         "{html}"
     );
 }

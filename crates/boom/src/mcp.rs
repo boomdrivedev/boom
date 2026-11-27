@@ -19,7 +19,7 @@ use clap::{Arg, ArgAction};
 use serde_json::{json, Map, Value};
 
 use crate::cli::Env;
-use crate::sign::{Keys, Signer};
+use crate::sign::{Key, Keys, Signer};
 use crate::Failure;
 
 /// Each command served as a tool, by its words (design 3).
@@ -264,10 +264,10 @@ fn error(id: Value, code: i64, message: String) -> Value {
 pub struct NoKeys;
 
 impl Keys for NoKeys {
-    fn signer(&self, key: &Path) -> Result<Box<dyn Signer + '_>, Failure> {
+    fn signer(&self, key: &Key) -> Result<Box<dyn Signer + '_>, Failure> {
         Err(Failure::refused(format!(
             "boom mcp signs nothing, with {} or any key: a person accepts, rejects or registers in their own terminal",
-            key.display()
+            key.path.display()
         )))
     }
 }
@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn the_server_holds_no_key() {
         for key in ["/home/ada/.ssh/id_ed25519_sk", "keys/ada", ""] {
-            match NoKeys.signer(Path::new(key)) {
+            match NoKeys.signer(&Key::at(key)) {
                 Err(Failure::Refused(why)) => {
                     assert!(why.contains("boom mcp signs nothing"), "{why}");
                     assert!(why.contains("their own terminal"), "{why}");

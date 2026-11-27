@@ -20,6 +20,11 @@ repository or every repository.
 A version that amends a draft supersedes that draft, so a person
 accepts the newest draft of a claim, on the nearest version in its line
 of bases that a person accepted.
+Boom's settings, `$XDG_CONFIG_HOME/boom/config.toml` on the machine,
+name a person's key and the program that gives its passphrase, and a
+person's act with no `--key` signs with that key; `boom page` then gives
+each command with no `--key`, one command for every batch that waits,
+and one for the batches that the person picks.
 The author of a proposed version withdraws it with `boom withdraw`,
 with a reason and no key, and it takes the status `withdrawn`; a person
 rejects several versions in one signed entry, and `boom search

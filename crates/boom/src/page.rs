@@ -25,6 +25,7 @@ use crate::cli::Env;
 use crate::entry::{Act, Actor, Entry};
 use crate::judge::{self, Claim, Proof, State, Verdict, Version};
 use crate::narrative::{self, Paragraph};
+use crate::settings::{self, Signing};
 use crate::store::{self, Scope, Store};
 use crate::view::Book;
 use crate::Failure;
@@ -221,13 +222,18 @@ pub fn write_note(
 // The HTML
 
 /// Where the page's paths start and who writes its notes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Context {
     /// The start of each path, `/<token>`.
     pub base: String,
     /// The person of the page; none where boom knows none, and the page
     /// then gives no form.
     pub person: Option<String>,
+    /// How the commands of the page name the person's key, read from
+    /// Boom's settings for each request.
+    pub signing: Signing,
+    /// The file of Boom's settings, where boom knows one.
+    pub settings: Option<PathBuf>,
 }
 
 /// `text` with `&`, `<`, `>`, `"` and `'` written as entities.
@@ -587,6 +593,10 @@ section.wait p{margin:.25rem 0}
 section.wait .counts{font:600 14px/1.5 system-ui,sans-serif}
 section.wait .read{font:14px/1.5 system-ui,sans-serif}
 .cmdl{font:12px/1.4 system-ui,sans-serif;color:var(--soft);margin-top:.5rem}
+label.pick{display:inline-block;margin-top:.3rem;font:600 13px/1.4 system-ui,sans-serif;cursor:pointer}
+form.pick,p.pick{margin:.6rem 0;font:14px/1.5 system-ui,sans-serif}
+form.pick p{margin:0}
+.total p{margin:0}.total pre.command{margin:.35rem 0}
 details.takes{font:14px/1.5 system-ui,sans-serif;margin:.3rem 0}
 details.takes>summary{cursor:pointer;color:var(--soft);font-size:13px}
 .diff p{margin:.15rem 0;padding:.2rem .5rem;border-radius:4px}
@@ -785,8 +795,8 @@ pub fn narrative_page(
         if takes.closed.is_empty() {
             let _ = writeln!(
                 main,
-                "<p class=\"hint\">In your terminal, with your key:</p>\n<pre>boom accept {} --key &lt;key&gt;</pre>\n<p class=\"hint\">This accept takes {} in one entry:</p>\n<ul class=\"edges takes\">",
-                escape(&at),
+                "<p class=\"hint\">In your terminal, with your key:</p>\n<pre>{}</pre>\n<p class=\"hint\">This accept takes {} in one entry:</p>\n<ul class=\"edges takes\">",
+                escape(&format!("boom accept {at}{}", context.signing.key_words())),
                 if takes.versions.len() == 1 {
                     "1 version".to_owned()
                 } else {
@@ -1480,10 +1490,11 @@ impl Server {
                 Reply::held("text/plain; charset=utf-8", MERMAID_LICENSE)
             }
             ("GET" | "HEAD", None) if rest.is_empty() => {
-                self.read(|conn| book_page(conn, None, &self.context))
+                self.read(|conn, context| book_page(conn, None, context))
             }
             ("GET" | "HEAD", None) if rest == "waiting" => {
-                self.read(|conn| waiting::waiting_page(conn, &self.context))
+                let fields = form(query_of(url));
+                self.read(|conn, context| waiting::waiting_page(conn, &fields, context))
             }
             ("GET" | "HEAD", None) if rest == "search" => {
                 let words = form(query_of(url))
@@ -1491,13 +1502,16 @@ impl Server {
                     .find(|(name, _)| name == "q")
                     .map(|(_, words)| words)
                     .unwrap_or_default();
-                self.read(|conn| search_page(conn, &words, &self.context))
+                self.read(|conn, context| search_page(conn, &words, context))
             }
             ("GET" | "HEAD", None) if claims::Of::from_path(rest).is_some() => {
                 let of = claims::Of::from_path(rest).expect("a view of the claims");
                 let fields = form(query_of(url));
                 let answered = Store::open(&self.path).and_then(|mut store| {
-                    store.read(|conn| claims::view_page(conn, of, &fields, &self.context))
+                    store.read(|conn| {
+                        let context = self.now(conn)?;
+                        claims::view_page(conn, of, &fields, &context)
+                    })
                 });
                 match answered {
                     Ok(Ok(html)) => Reply::page(html),
@@ -1516,17 +1530,17 @@ impl Server {
                     Some((name, version)) => (name, Some(version)),
                     None => (target, None),
                 };
-                self.read(|conn| claims::claim_page(conn, name, version, &self.context))
+                self.read(|conn, context| claims::claim_page(conn, name, version, context))
             }
             ("GET" | "HEAD", None) if rest.starts_with("v/") && !rest[2..].contains('/') => {
-                self.read(|conn| book_page(conn, Some(&rest[2..]), &self.context))
+                self.read(|conn, context| book_page(conn, Some(&rest[2..]), context))
             }
             ("GET" | "HEAD", Some(target)) if !target.contains('/') => {
                 let (name, version) = match target.split_once('@') {
                     Some((name, version)) => (name, Some(version)),
                     None => (target, None),
                 };
-                self.read(|conn| narrative_page(conn, name, version, &self.context))
+                self.read(|conn, context| narrative_page(conn, name, version, context))
             }
             ("POST", Some(target)) => {
                 if header("origin") != Some(format!("http://127.0.0.1:{}", self.port).as_str()) {
@@ -1541,8 +1555,27 @@ impl Server {
         }
     }
 
-    fn read(&self, page: impl FnOnce(&rusqlite::Connection) -> Result<String, Failure>) -> Reply {
-        match Store::open(&self.path).and_then(|mut store| store.read(page)) {
+    /// The page's context for one request: how its commands name the
+    /// key, from Boom's settings as they are now.
+    fn now(&self, conn: &rusqlite::Connection) -> Result<Context, Failure> {
+        let state = store::load_state_for(conn, &Scope::default())?;
+        Ok(Context {
+            signing: settings::signing(&self.env, &state),
+            ..self.context.clone()
+        })
+    }
+
+    fn read(
+        &self,
+        page: impl FnOnce(&rusqlite::Connection, &Context) -> Result<String, Failure>,
+    ) -> Reply {
+        let answered = Store::open(&self.path).and_then(|mut store| {
+            store.read(|conn| {
+                let context = self.now(conn)?;
+                page(conn, &context)
+            })
+        });
+        match answered {
             Ok(html) => Reply::page(html),
             Err(Failure::Refused(why)) => Reply::words(404, &why),
             Err(Failure::NotRun(why)) => Reply::words(500, &why),
@@ -1712,7 +1745,12 @@ pub fn serve(path: &Path, options: &Options, env: &Env) -> Result<(), Failure> {
     let served = Server {
         path: path.to_owned(),
         port,
-        context: Context { base, person },
+        context: Context {
+            base,
+            person,
+            signing: Signing::Given,
+            settings: settings::path(env),
+        },
         env: env.clone(),
     };
     let mut last = Instant::now();

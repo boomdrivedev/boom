@@ -12,6 +12,7 @@ use rusqlite::Connection;
 use crate::claim::Kind;
 use crate::entry::Actor;
 use crate::judge::{State, Status, Version};
+use crate::settings::Signing;
 use crate::store::{self, Scope};
 use crate::Failure;
 
@@ -194,17 +195,15 @@ pub struct Batch {
 }
 
 impl Batch {
-    /// The command that accepts it, where Boom does not refuse it.
-    pub fn command(&self) -> Option<String> {
-        if !self.takes.closed.is_empty() {
-            return None;
-        }
-        Some(match self.shape {
-            Shape::Revision => format!("boom accept --cause {} --key <key>", self.head.target()),
-            Shape::Narrative | Shape::Ruling => {
-                format!("boom accept {} --key <key>", self.head.target())
-            }
-        })
+    /// Whether Boom refuses its accept: a closed version that it takes.
+    pub fn refused(&self) -> bool {
+        !self.takes.closed.is_empty()
+    }
+
+    /// The command that accepts it, where Boom does not refuse it, naming
+    /// the key as `signing` says.
+    pub fn command(&self, signing: &Signing) -> Option<String> {
+        accept_command([self], signing)
     }
 
     /// Its counts in words: what it takes, and what of it is accepted
@@ -365,4 +364,37 @@ pub fn batches(state: &State) -> Vec<Batch> {
     }
     all.sort_by_key(|batch| (batch.since, batch.head.target()));
     all
+}
+
+/// The one command that accepts each of `batches` that Boom does not
+/// refuse, in one entry that the key signs one time: the head of each
+/// narrative and ruling, then `--cause` with the head of each revision,
+/// each in the order given, and the key as `signing` says; none where
+/// Boom refuses each of them (persons-acts, "One accept takes several
+/// batches").
+pub fn accept_command<'a>(
+    batches: impl IntoIterator<Item = &'a Batch>,
+    signing: &Signing,
+) -> Option<String> {
+    let mut targets = Vec::new();
+    let mut causes = Vec::new();
+    for batch in batches.into_iter().filter(|batch| !batch.refused()) {
+        let (list, argument) = match batch.shape {
+            Shape::Revision => (&mut causes, format!("--cause {}", batch.head.target())),
+            Shape::Narrative | Shape::Ruling => (&mut targets, batch.head.target()),
+        };
+        if !list.contains(&argument) {
+            list.push(argument);
+        }
+    }
+    if targets.is_empty() && causes.is_empty() {
+        return None;
+    }
+    let mut command = String::from("boom accept");
+    for argument in targets.iter().chain(&causes) {
+        command.push(' ');
+        command.push_str(argument);
+    }
+    command.push_str(signing.key_words());
+    Some(command)
 }

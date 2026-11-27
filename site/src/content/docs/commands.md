@@ -69,8 +69,7 @@ recorded in shop-ledger at 2f6d9b1
 ## `boom accept`
 
 ```text
-boom accept <name>@<version>... --key <key>
-boom accept --cause <name>@<version> --key <key>
+boom accept <name>@<version>... [--cause <name>@<version>]... [--key <key>]
 boom accept --waiting [--key <key>]
 ```
 
@@ -85,8 +84,20 @@ takes.
 `--waiting` lists what waits on a person, as the page "Waiting on you"
 gives it: each narrative with the claims that it includes, each
 revision with its cause, and each other proposed claim alone, a ruling,
-each with the one command that accepts it. With `--key`, it accepts
-each of them in one sign.
+each with the one command that accepts it, and one command for every
+batch. With `--key`, it accepts each of them in one sign.
+
+With no `--key`, `boom accept`, `boom reject`, `boom approve`, `boom
+register` and `boom repo` sign with the key of Boom's settings, in
+`$XDG_CONFIG_HOME/boom/config.toml`, else `~/.config/boom/config.toml`.
+One line names the private key file and, as an option, the program that
+gives its passphrase. `ssh-keygen` runs that program as `SSH_ASKPASS`,
+and Boom never reads the passphrase. Each path is absolute or starts
+with `~/`.
+
+```toml
+key = { path = "~/.ssh/id_ed25519_sk", askpass = "~/bin/boom-askpass" }
+```
 
 ```console
 $ boom accept boom-end-to-end@a541548cc582 --key ~/.ssh/id_ed25519_sk

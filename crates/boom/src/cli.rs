@@ -18,9 +18,9 @@ use crate::claim::{History, Kind, Origin, Proposal};
 use crate::entry::{Act, Actor, Attach, Entry, Form, Imported, Named};
 use crate::import::{self, Read, Record};
 use crate::judge::{self, Proof, State, Verdict};
-use crate::sign::{self, Keys, Signer};
+use crate::sign::{self, Key, Keys, Signer};
 use crate::store::{self, Append, Scope, Store, Written};
-use crate::{batch, context, repository, Failure};
+use crate::{batch, context, repository, settings, Failure};
 
 /// What a command reads from its process: the folders a store's path
 /// is resolved under, the working folder a repository is declared from,
@@ -29,6 +29,8 @@ use crate::{batch, context, repository, Failure};
 pub struct Env {
     /// `XDG_DATA_HOME`, where it is set.
     pub xdg_data_home: Option<PathBuf>,
+    /// `XDG_CONFIG_HOME`, where it is set: Boom's settings are under it.
+    pub xdg_config_home: Option<PathBuf>,
     /// `XDG_STATE_HOME`, where it is set: the records of the sessions are
     /// under it (session-context).
     pub xdg_state_home: Option<PathBuf>,
@@ -72,6 +74,7 @@ impl Env {
         let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
         Env {
             xdg_data_home: var("XDG_DATA_HOME").map(PathBuf::from),
+            xdg_config_home: var("XDG_CONFIG_HOME").map(PathBuf::from),
             xdg_state_home: var("XDG_STATE_HOME").map(PathBuf::from),
             home: var("HOME").map(PathBuf::from),
             cwd: std::env::current_dir().ok(),
@@ -140,7 +143,7 @@ enum Command {
         /// Register them as an owner.
         #[arg(long)]
         owner: bool,
-        /// The registering owner's security key.
+        /// The registering owner's security key; by default the key of Boom's settings.
         #[arg(long)]
         key: Option<PathBuf>,
     },
@@ -321,14 +324,15 @@ enum Command {
         )]
         targets: Vec<String>,
         /// A cause, `<name>@<version>`: accept it, where it is proposed,
-        /// with each version whose edge `cause` names it.
+        /// with each version whose edge `cause` names it; any number of
+        /// times.
         #[arg(long, value_name = "CAUSE", conflicts_with = "waiting")]
-        cause: Option<String>,
+        cause: Vec<String>,
         /// List each batch that waits on a person; with `--key`, accept
         /// each batch that Boom does not refuse, in one entry.
         #[arg(long)]
         waiting: bool,
-        /// The accepting person's security key.
+        /// The accepting person's security key; by default the key of Boom's settings.
         #[arg(long)]
         key: Option<PathBuf>,
     },
@@ -342,7 +346,7 @@ enum Command {
         /// Why they are rejected.
         #[arg(long)]
         reason: Option<String>,
-        /// The rejecting person's security key.
+        /// The rejecting person's security key; by default the key of Boom's settings.
         #[arg(long)]
         key: Option<PathBuf>,
     },
@@ -372,7 +376,7 @@ enum Command {
         /// `<name>@<version>`; any number of times.
         #[arg(long = "covers", value_name = "CLAIM")]
         covers: Vec<String>,
-        /// The approving person's security key.
+        /// The approving person's security key; by default the key of Boom's settings.
         #[arg(long)]
         key: Option<PathBuf>,
         /// Refused: only a person approves a plan.
@@ -610,7 +614,8 @@ enum RepoCommand {
         /// Whether a session in it gets its context when it starts.
         #[arg(long, value_enum, default_value = "on")]
         session: OnOff,
-        /// The owner's security key, a private key file.
+        /// The owner's security key, a private key file; by default the
+        /// key of Boom's settings.
         #[arg(long, value_name = "KEY")]
         key: Option<PathBuf>,
     },
@@ -625,7 +630,8 @@ enum RepoCommand {
         /// Whether a session in it gets its context when it starts.
         #[arg(long, value_enum)]
         session: Option<OnOff>,
-        /// The owner's security key, a private key file.
+        /// The owner's security key, a private key file; by default the
+        /// key of Boom's settings.
         #[arg(long, value_name = "KEY")]
         key: Option<PathBuf>,
     },
@@ -1004,7 +1010,7 @@ fn execute(
     env: &Env,
 ) -> Result<Answer, Failure> {
     match command {
-        Command::Init { person, key } => init(&path?, &person, &key, keys, env),
+        Command::Init { person, key } => init(&path?, &person, &given_key(&key, env), keys, env),
         Command::Register {
             person,
             public_key_file,
@@ -1015,7 +1021,7 @@ fn execute(
             &person,
             &public_key_file,
             owner,
-            key.as_deref(),
+            person_key(key.as_deref(), env)?.as_ref(),
             keys,
             env,
         ),
@@ -1063,7 +1069,7 @@ fn execute(
                 narratives,
                 cause,
             },
-            key.as_deref(),
+            key.as_deref().map(|key| given_key(key, env)).as_ref(),
             keys,
             env,
         ),
@@ -1095,13 +1101,14 @@ fn execute(
             key,
         } => {
             if waiting {
-                accept_waiting(&path?, key.as_deref(), keys, env)
+                let key = key.as_deref().map(|key| given_key(key, env));
+                accept_waiting(&path?, key.as_ref(), keys, env)
             } else {
                 accept(
                     &path?,
                     &targets,
-                    cause.as_deref(),
-                    key.as_deref(),
+                    &cause,
+                    person_key(key.as_deref(), env)?.as_ref(),
                     keys,
                     env,
                 )
@@ -1111,7 +1118,14 @@ fn execute(
             targets,
             reason,
             key,
-        } => reject(&path?, &targets, reason, key.as_deref(), keys, env),
+        } => reject(
+            &path?,
+            &targets,
+            reason,
+            person_key(key.as_deref(), env)?.as_ref(),
+            keys,
+            env,
+        ),
         Command::Approve {
             plan,
             links,
@@ -1130,7 +1144,14 @@ fn execute(
                 outputs: &outputs,
                 covers: &covers,
             };
-            approve(&path?, &plan, &given, key.as_deref(), keys, env)
+            approve(
+                &path?,
+                &plan,
+                &given,
+                person_key(key.as_deref(), env)?.as_ref(),
+                keys,
+                env,
+            )
         }
         Command::Withdraw {
             targets,
@@ -1255,7 +1276,7 @@ fn execute(
                 &name,
                 &remote,
                 matches!(session, OnOff::On),
-                key.as_deref(),
+                person_key(key.as_deref(), env)?.as_ref(),
                 keys,
                 env,
             ),
@@ -1269,7 +1290,7 @@ fn execute(
                 &name,
                 remote.as_deref(),
                 session.map(|session| matches!(session, OnOff::On)),
-                key.as_deref(),
+                person_key(key.as_deref(), env)?.as_ref(),
                 keys,
                 env,
             ),
@@ -1313,14 +1334,38 @@ fn write(
 }
 
 /// The person the store registers `signer`'s key to.
-fn person_of(state: &State, signer: &dyn Signer, key: &Path) -> Result<String, Failure> {
+/// The key a person's act signs with: the one `--key` names, else the
+/// key of Boom's settings, else none (persons-acts, "A person's key in
+/// Boom's settings").
+fn person_key(given: Option<&Path>, env: &Env) -> Result<Option<Key>, Failure> {
+    match given {
+        Some(path) => Ok(Some(given_key(path, env))),
+        None => settings::key(env),
+    }
+}
+
+/// The key `--key` names, with the passphrase program of Boom's settings
+/// where they name the same key.
+fn given_key(path: &Path, env: &Env) -> Key {
+    let askpass = settings::key(env)
+        .ok()
+        .flatten()
+        .filter(|set| set.path == path)
+        .and_then(|set| set.askpass);
+    Key {
+        path: path.to_owned(),
+        askpass,
+    }
+}
+
+fn person_of(state: &State, signer: &dyn Signer, key: &Key) -> Result<String, Failure> {
     state
         .person_by_key(signer.public_key())
         .map(|person| person.name.clone())
         .ok_or_else(|| {
             Failure::refused(format!(
                 "the key {} is not registered in this store",
-                key.display()
+                key.path.display()
             ))
         })
 }
@@ -1352,7 +1397,7 @@ fn registration_answer(format: &str, path: &Path, state: &State, person: &str, s
 fn init(
     path: &Path,
     person: &str,
-    key: &Path,
+    key: &Key,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
@@ -1426,13 +1471,13 @@ fn register(
     person: &str,
     public_key_file: &Path,
     owner: bool,
-    key: Option<&Path>,
+    key: Option<&Key>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
     let Some(key) = key else {
         return Err(Failure::refused(
-            "only an owner registers a person: boom register takes the owner's --key",
+            "only an owner registers a person: boom register takes the owner's --key, or the key in Boom's settings",
         ));
     };
     let mut store = Store::open(path)?;
@@ -1711,7 +1756,7 @@ fn attachment(
 fn propose(
     path: &Path,
     proposed: Proposed,
-    key: Option<&Path>,
+    key: Option<&Key>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
@@ -2211,8 +2256,8 @@ fn version_target<'a>(command: &str, target: &'a str) -> Result<(&'a str, &'a st
 fn accept(
     path: &Path,
     targets: &[String],
-    cause: Option<&str>,
-    key: Option<&Path>,
+    causes: &[String],
+    key: Option<&Key>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
@@ -2225,38 +2270,40 @@ fn accept(
         .iter()
         .map(|target| version_target("accept", target))
         .collect::<Result<Vec<_>, _>>()?;
-    let cause = cause
+    let causes = causes
+        .iter()
         .map(|cause| version_target("accept --cause", cause))
-        .transpose()?;
+        .collect::<Result<Vec<_>, _>>()?;
     let Some(key) = key else {
         return Err(Failure::refused(
-            "only a person accepts: boom accept takes the person's --key",
+            "only a person accepts: boom accept takes the person's --key, or the key in Boom's settings",
         ));
     };
     let mut store = Store::open(path)?;
-    let taken = store.read(|conn| accept_takes(conn, &versions, cause))?;
+    let taken = store.read(|conn| accept_takes(conn, &versions, &causes))?;
     let (accepted, words) = accept_versions(&mut store, &taken, key, keys, env)?;
     Ok(accepted_answer(accepted, words, serde_json::Map::new()))
 }
 
-/// The versions that an accept of `targets` and of `cause` takes, in the
-/// order of its entry, each one time: each target, after a proposed
-/// narrative each proposed version it includes, and the cause with each
+/// The versions that an accept of `targets` and of `causes` takes, in
+/// the order of its entry, each one time: each target, after a proposed
+/// narrative each proposed version it includes, and each cause with each
 /// version that names it (persons-acts, "The accept of a narrative takes
-/// the claims that it includes" and "The accept of a cause takes its
-/// revision"). A closed include or cause refuses it.
+/// the claims that it includes", "The accept of a cause takes its
+/// revision" and "One accept takes several batches"). A closed include
+/// or cause refuses it.
 fn accept_takes(
     conn: &rusqlite::Connection,
     targets: &[(&str, &str)],
-    cause: Option<(&str, &str)>,
+    causes: &[(&str, &str)],
 ) -> Result<Vec<(String, String)>, Failure> {
-    let naming = match cause {
-        Some((name, version)) => store::naming_cause(conn, name, version)?,
-        None => Vec::new(),
-    };
+    let mut naming = Vec::new();
+    for &(name, version) in causes {
+        naming.extend(store::naming_cause(conn, name, version)?);
+    }
     let mut names: BTreeSet<String> = targets
         .iter()
-        .chain(&cause)
+        .chain(causes)
         .map(|(name, _)| (*name).to_owned())
         .chain(naming.iter().map(|(name, _)| name.clone()))
         .collect();
@@ -2313,7 +2360,7 @@ fn accept_takes(
             }
         }
     }
-    if let Some((name, version)) = cause {
+    for &(name, version) in causes {
         let Some(found) = find(name, version) else {
             return Err(Failure::refused(format!(
                 "boom accept --cause names a version of the store: {name}@{version} is none"
@@ -2347,7 +2394,7 @@ fn accept_takes(
 fn accept_versions(
     store: &mut Store,
     versions: &[(String, String)],
-    key: &Path,
+    key: &Key,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<(Vec<Value>, String), Failure> {
@@ -2479,7 +2526,7 @@ fn accepted_answer(
 }
 
 /// A batch as `boom accept --waiting` gives it.
-fn batch_json(batch: &batch::Batch) -> Value {
+fn batch_json(batch: &batch::Batch, signing: &settings::Signing) -> Value {
     let named = |list: &[batch::Named]| {
         list.iter()
             .map(|named| {
@@ -2501,7 +2548,7 @@ fn batch_json(batch: &batch::Batch) -> Value {
         "counts": batch.counts(),
         "proposer": batch.proposer,
         "repositories": batch.repositories,
-        "command": batch.command(),
+        "command": batch.command(signing),
         "versions": named(&batch.takes.versions),
         "accepted": named(&batch.takes.accepted),
         "closed": named(&batch.takes.closed),
@@ -2510,7 +2557,7 @@ fn batch_json(batch: &batch::Batch) -> Value {
 
 /// A batch in words: its shape and head, its title, its counts, and its
 /// command or what refuses it.
-fn batch_words(batch: &batch::Batch) -> String {
+fn batch_words(batch: &batch::Batch, signing: &settings::Signing) -> String {
     let mut words = format!(
         "{} {}: {}\n  {}\n",
         batch.shape.as_str(),
@@ -2518,7 +2565,7 @@ fn batch_words(batch: &batch::Batch) -> String {
         batch.title,
         batch.counts()
     );
-    match batch.command() {
+    match batch.command(signing) {
         Some(command) => words.push_str(&format!("  {command}\n")),
         None => words.push_str(&format!(
             "  refused: {}; its author proposes a new version\n",
@@ -2533,14 +2580,15 @@ fn batch_words(batch: &batch::Batch) -> String {
 /// (persons-acts, "boom accept --waiting").
 fn accept_waiting(
     path: &Path,
-    key: Option<&Path>,
+    key: Option<&Key>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
     let mut store = Store::open(path)?;
     let batches = store.read(batch::waiting)?;
+    let signing = settings::signing(env, &store.state_for(&Scope::default())?);
     let mut versions: Vec<(String, String)> = Vec::new();
-    for batch in batches.iter().filter(|batch| batch.command().is_some()) {
+    for batch in batches.iter().filter(|batch| !batch.refused()) {
         for named in &batch.takes.versions {
             let pair = (named.name.clone(), named.version.clone());
             if !versions.contains(&pair) {
@@ -2548,33 +2596,40 @@ fn accept_waiting(
             }
         }
     }
-    let listed: Vec<Value> = batches.iter().map(batch_json).collect();
+    let listed: Vec<Value> = batches
+        .iter()
+        .map(|batch| batch_json(batch, &signing))
+        .collect();
+    let every = batch::accept_command(&batches, &signing);
     let Some(key) = key else {
         let mut words = if batches.is_empty() {
             "Nothing waits on a person.\n".to_owned()
         } else {
             format!(
-                "{} wait on a person, {}; boom accept --waiting --key <key> accepts each one that Boom does not refuse, in one sign.\n",
+                "{} wait on a person, {}.\n",
                 plural(batches.len(), "batch", "batches"),
                 plural(versions.len(), "version", "versions"),
             )
         };
+        if let Some(every) = &every {
+            words.push_str(&format!(
+                "Each one that Boom does not refuse, in one sign: {every}\n"
+            ));
+        }
         for batch in &batches {
-            words.push_str(&batch_words(batch));
+            words.push_str(&batch_words(batch, &signing));
         }
         return Ok(Answer {
             json: json!({
                 "format": "boom-waiting/1",
                 "batches": listed,
                 "versions": versions.len(),
+                "command": every,
             }),
             words,
         });
     };
-    let left_out: Vec<&batch::Batch> = batches
-        .iter()
-        .filter(|batch| batch.command().is_none())
-        .collect();
+    let left_out: Vec<&batch::Batch> = batches.iter().filter(|batch| batch.refused()).collect();
     let (accepted, mut words) = if versions.is_empty() {
         (
             Vec::new(),
@@ -2595,7 +2650,12 @@ fn accept_waiting(
     let mut more = serde_json::Map::new();
     more.insert(
         "left_out".into(),
-        Value::Array(left_out.iter().map(|batch| batch_json(batch)).collect()),
+        Value::Array(
+            left_out
+                .iter()
+                .map(|batch| batch_json(batch, &signing))
+                .collect(),
+        ),
     );
     Ok(accepted_answer(accepted, words, more))
 }
@@ -2617,14 +2677,14 @@ fn reject(
     path: &Path,
     targets: &[String],
     reason: Option<String>,
-    key: Option<&Path>,
+    key: Option<&Key>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
     let versions = named_targets("reject", targets)?;
     let Some(key) = key else {
         return Err(Failure::refused(
-            "only a person rejects: boom reject takes the person's --key",
+            "only a person rejects: boom reject takes the person's --key, or the key in Boom's settings",
         ));
     };
     let Some(reason) = reason.filter(|reason| !reason.trim().is_empty()) else {
@@ -3885,13 +3945,13 @@ fn approve(
     path: &Path,
     plan: &Path,
     given: &Approval<'_>,
-    key: Option<&Path>,
+    key: Option<&Key>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
     let Some(key) = key else {
         return Err(Failure::refused(
-            "only a person approves a plan: boom approve takes the person's --key",
+            "only a person approves a plan: boom approve takes the person's --key, or the key in Boom's settings",
         ));
     };
     let bytes = std::fs::read(plan).map_err(|error| {
@@ -4281,7 +4341,7 @@ fn repo_add(
     name: &str,
     remote: &str,
     session: bool,
-    key: Option<&Path>,
+    key: Option<&Key>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
@@ -4304,7 +4364,7 @@ fn repo_set(
     name: &str,
     remote: Option<&str>,
     session: Option<bool>,
-    key: Option<&Path>,
+    key: Option<&Key>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
@@ -4346,13 +4406,13 @@ fn repo_write(
     name: &str,
     remote: &str,
     session: bool,
-    key: Option<&Path>,
+    key: Option<&Key>,
     keys: &dyn Keys,
     env: &Env,
 ) -> Result<Answer, Failure> {
     let Some(key) = key else {
         return Err(Failure::refused(
-            "only an owner sets a repository: boom repo takes the owner's --key",
+            "only an owner sets a repository: boom repo takes the owner's --key, or the key in Boom's settings",
         ));
     };
     let signer = keys.signer(key)?;

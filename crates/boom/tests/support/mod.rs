@@ -9,7 +9,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use boom::sign::{Keys, Signer};
+use boom::sign::{Key, Keys, Signer};
 use boom::Failure;
 use ed25519_dalek::Signer as _;
 use sha2::{Digest, Sha256};
@@ -85,6 +85,7 @@ pub struct SoftKeys {
     keys: RefCell<HashMap<PathBuf, SoftKey>>,
     signatures: Cell<usize>,
     told: RefCell<String>,
+    asked: RefCell<Vec<Key>>,
 }
 
 impl SoftKeys {
@@ -95,7 +96,13 @@ impl SoftKeys {
             keys: RefCell::new(HashMap::new()),
             signatures: Cell::new(0),
             told: RefCell::new(String::new()),
+            asked: RefCell::new(Vec::new()),
         }
+    }
+
+    /// Each key a command asked for a signer, in order.
+    pub fn asked(&self) -> Vec<Key> {
+        self.asked.borrow().clone()
     }
 
     /// What a signer told the person before its key signed, each time.
@@ -181,11 +188,12 @@ impl Signer for SoftSigner<'_> {
 }
 
 impl Keys for SoftKeys {
-    fn signer(&self, key: &Path) -> Result<Box<dyn Signer + '_>, Failure> {
-        let soft = self.keys.borrow().get(key).cloned().ok_or_else(|| {
+    fn signer(&self, key: &Key) -> Result<Box<dyn Signer + '_>, Failure> {
+        self.asked.borrow_mut().push(key.clone());
+        let soft = self.keys.borrow().get(&key.path).cloned().ok_or_else(|| {
             Failure::refused(format!(
                 "the public key {}.pub cannot be read",
-                key.display()
+                key.path.display()
             ))
         })?;
         Ok(Box::new(SoftSigner {
@@ -217,6 +225,7 @@ impl Place {
         std::fs::create_dir(&keys_dir).unwrap();
         let env = boom::cli::Env {
             xdg_data_home: Some(dir.path().join("data")),
+            xdg_config_home: Some(dir.path().join("config")),
             xdg_state_home: Some(dir.path().join("state")),
             home: Some(dir.path().join("home")),
             cwd: Some(dir.path().to_owned()),
