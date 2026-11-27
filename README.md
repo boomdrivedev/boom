@@ -293,7 +293,19 @@ claims that hold.
   Before the key signs, boom lists each version that the entry takes.
   `boom accept --waiting` lists each batch with its one command, and
   with the key accepts them all. `boom page` gives them first, under
-  "Waiting on you", with the number in the bar.
+  "Waiting on you", with the number in the bar. It gives one command
+  for every batch, and the person picks batches with a box on each to
+  get one command for those. `boom accept` takes `--cause` more than
+  one time.
+- **Boom's settings name the person's key.** One line in
+  `~/.config/boom/config.toml` names the private key file and the
+  program that gives its passphrase:
+  `key = { path = "~/.ssh/id_ed25519_sk", askpass = "~/bin/boom-askpass" }`.
+  `boom accept`, `reject`, `approve`, `register` and `repo` then sign
+  with that key when no `--key` is given, and `ssh-keygen` gets the
+  passphrase from the program as `SSH_ASKPASS`. The page gives each
+  command with no `--key`. Boom never reads the passphrase, and the
+  log holds none of the file.
 - **A proposal warns of a plan word.** A claim says what the system is
   and does, and never the plan. `boom propose` warns of each plan word
   in the statement or the body: `wave`, `phase`, `milestone`, `sprint`,

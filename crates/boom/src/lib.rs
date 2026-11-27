@@ -25,6 +25,7 @@ pub mod narrative;
 pub mod page;
 pub mod repository;
 pub mod search;
+pub mod settings;
 pub mod sign;
 pub mod store;
 pub mod terms;

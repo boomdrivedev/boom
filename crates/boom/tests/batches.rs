@@ -423,13 +423,16 @@ fn the_batches_listed() {
         ]
     );
     assert_eq!(answer["versions"], 5);
+    // Every batch in one command: the heads, then each cause.
+    let every = format!("boom accept {story} {amounts} --cause {cause} --key <key>");
+    assert_eq!(answer["command"], every.as_str());
     assert_eq!(place.log(), log);
     let words = place.run(&["accept", "--waiting"]);
     assert_eq!(words.code, 0, "{words:?}");
     assert!(
-        words
-            .stdout
-            .starts_with("3 batches wait on a person, 5 versions;"),
+        words.stdout.starts_with(&format!(
+            "3 batches wait on a person, 5 versions.\nEach one that Boom does not refuse, in one sign: {every}\n"
+        )),
         "{}",
         words.stdout
     );
@@ -489,4 +492,135 @@ fn a_refused_batch_is_left_out() {
     assert_eq!(left["claim"], NAME);
     assert_eq!(left["closed"][0]["claim"], STATUS);
     assert_eq!(left["closed"][0]["status"], "rejected");
+}
+
+// A person's key in Boom's settings, and one accept of several batches.
+
+/// Writes Boom's settings of the place, `<config>/boom/config.toml`.
+fn settings(place: &Place, text: &str) {
+    let folder = place.env.xdg_config_home.as_ref().unwrap().join("boom");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("config.toml"), text).unwrap();
+}
+
+#[test]
+fn an_accept_signs_with_the_key_of_the_settings() {
+    let place = Place::new();
+    let (ada, [story, status, cause, _, amounts]) = three_batches(&place);
+    settings(
+        &place,
+        &format!("key = {{ path = \"{ada}\", askpass = \"/opt/askpass-of-the-test\" }}\n"),
+    );
+    // The batches give their commands with no --key.
+    let answer = place.json(&["accept", "--waiting"]);
+    assert_eq!(
+        answer["command"],
+        format!("boom accept {story} {amounts} --cause {cause}").as_str()
+    );
+    assert_eq!(
+        answer["batches"][0]["command"],
+        format!("boom accept {story}").as_str()
+    );
+    let before = place.keys.signatures();
+    let accepted = place.json(&["accept", &story]);
+    assert_eq!(place.keys.signatures(), before + 1);
+    assert_eq!(last_accepted(&place), [story.clone(), status]);
+    assert_eq!(accepted["accepted"].as_array().unwrap().len(), 2);
+    let asked = place.keys.asked();
+    assert_eq!(
+        asked.last().unwrap(),
+        &boom::sign::Key {
+            path: ada.clone().into(),
+            askpass: Some("/opt/askpass-of-the-test".into()),
+        }
+    );
+}
+
+#[test]
+fn a_key_named_by_key_takes_the_passphrase_program_of_its_own_settings() {
+    let place = Place::new();
+    let (ada, [_, _, _, _, amounts]) = three_batches(&place);
+    let bo = place.registered(&ada, "bo", 2);
+    settings(
+        &place,
+        &format!("key = {{ path = \"{ada}\", askpass = \"/opt/askpass-of-the-test\" }}\n"),
+    );
+    place.json(&["accept", &amounts, "--key", &bo]);
+    assert_eq!(
+        place.keys.asked().last().unwrap(),
+        &boom::sign::Key {
+            path: bo.into(),
+            askpass: None
+        }
+    );
+}
+
+#[test]
+fn an_accept_with_no_key_and_no_settings_is_refused() {
+    let place = Place::new();
+    let (_, [story, ..]) = three_batches(&place);
+    place.refused(&["accept", &story], "or the key in Boom's settings");
+}
+
+#[test]
+fn settings_that_boom_does_not_read_refuse_the_accept() {
+    let place = Place::new();
+    let (_, [story, ..]) = three_batches(&place);
+    let log = place.log();
+    settings(&place, "key = { path = \"keys/ada\" }\n");
+    place.refused(
+        &["accept", &story],
+        "key.path is a path that is absolute or starts with ~/",
+    );
+    settings(
+        &place,
+        "key = { path = \"/keys/ada\", passphrase = \"x\" }\n",
+    );
+    place.refused(&["accept", &story], "are not read");
+    assert_eq!(place.log(), log);
+}
+
+#[test]
+fn a_path_of_the_settings_under_the_home() {
+    let place = Place::new();
+    settings(
+        &place,
+        "key = { path = \"~/.ssh/id_ecdsa_sk\", askpass = \"~/bin/askpass\" }\n",
+    );
+    let home = place.env.home.clone().unwrap();
+    assert_eq!(
+        boom::settings::key(&place.env).unwrap(),
+        Some(boom::sign::Key {
+            path: home.join(".ssh/id_ecdsa_sk"),
+            askpass: Some(home.join("bin/askpass")),
+        })
+    );
+    settings(&place, "# no key yet\n");
+    assert_eq!(boom::settings::key(&place.env).unwrap(), None);
+}
+
+#[test]
+fn one_accept_takes_two_causes_with_their_revisions() {
+    let place = Place::new();
+    let (ada, [_, _, cause, money, _]) = three_batches(&place);
+    let words = place.proposed(OTHER, "A change record names its approval.");
+    place.accepted(OTHER, &words, &ada);
+    let second = place.proposed("names-no-wave", "A claim names no wave.");
+    let revision = revised(
+        &place,
+        OTHER,
+        "Each change record names its approval.",
+        &words,
+        "names-no-wave",
+    );
+    let second = format!("names-no-wave@{second}");
+    let before = place.keys.signatures();
+    place.json(&[
+        "accept", "--cause", &cause, "--cause", &second, "--key", &ada,
+    ]);
+    assert_eq!(place.keys.signatures(), before + 1);
+    assert_eq!(
+        last_accepted(&place),
+        [cause, money, second, format!("{OTHER}@{revision}")]
+    );
 }

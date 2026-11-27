@@ -101,11 +101,33 @@ pub trait Signer {
     }
 }
 
-/// Turns the path a command's `--key` names into a [`Signer`].
+/// A person's security key as a command names it: the path of its
+/// private half, from `--key` or Boom's settings, and the program that
+/// gives its passphrase, where Boom's settings name one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Key {
+    /// The private key file; its public half is `<path>.pub`.
+    pub path: PathBuf,
+    /// The program `ssh-keygen` runs for the key's passphrase, as
+    /// `SSH_ASKPASS`.
+    pub askpass: Option<PathBuf>,
+}
+
+impl Key {
+    /// The key at `path`, with no passphrase program.
+    pub fn at(path: impl Into<PathBuf>) -> Key {
+        Key {
+            path: path.into(),
+            askpass: None,
+        }
+    }
+}
+
+/// Turns the key a command names into a [`Signer`].
 pub trait Keys {
-    /// The signer for the key at `key`, refused where its public key
-    /// cannot be read.
-    fn signer(&self, key: &Path) -> Result<Box<dyn Signer + '_>, Failure>;
+    /// The signer for `key`, refused where its public key cannot be
+    /// read.
+    fn signer(&self, key: &Key) -> Result<Box<dyn Signer + '_>, Failure>;
 }
 
 /// The person's own `ssh-keygen`, signing with the key a path names
@@ -165,11 +187,11 @@ pub fn read_public_key(path: &Path) -> Result<PublicKey, Failure> {
 }
 
 impl Keys for SshKeygen {
-    fn signer(&self, key: &Path) -> Result<Box<dyn Signer + '_>, Failure> {
-        let public_key = read_public_key(&public_key_path(key))?;
+    fn signer(&self, key: &Key) -> Result<Box<dyn Signer + '_>, Failure> {
+        let public_key = read_public_key(&public_key_path(&key.path))?;
         Ok(Box::new(SshKeygenSigner {
             program: self,
-            key: key.to_owned(),
+            key: key.clone(),
             public_key,
         }))
     }
@@ -177,7 +199,7 @@ impl Keys for SshKeygen {
 
 struct SshKeygenSigner<'a> {
     program: &'a SshKeygen,
-    key: PathBuf,
+    key: Key,
     public_key: PublicKey,
 }
 
@@ -197,8 +219,16 @@ impl Signer for SshKeygenSigner<'_> {
                 words.trim()
             ))
         };
-        let mut child = Command::new(&self.program.program)
-            .args(self.program.arguments(&self.key))
+        let mut command = Command::new(&self.program.program);
+        command.args(self.program.arguments(&self.key.path));
+        // The passphrase program of Boom's settings: `ssh-keygen` runs it
+        // for the passphrase, even where a terminal could ask.
+        if let Some(askpass) = &self.key.askpass {
+            command
+                .env("SSH_ASKPASS", askpass)
+                .env("SSH_ASKPASS_REQUIRE", "force");
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

@@ -5,7 +5,7 @@ mod support;
 use std::ffi::OsString;
 use std::path::Path;
 
-use boom::sign::{verify, Keys, SshKeygen};
+use boom::sign::{verify, Key, Keys, SshKeygen};
 use boom::Failure;
 use support::{SoftKeys, ABSENT};
 
@@ -16,7 +16,7 @@ fn a_security_keys_signature_verifies() {
     let dir = tempfile::tempdir().unwrap();
     let keys = SoftKeys::new(dir.path());
     let ada = keys.security_key("ada", 1);
-    let signer = keys.signer(&ada).unwrap();
+    let signer = keys.signer(&Key::at(&ada)).unwrap();
     let signature = signer.sign(ENTRY).unwrap();
     assert!(signature.starts_with("-----BEGIN SSH SIGNATURE-----"));
     assert_eq!(verify(signer.public_key(), ENTRY, &signature), Ok(()));
@@ -34,7 +34,7 @@ fn a_signature_without_presence_is_refused() {
     let keys = SoftKeys::new(dir.path());
     let ada = keys.security_key("ada", 1);
     keys.set_flags(&ada, ABSENT);
-    let signature = keys.signer(&ada).unwrap().sign(ENTRY).unwrap();
+    let signature = keys.signer(&Key::at(&ada)).unwrap().sign(ENTRY).unwrap();
     let refused = verify(&keys.public_key(&ada), ENTRY, &signature).unwrap_err();
     assert!(
         refused.starts_with("the signature does not show its person present"),
@@ -47,7 +47,7 @@ fn a_plain_keys_signature_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let keys = SoftKeys::new(dir.path());
     let plain = keys.plain_key("ada", 1);
-    let signature = keys.signer(&plain).unwrap().sign(ENTRY).unwrap();
+    let signature = keys.signer(&Key::at(&plain)).unwrap().sign(ENTRY).unwrap();
     let refused = verify(&keys.public_key(&plain), ENTRY, &signature).unwrap_err();
     assert!(refused.contains("a key of type ssh-ed25519"), "{refused}");
     assert!(
@@ -86,7 +86,7 @@ fn a_key_whose_program_cannot_be_run_does_not_sign() {
     let keygen = SshKeygen {
         program: dir.path().join("no-such-program"),
     };
-    let signer = keygen.signer(&ada).unwrap();
+    let signer = keygen.signer(&Key::at(&ada)).unwrap();
     assert_eq!(signer.public_key(), &keys.public_key(&ada));
     match signer.sign(ENTRY) {
         Err(Failure::NotRun(why)) => {
@@ -94,4 +94,45 @@ fn a_key_whose_program_cannot_be_run_does_not_sign() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+#[test]
+fn the_passphrase_program_of_the_settings_reaches_ssh_keygen() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::tempdir().unwrap();
+    let keys = SoftKeys::new(dir.path());
+    let ada = keys.security_key("ada", 1);
+    // A program in the place of ssh-keygen: it asks the passphrase
+    // program as ssh-keygen does, writes what it got, and signs nothing.
+    let program = dir.path().join("ssh-keygen");
+    let seen = dir.path().join("seen");
+    std::fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\n{{ echo \"require=$SSH_ASKPASS_REQUIRE\"; echo \"passphrase=$(\"$SSH_ASKPASS\" 'Enter passphrase for key')\"; }} > '{}'\ncat > /dev/null\nexit 1\n",
+            seen.display()
+        ),
+    )
+    .unwrap();
+    let askpass = dir.path().join("askpass");
+    std::fs::write(&askpass, "#!/bin/sh\necho the-tests-passphrase\n").unwrap();
+    for file in [&program, &askpass] {
+        std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let keygen = SshKeygen { program };
+    let key = Key {
+        path: ada.clone(),
+        askpass: Some(askpass),
+    };
+    match keygen.signer(&key).unwrap().sign(ENTRY) {
+        Err(Failure::NotRun(why)) => {
+            assert!(why.starts_with("the key's program did not sign"), "{why}")
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        std::fs::read_to_string(&seen).unwrap(),
+        "require=force\npassphrase=the-tests-passphrase\n"
+    );
 }

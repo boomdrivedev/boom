@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use boom::claim::{Kind, Proposal};
 use boom::entry::{self, Act, Actor, Attach, Entry};
-use boom::sign::{Keys, Signer};
+use boom::sign::{Key, Keys, Signer};
 use boom::store::{Append, Store};
 use boom::Failure;
 use ed25519_dalek::Signer as _;
@@ -88,7 +88,7 @@ impl Signer for SoftSigner {
 struct AdasKey;
 
 impl Keys for AdasKey {
-    fn signer(&self, _key: &Path) -> Result<Box<dyn Signer + '_>, Failure> {
+    fn signer(&self, _key: &Key) -> Result<Box<dyn Signer + '_>, Failure> {
         let key = SoftKey { secret: [1; 32] };
         Ok(Box::new(SoftSigner {
             public_key: key.public_key(),
@@ -101,6 +101,7 @@ fn env(dir: &Path) -> boom::cli::Env {
     boom::cli::Env {
         boom_repository: None,
         xdg_data_home: Some(dir.join("data")),
+        xdg_config_home: Some(dir.join("config")),
         xdg_state_home: Some(dir.join("state")),
         home: Some(dir.join("home")),
         cwd: Some(dir.to_owned()),

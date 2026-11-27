@@ -14,6 +14,7 @@ use super::{
 };
 use crate::claim::{Kind, Origin};
 use crate::judge::{Claim, State, Status, Version};
+use crate::settings::Signing;
 use crate::store;
 use crate::view::{ClaimLevel, Held, LevelClaims};
 use crate::Failure;
@@ -324,7 +325,14 @@ pub fn view_page(
         counted(proposed.len()),
     );
     if filters.status != Statuses::Accepted && !proposed.is_empty() {
-        main.push_str(&proposed_html(conn, of, &levels, &newest, base)?);
+        main.push_str(&proposed_html(
+            conn,
+            of,
+            &levels,
+            &newest,
+            base,
+            &context.signing,
+        )?);
     }
     if filters.status != Statuses::Proposed {
         main.push_str(&levels_html(conn, of, &levels, base)?);
@@ -571,13 +579,18 @@ fn levels_side(
     html
 }
 
-/// The command that accepts `targets`.
-fn accept_command(targets: &[(&str, &str)]) -> String {
+/// The command that accepts `targets`, naming the key as `signing`
+/// says.
+fn accept_command(targets: &[(&str, &str)], signing: &Signing) -> String {
     let named: Vec<String> = targets
         .iter()
-        .map(|(name, version)| format!("{}@{version}", escape(name)))
+        .map(|(name, version)| format!("{name}@{version}"))
         .collect();
-    format!("boom accept {} --key &lt;key&gt;", named.join(" "))
+    escape(&format!(
+        "boom accept {}{}",
+        named.join(" "),
+        signing.key_words()
+    ))
 }
 
 /// "Proposed, binding nothing": each proposed version of the view's
@@ -590,10 +603,11 @@ fn proposed_html(
     levels: &[LevelClaims<'_>],
     proposed: &[(&str, &str)],
     base: &str,
+    signing: &Signing,
 ) -> Result<String, Failure> {
     let mut html = format!(
         "<section class=\"waiting\" id=\"proposed\">\n<h2>Proposed, binding nothing</h2>\n<p class=\"hint\">A person accepts each with their key. To accept every one of them at once, at the newest version of each claim:</p>\n<pre class=\"command\">{}</pre>\n",
-        accept_command(proposed)
+        accept_command(proposed, signing)
     );
     for level in levels.iter().filter(|level| !level.proposed.is_empty()) {
         let _ = writeln!(
@@ -604,7 +618,7 @@ fn proposed_html(
         let mut sorted = level.proposed.clone();
         sort_held(of, &mut sorted);
         for held in &sorted {
-            html.push_str(&item_html(conn, of, held, base, true)?);
+            html.push_str(&item_html(conn, of, held, base, Some(signing))?);
         }
     }
     html.push_str("</section>\n");
@@ -664,8 +678,9 @@ fn item_html(
     of: Of,
     (claim, version): &Held<'_>,
     base: &str,
-    proposed: bool,
+    signing: Option<&Signing>,
 ) -> Result<String, Failure> {
+    let proposed = signing.is_some();
     let name = escape(&claim.name);
     let at = format!("{name}@{}", version.proposal.version);
     let class = if proposed { "item proposed" } else { "item" };
@@ -713,11 +728,11 @@ fn item_html(
             markdown(&body)
         );
     }
-    if proposed {
+    if let Some(signing) = signing {
         let _ = write!(
             html,
             "<pre class=\"command\">{}</pre>",
-            accept_command(&[(&claim.name, &version.proposal.version)])
+            accept_command(&[(&claim.name, &version.proposal.version)], signing)
         );
     }
     html.push_str("</div>\n");
@@ -775,7 +790,7 @@ fn levels_html(
         let mut sorted = level.accepted.clone();
         sort_held(of, &mut sorted);
         for held in &sorted {
-            html.push_str(&item_html(conn, of, held, base, false)?);
+            html.push_str(&item_html(conn, of, held, base, None)?);
         }
     }
     Ok(html)
@@ -857,7 +872,8 @@ pub fn claim_page(
     if shown.status == Status::Proposed {
         let _ = writeln!(
             main,
-            "<div class=\"waiting frame\"><p><span class=\"mark\">proposed, binds nothing</span> A person accepts it or rejects it in a terminal, with their key:</p><pre class=\"command\">boom accept {at} --key &lt;key&gt;</pre><pre class=\"command\">boom reject {at} --reason \"&lt;why&gt;\" --key &lt;key&gt;</pre></div>"
+            "<div class=\"waiting frame\"><p><span class=\"mark\">proposed, binds nothing</span> A person accepts it or rejects it in a terminal, with their key:</p><pre class=\"command\">boom accept {at}{key}</pre><pre class=\"command\">boom reject {at} --reason \"&lt;why&gt;\"{key}</pre></div>",
+            key = escape(context.signing.key_words())
         );
     }
     if shown.proposal.body.is_some() {
