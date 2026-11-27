@@ -331,6 +331,73 @@ fn one_word_in_two_repositories() {
 }
 
 #[test]
+fn one_accept_takes_a_new_version_of_one_word_in_two_repositories() {
+    let place = Place::new();
+    let (ada, in_boom) = owner_accepted(&place);
+    let in_sluice = proposed(
+        &place,
+        "owner",
+        "The person who owns a bolt.",
+        &["--repository", "sluice"],
+    );
+    place.accepted("owner", &in_sluice, &ada);
+    // A new version of the term of each repository, which one accept
+    // takes in one entry with one signature.
+    let new_in_boom = proposed(
+        &place,
+        "owner",
+        "A person who grants roles, registers keys and registers repositories in a store.",
+        &["--amends", &in_boom],
+    );
+    let new_in_sluice = proposed(
+        &place,
+        "owner",
+        "The person who owns a bolt and its gate.",
+        &["--amends", &in_sluice],
+    );
+    let before = place.log().len();
+    let signed = place.keys.signatures();
+    let answer = place.json(&[
+        "accept",
+        &format!("owner@{new_in_boom}"),
+        &format!("owner@{new_in_sluice}"),
+        "--key",
+        &ada,
+    ]);
+    assert_eq!(answer["accepted"].as_array().unwrap().len(), 2, "{answer}");
+    assert_eq!(place.log().len(), before + 1, "one entry");
+    assert_eq!(place.keys.signatures(), signed + 1, "one signature");
+    assert_eq!(place.status("owner", &new_in_boom), "accepted");
+    assert_eq!(place.status("owner", &new_in_sluice), "accepted");
+    // Two versions of the term of one repository are two versions of
+    // one claim, which an accept refuses.
+    let first = proposed(
+        &place,
+        "pool",
+        "The hosts that run a gate.",
+        &["--repository", "sluice"],
+    );
+    let second = proposed(
+        &place,
+        "pool",
+        "The hosts that run the gate of a bolt.",
+        &["--repository", "sluice"],
+    );
+    let before = place.log().len();
+    place.refused(
+        &[
+            "accept",
+            &format!("pool@{first}"),
+            &format!("pool@{second}"),
+            "--key",
+            &ada,
+        ],
+        "names pool twice",
+    );
+    assert_eq!(place.log().len(), before);
+}
+
+#[test]
 fn one_name_space_for_the_other_kinds() {
     let place = Place::new();
     place.made();
