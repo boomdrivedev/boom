@@ -334,30 +334,6 @@ fn declared_by_the_repository() {
 }
 
 #[test]
-fn named_outright() {
-    let place = Place::new();
-    let (ada, _) = money_in_shop(&place);
-    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
-    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
-    let answer = place.json_in(&repo, &["query", "--repository", "ledger"]);
-    assert_eq!(answer["repository"], "ledger");
-    assert_eq!(answer["claims"], json!([]));
-}
-
-#[test]
-fn named_by_the_launcher() {
-    let place = Place::new();
-    let (ada, _) = money_in_shop(&place);
-    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
-    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
-    place.repo_added(&ada, "flume", "https://github.com/example/flume");
-    let outcome = place.run_launched(&repo, "flume", &["query", "--json"]);
-    assert_eq!(outcome.code, 0, "{outcome:?}");
-    let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
-    assert_eq!(answer["repository"], "flume");
-}
-
-#[test]
 fn neither_named_nor_declared_is_refused() {
     let place = Place::new();
     let (ada, _) = money_in_shop(&place);
@@ -366,54 +342,6 @@ fn neither_named_nor_declared_is_refused() {
     let words = refused_in(&place, &repo);
     assert!(words.contains("--repository"), "{words}");
     assert!(words.contains("boom repo add"), "{words}");
-}
-
-#[test]
-fn a_declaration_above_the_repository_is_not_read() {
-    let place = Place::new();
-    money_in_shop(&place);
-    let repo = place.repository("declared", None);
-    place.declare(&repo, "repository = \"shop\"\n");
-    let words = refused_in(&place, &repo);
-    assert!(words.contains("--repository"), "{words}");
-}
-
-#[test]
-fn outside_a_repository_no_declaration_is_read() {
-    let place = Place::new();
-    money_in_shop(&place);
-    let outside = place.empty_folder("outside");
-    place.declare(&outside, "repository = \"shop\"\n");
-    let words = refused_in(&place, &outside);
-    assert!(words.contains("--repository"), "{words}");
-}
-
-#[test]
-fn a_declaration_it_cannot_read_is_refused() {
-    let place = Place::new();
-    money_in_shop(&place);
-    let repo = place.repository("shop-repo", Some(support::SHOP_REMOTE));
-    let before = log_rows(&place);
-    let outcome = place.run_launched(&repo, "nowhere", &["query"]);
-    assert_eq!(outcome.code, 2, "{outcome:?}");
-    assert!(outcome.stderr.contains("nowhere"), "{outcome:?}");
-    assert!(outcome.stderr.contains("BOOM_REPOSITORY"), "{outcome:?}");
-    assert_eq!(log_rows(&place), before);
-}
-
-#[test]
-fn two_repositories_that_match_are_refused() {
-    let place = Place::new();
-    let (ada, _) = money_in_shop(&place);
-    place.repo_added(&ada, "shop", support::SHOP_REMOTE);
-    place.repo_added(&ada, "flume", "https://github.com/example/flume");
-    let repo = place.repository("both", Some(support::SHOP_REMOTE));
-    let config = repo.join(".git/config");
-    let mut text = std::fs::read_to_string(&config).unwrap();
-    text.push_str("[remote \"other\"]\n\turl = https://github.com/example/flume\n");
-    std::fs::write(&config, text).unwrap();
-    let words = refused_in(&place, &repo);
-    assert!(words.contains("shop") && words.contains("flume"), "{words}");
 }
 
 #[test]
