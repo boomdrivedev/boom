@@ -4,11 +4,9 @@
 //! PATH (session-context, claude-code-plugin). The other tests of the
 //! hooks run in the crate, in src/tests/hooks.rs.
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
-#[path = "../src/tests/hooks_store.rs"]
-mod hooks_store;
+use super::hooks_store;
 
 use std::path::Path;
 
@@ -18,6 +16,7 @@ use support::Place;
 
 #[test]
 fn two_edits_in_parallel() {
+    let _slot = super::slot();
     use std::io::Write;
     use std::process::{Command, Stdio};
     let place = Place::new();
@@ -128,6 +127,7 @@ fn printed(output: &std::process::Output) -> Value {
 
 #[test]
 fn the_plugin_starts_a_session_in_a_registered_repository() {
+    let _slot = super::slot();
     let place = Place::new();
     let (ada, folder) = sluice(&place);
     let entry = head(&place);
@@ -161,6 +161,7 @@ fn the_plugin_starts_a_session_in_a_registered_repository() {
 
 #[test]
 fn the_plugin_stops_the_first_edit_in_a_context() {
+    let _slot = super::slot();
     let place = Place::new();
     let (_, folder) = sluice(&place);
     let first = printed(&plugin(

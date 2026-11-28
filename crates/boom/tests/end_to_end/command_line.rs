@@ -3,8 +3,7 @@
 //! tests of the command line run in the crate, in
 //! src/tests/command_line.rs.
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use std::process::Command;
 
@@ -14,6 +13,7 @@ use support::Place;
 /// answer and its exit code.
 #[test]
 fn no_terminal() {
+    let _slot = super::slot();
     let place = Place::new();
     place.made();
     let store = place.store_arg();
