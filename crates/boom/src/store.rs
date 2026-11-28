@@ -765,6 +765,7 @@ impl Scope {
                             .chain(&claim.includes)
                             .chain(&claim.narratives)
                             .chain(&claim.cause)
+                            .chain(claim.supersedes.as_ref().map(|s| &s.claim))
                             .chain(crate::judge::contexts(attach.as_ref()))
                             .filter_map(|edge| edge.split_once('@'))
                             .map(|(name, _)| name.to_owned()),
@@ -1741,8 +1742,9 @@ pub fn bound_to(conn: &Connection, context: &str) -> Result<Vec<Bound>, Failure>
 
 /// A row for each edge of a version, in its order: each `source` and
 /// `changes` with the claim and the version it meant, each `origin` with
-/// its form and, for a file, its fingerprint (claim-edges). Its base is
-/// the `base` of its row in `versions`.
+/// its form and, for a file, its fingerprint (claim-edges), and the
+/// version it supersedes (claim-versions). Its base is the `base` of its
+/// row in `versions`.
 fn write_edges(
     conn: &Connection,
     name: &str,
@@ -1754,12 +1756,18 @@ fn write_edges(
          artifact, origin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
     let cause: Vec<String> = proposal.cause.iter().cloned().collect();
+    let supersedes: Vec<String> = proposal
+        .supersedes
+        .iter()
+        .map(|supersession| supersession.claim.clone())
+        .collect();
     for (edge, edges) in [
         ("source", &proposal.source),
         ("changes", &proposal.changes),
         ("includes", &proposal.includes),
         ("narratives", &proposal.narratives),
         ("cause", &cause),
+        ("supersedes", &supersedes),
     ] {
         for (position, stored) in edges.iter().enumerate() {
             let (target_name, target_version) = stored.split_once('@').unwrap_or((stored, ""));

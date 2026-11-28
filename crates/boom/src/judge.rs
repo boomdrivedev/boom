@@ -1406,6 +1406,9 @@ fn check_proposal(
             }
         }
     }
+    if let Some(supersession) = &proposal.supersedes {
+        check_superseded(state, &supersession.claim)?;
+    }
     if proposal.kind == Kind::Narrative {
         if rules >= ONE_LEVEL {
             check_level(proposal, attach)?;
@@ -1416,6 +1419,34 @@ fn check_proposal(
         check_outline(state, proposal, attach)?;
     }
     Ok(Verdict::Counts)
+}
+
+/// The version that a version supersedes, `stored`: a version of an
+/// invariant, a decision or an assumption that the store holds, and the
+/// accepted version of its claim (claim-versions, "A version names the
+/// accepted version that it supersedes"). No entry before this rule
+/// holds the field it reads, so it holds under rule set 1.
+fn check_superseded(state: &State, stored: &str) -> Result<(), String> {
+    let (target, version) = claim::edge(stored)?;
+    let (found, _) =
+        find(state, target, version).map_err(|why| format!("it supersedes {stored}: {why}"))?;
+    if !claim::supersedes_kind(found.kind) {
+        return Err(format!(
+            "{}: {target} is {} {}",
+            claim::SUPERSEDED_KINDS,
+            claim::article(found.kind),
+            found.kind.as_str()
+        ));
+    }
+    match found.standing.as_deref() {
+        Some(standing) if standing == version => Ok(()),
+        Some(standing) => Err(format!(
+            "a version supersedes the accepted version of a claim: {target}@{standing} is accepted, not {stored}"
+        )),
+        None => Err(format!(
+            "a version supersedes the accepted version of a claim: {target} has no accepted version"
+        )),
+    }
 }
 
 /// A narrative binds one level: the whole system, one repository or one
