@@ -5,8 +5,7 @@
 //! withdrawn version is closed"; persons-acts, "Several versions rejected
 //! together"; claim-search, "The versions that wait").
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use boom::entry::{Act, Actor, Entry, Named};
 use serde_json::{json, Value};

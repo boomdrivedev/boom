@@ -8,8 +8,7 @@
 //! (design 8): the tests' `SCENARIO` holds `amount` and `currency`, so
 //! these take `HOLDS` unless a test names another.
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use serde_json::{json, Value};
 use support::Place;
