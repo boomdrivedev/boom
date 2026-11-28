@@ -584,3 +584,37 @@ fn one_accept_names_both_claims() {
     assert_eq!(place.status(WRITERS, &w1), "proposed");
     assert_eq!(place.status(BILLING, &b2), "proposed");
 }
+
+// The person reads what a supersession takes out of force.
+
+#[test]
+fn the_accept_lists_the_claim_it_supersedes() {
+    let place = Place::new();
+    let (ada, b1) = billing_in_shop(&place);
+    let w1 = superseded_by_writers(&place, &[])["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let told = place.keys.told().len();
+    let outcome = place.run(&["accept", &at(WRITERS, &w1), "--key", &ada, "--json"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    let listed = place.keys.told()[told..].to_owned();
+    assert!(
+        listed.contains(&format!(
+            "invariant {}, which supersedes {}\n",
+            at(WRITERS, &w1),
+            at(BILLING, &b1)
+        )),
+        "{listed}"
+    );
+    let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();
+    assert_eq!(answer["format"], "boom-accept/2");
+    assert_eq!(answer["supersedes"], at(BILLING, &b1));
+    assert_eq!(answer["accepted"][0]["supersedes"], at(BILLING, &b1));
+    assert!(
+        outcome
+            .stderr
+            .contains(&format!("and it superseded {}", at(BILLING, &b1))),
+        "{outcome:?}"
+    );
+}

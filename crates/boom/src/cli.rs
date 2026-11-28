@@ -2690,10 +2690,18 @@ fn accept_versions(
             plural(waiting.len(), "version", "versions")
         );
         for named in &waiting {
-            let kind = state
-                .holding(&named.name, &named.version)
-                .map_or("claim", |claim| claim.kind.as_str());
-            told.push_str(&format!("  {kind} {}@{}\n", named.name, named.version));
+            let held = state.holding(&named.name, &named.version);
+            let kind = held.map_or("claim", |claim| claim.kind.as_str());
+            told.push_str(&format!("  {kind} {}@{}", named.name, named.version));
+            // What the accept takes out of force (claim-versions, "The
+            // person reads what a supersession takes out of force").
+            if let Some(supersession) = held
+                .and_then(|claim| claim.version(&named.version))
+                .and_then(|version| version.proposal.supersedes.as_ref())
+            {
+                told.push_str(&format!(", which supersedes {}", supersession.claim));
+            }
+            told.push('\n');
         }
         let entry = Entry {
             at: now,
@@ -2731,19 +2739,29 @@ fn accept_versions(
             .expect("an accept written is in the state");
         let by = found.decided_by.clone().unwrap_or_default();
         let seq = found.decided_in.unwrap_or_default();
+        let supersedes = found
+            .proposal
+            .supersedes
+            .as_ref()
+            .map(|supersession| supersession.claim.as_str());
         accepted.push(json!({
             "claim": name,
             "version": version,
             "kind": claim.kind.as_str(),
             "status": found.status.as_str(),
             "superseded": found.proposal.base,
+            "supersedes": supersedes,
             "by": by,
             "entry": seq,
         }));
         words.push_str(&format!(
-            "{name}@{version} is {}, accepted by {by}, by entry {seq}\n",
+            "{name}@{version} is {}, accepted by {by}, by entry {seq}",
             found.status.as_str(),
         ));
+        if let Some(supersedes) = supersedes {
+            words.push_str(&format!(", and it superseded {supersedes}"));
+        }
+        words.push('\n');
     }
     Ok((accepted, words))
 }
