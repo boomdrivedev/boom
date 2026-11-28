@@ -1102,6 +1102,7 @@ fn execute(
                 narratives,
                 cause,
                 supersedes: None,
+                kept_body: None,
             },
             key.as_deref().map(|key| given_key(key, env)).as_ref(),
             keys,
@@ -1591,6 +1592,10 @@ struct Proposed {
     cause: Option<String>,
     /// The accepted version it supersedes, which `boom supersede` names.
     supersedes: Option<crate::claim::Supersession>,
+    /// The fingerprint of a body that the store keeps, which the version
+    /// takes where `body` names no file: the body that `boom supersede`
+    /// copies.
+    kept_body: Option<String>,
 }
 
 impl Proposed {
@@ -2000,7 +2005,10 @@ fn propose(
     }
     let mut blobs: Vec<&[u8]> = body.as_deref().into_iter().collect();
     blobs.extend(files.iter().map(Vec::as_slice));
-    let body_fingerprint = body.as_deref().map(crate::sha256_hex);
+    let body_fingerprint = body
+        .as_deref()
+        .map(crate::sha256_hex)
+        .or_else(|| proposed.kept_body.clone());
     // The version is made with what it binds: a term's version is the
     // fingerprint of its repository too (term-claims).
     let version_without_edges = |attach: Option<&Attach>| {
@@ -2210,9 +2218,13 @@ struct Superseding {
 /// `boom supersede` (claim-versions, "boom supersede proposes a version
 /// that supersedes an accepted claim"): it reads `<name>` and `<new-name>`
 /// and proposes, through [`propose`], one version that names the accepted
-/// version of `<name>`: a first version of a new claim, which binds what
-/// that version binds. The judge checks the version again in the write's
-/// transaction, so a claim that changed after the read is refused there.
+/// version of `<name>`. For an accepted claim of the same kind, that
+/// version amends its accepted version and copies its statement, its
+/// body and its sources, each unless given, and binds what it binds; for
+/// any other name, it is a first version of a new claim, which binds what
+/// the accepted version of `<name>` binds. The judge checks the version
+/// again in the write's transaction, so a claim that changed after the
+/// read is refused there.
 fn supersede(
     path: &Path,
     given: Superseding,
@@ -2268,28 +2280,16 @@ fn supersede(
         claim: format!("{name}@{}", standing.proposal.version),
         reason: given.reason.clone(),
     };
-    let kind = given.kind.unwrap_or(old.kind);
-    if !crate::claim::supersedes_kind(kind) {
-        return Err(kinds(kind, new_name));
-    }
-    let Some(statement) = given.statement.clone() else {
-        return Err(Failure::refused(format!(
-            "a new claim gives its statement: no claim named {new_name} is accepted, so boom supersede {name} {new_name} <statement>"
-        )));
-    };
-    let proposed = Proposed {
-        kind,
+    let mut proposed = Proposed {
+        kind: old.kind,
         name: given.new_name.clone(),
-        statement,
+        statement: String::new(),
         amends: None,
         body: given.body.clone(),
         provenance: given.provenance.clone(),
-        repositories: standing.repositories.clone(),
-        contexts: context::names(&standing.contexts)
-            .into_iter()
-            .map(str::to_owned)
-            .collect(),
-        system: standing.binds_the_whole_system(),
+        repositories: Vec::new(),
+        contexts: Vec::new(),
+        system: false,
         replaces: Vec::new(),
         source: Vec::new(),
         changes: Vec::new(),
@@ -2301,7 +2301,60 @@ fn supersede(
         narratives: Vec::new(),
         cause: None,
         supersedes: Some(supersedes),
+        kept_body: None,
     };
+    let kept = state.named(new_name).first().copied().and_then(|claim| {
+        let version = claim.version(claim.standing.as_deref()?)?;
+        Some((claim, version))
+    });
+    if let Some((claim, base)) = kept {
+        // The claim to keep: a version that amends its accepted version,
+        // with its words unless new ones are given, and its binding.
+        if claim.kind != old.kind {
+            return Err(Failure::refused(format!(
+                "{new_name} is {} {} and {name} {} {}: a version supersedes a claim of its own kind",
+                crate::claim::article(claim.kind),
+                claim.kind.as_str(),
+                crate::claim::article(old.kind),
+                old.kind.as_str()
+            )));
+        }
+        if let Some(kind) = given.kind.filter(|kind| *kind != claim.kind) {
+            return Err(Failure::refused(format!(
+                "--kind {}: {new_name} is {} {}, and a version keeps the kind of its claim",
+                kind.as_str(),
+                crate::claim::article(claim.kind),
+                claim.kind.as_str()
+            )));
+        }
+        proposed.amends = Some(base.proposal.version.clone());
+        proposed.statement = given
+            .statement
+            .clone()
+            .unwrap_or_else(|| base.proposal.statement.clone());
+        if given.body.is_none() {
+            proposed.kept_body.clone_from(&base.proposal.body);
+        }
+        proposed.source.clone_from(&base.proposal.source);
+    } else {
+        let kind = given.kind.unwrap_or(old.kind);
+        if !crate::claim::supersedes_kind(kind) {
+            return Err(kinds(kind, new_name));
+        }
+        let Some(statement) = given.statement.clone() else {
+            return Err(Failure::refused(format!(
+                "a new claim gives its statement: no claim named {new_name} is accepted, so boom supersede {name} {new_name} <statement>"
+            )));
+        };
+        proposed.kind = kind;
+        proposed.statement = statement;
+        proposed.repositories.clone_from(&standing.repositories);
+        proposed.contexts = context::names(&standing.contexts)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        proposed.system = standing.binds_the_whole_system();
+    }
     let mut answer = propose(path, proposed, key, keys, env)?;
     let object = answer
         .json

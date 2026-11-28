@@ -327,3 +327,126 @@ fn a_reason_of_two_lines() {
         "a reason is one line",
     );
 }
+
+// A supersession by an accepted claim of the same kind.
+
+const KEEP: &str = "tests-as-units";
+const KEEP_WORDS: &str = "A tool's logic is tested as units.";
+const DUPLICATE: &str = "tests-as-units-too";
+const DUPLICATE_WORDS: &str = "A tool's logic is tested as units, too.";
+
+/// A store with ada, and the invariants `tests-as-units@<k1>`, with a body
+/// and two sources, and `tests-as-units-too@<d1>`, each accepted and
+/// binding the whole system; gives ada's key, `<k1>`, `<d1>` and the two
+/// sources.
+fn duplicates(place: &Place) -> (String, String, String, [String; 2]) {
+    let ada = place.made();
+    let sources = [
+        ("money-has-currency", "Every amount names its currency."),
+        (
+            "status-read-from-events",
+            "A record never holds its status.",
+        ),
+    ]
+    .map(|(name, words)| at(name, &proposed(place, name, words, &["--system"])));
+    let body = place.file("units.md", support::BODY);
+    let k1 = proposed(
+        place,
+        KEEP,
+        KEEP_WORDS,
+        &[
+            "--system",
+            "--body",
+            &body,
+            "--source",
+            &sources[0],
+            "--source",
+            &sources[1],
+        ],
+    );
+    place.accepted(KEEP, &k1, &ada);
+    let d1 = proposed(place, DUPLICATE, DUPLICATE_WORDS, &["--system"]);
+    place.accepted(DUPLICATE, &d1, &ada);
+    (ada, k1, d1, sources)
+}
+
+#[test]
+fn a_duplicate_retired_by_the_claim_to_keep() {
+    let place = Place::new();
+    let (_, k1, d1, sources) = duplicates(&place);
+    let answer = place.json(&[
+        "supersede",
+        DUPLICATE,
+        KEEP,
+        "--reason",
+        "a duplicate",
+        "--provenance",
+        "run-2",
+    ]);
+    assert_eq!(answer["format"], "boom-supersede/1");
+    assert_eq!(answer["claim"], KEEP);
+    assert_eq!(answer["base"], k1.as_str());
+    assert_eq!(answer["source"], serde_json::json!(sources));
+    assert_eq!(answer["repositories"], serde_json::json!([]));
+    assert_eq!(answer["contexts"], serde_json::json!([]));
+    assert_eq!(answer["supersedes"], DUPLICATE);
+    assert_eq!(answer["supersedes_version"], d1.as_str());
+    assert_eq!(answer["reason"], "a duplicate");
+    let k2 = answer["version"].as_str().unwrap();
+    assert_ne!(k2, k1);
+    let kept = place.show(&at(KEEP, &k1));
+    let shown = place.show(&at(KEEP, k2));
+    assert_eq!(shown["statement"], KEEP_WORDS);
+    assert_eq!(shown["body_fingerprint"], kept["body_fingerprint"]);
+    assert_eq!(
+        shown["body_fingerprint"],
+        boom::sha256_hex(support::BODY.as_bytes()).as_str()
+    );
+    assert_eq!(shown["body"], support::BODY);
+    assert_eq!(place.status(KEEP, &k1), "accepted");
+    assert_eq!(place.status(DUPLICATE, &d1), "accepted");
+}
+
+#[test]
+fn new_words_for_the_claim_to_keep() {
+    let place = Place::new();
+    let (_, k1, d1, sources) = duplicates(&place);
+    let words = "Unit tests prove a tool's logic.";
+    let answer = place.json(&["supersede", DUPLICATE, KEEP, words, "--provenance", "run-2"]);
+    assert_eq!(answer["base"], k1.as_str());
+    assert_eq!(answer["source"], serde_json::json!(sources));
+    assert_eq!(answer["supersedes_version"], d1.as_str());
+    let shown = place.show(&at(KEEP, answer["version"].as_str().unwrap()));
+    assert_eq!(shown["statement"], words);
+    assert_eq!(shown["body"], support::BODY);
+}
+
+#[test]
+fn an_accepted_claim_of_another_kind() {
+    let place = Place::new();
+    let (ada, ..) = duplicates(&place);
+    let cents = place.proposed_decision("amounts-in-cents", "Amounts are in cents.");
+    place.accepted("amounts-in-cents", &cents, &ada);
+    place.refused(
+        &[
+            "supersede",
+            DUPLICATE,
+            "amounts-in-cents",
+            "--provenance",
+            "run-2",
+        ],
+        "amounts-in-cents is a decision and tests-as-units-too an invariant",
+    );
+    place.refused(
+        &[
+            "supersede",
+            DUPLICATE,
+            KEEP,
+            "--kind",
+            "decision",
+            "--provenance",
+            "run-2",
+        ],
+        "--kind decision: tests-as-units is an invariant",
+    );
+}
