@@ -1,8 +1,7 @@
 //! Persons, owners and agents, and who may propose, accept and reject
 //! (persons-acts).
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use support::Place;
 

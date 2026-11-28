@@ -2,8 +2,7 @@
 //! with the person's name and no signature, open until a later version
 //! of the narrative answers it (narrative-notes).
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use boom::entry::{Act, Actor, Entry};
 use serde_json::{json, Value};

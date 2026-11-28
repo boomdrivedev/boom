@@ -2,8 +2,7 @@
 //! names each one, and never a refusal (claim-versions, "The plan words"
 //! and "A proposal warns of plan words").
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use serde_json::json;
 use support::Place;

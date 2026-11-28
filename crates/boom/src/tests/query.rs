@@ -2,8 +2,7 @@
 //! that stands for it, as the person accepted it, replayed from the log
 //! and written nowhere in the repository (repository-rules).
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use serde_json::{json, Value};
 use support::Place;

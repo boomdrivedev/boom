@@ -2,8 +2,7 @@
 //! of a type that another tool owns (record-log, "Each entry has an act
 //! hash" and "A link names an entry that the log holds"; lineage).
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use boom::entry::{Act, Actor, Entry};
 use support::Place;

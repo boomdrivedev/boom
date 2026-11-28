@@ -4,8 +4,7 @@
 //! of the log builds (record-store, "A command answers from the views";
 //! repository-rules, "The views and a full replay agree").
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use boom::claim::{Kind, Proposal};
 use boom::entry::{Act, Actor, Attach, Entry};

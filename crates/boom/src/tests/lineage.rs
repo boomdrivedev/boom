@@ -2,8 +2,7 @@
 //! what took it in (lineage, "boom lineage walks the links" and "The
 //! target of a walk").
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use support::Place;
 
