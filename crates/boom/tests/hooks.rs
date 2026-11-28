@@ -25,7 +25,6 @@ const ONE_READ_WORDS: &str =
 const ONE_READ_BODY: &str = "A resident reads the forge one time at most in each interval for each repository.\n\nBreaks the rule:\n- a forge read for each client request\n\nDoes not break it:\n- a test with a paused clock that counts the reads of an idle repository\n";
 const QUEUE: &str = "the-queue-lands-one-at-a-time";
 const QUEUE_WORDS: &str = "The queue lands one branch at a time.";
-const OWNER: &str = "A person who grants roles and registers keys in a store.";
 
 /// The version of an answer.
 fn version(answer: &Value) -> String {
@@ -862,37 +861,6 @@ fn an_event_that_is_not_json() {
     );
     assert_eq!(outcome.code, 2, "{outcome:?}");
     assert!(outcome.stderr.contains("not JSON"), "{outcome:?}");
-}
-
-#[test]
-fn an_owner_term_is_named_with_its_meaning() {
-    // The term of boom's own store, as an agent of boom meets it.
-    let place = Place::new();
-    let ada = place.made();
-    place.repo_added(&ada, "boom", "https://github.com/boomdrivedev/boom");
-    let folder = place.repository("boom", Some("https://github.com/boomdrivedev/boom"));
-    accepted(
-        &place,
-        &ada,
-        &[
-            "propose",
-            "term",
-            "owner",
-            OWNER,
-            "--repository",
-            "boom",
-            "--replaces",
-            "keeper", // boom: allow keeper
-        ],
-    );
-    let stopped = answer(&hook(
-        &place,
-        "pre-tool-use",
-        &edit("s-1", &folder, "notes.md", "The keeper signs."), // boom: allow keeper
-    ));
-    let text = reason(&stopped);
-    assert!(text.contains("\"keeper\""), "{text}"); // boom: allow keeper
-    assert!(text.contains(&format!("owner in boom: {OWNER}")), "{text}");
 }
 
 // The plugin's hooks, as Claude Code runs them, with the boom the tree

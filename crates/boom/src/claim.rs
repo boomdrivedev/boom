@@ -1302,6 +1302,17 @@ mod tests {
     }
 
     #[test]
+    fn the_cause_is_part_of_the_content() {
+        let mut plain = money("Each amount names its currency.", None);
+        let without = plain.version.clone();
+        plain.cause = Some("names-no-plan@aaaaaaaaaaaa".to_owned());
+        let with = plain.fingerprint(None);
+        assert_ne!(without, with);
+        plain.cause = Some("names-no-plan@bbbbbbbbbbbb".to_owned());
+        assert_ne!(plain.fingerprint(None), with);
+    }
+
+    #[test]
     fn an_edge_to_a_claim_in_its_form() {
         for edge in [
             "money-has-currency",
