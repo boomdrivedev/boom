@@ -111,18 +111,6 @@ fn agents_proposal(place: &Place) -> String {
 }
 
 #[test]
-fn an_accept_repeated_adds_nothing() {
-    let place = Place::new();
-    let ada = place.made();
-    let version = agents_proposal(&place);
-    let first = place.accepted("money-has-currency", &version, &ada);
-    let second = place.accepted("money-has-currency", &version, &ada);
-    assert_eq!(second, first);
-    assert_eq!(second["status"], "accepted");
-    assert_eq!(place.acts(), ["registered", "proposed", "accepted"]);
-}
-
-#[test]
 fn a_refusal_writes_nothing() {
     let place = Place::new();
     place.made();

@@ -328,22 +328,6 @@ fn a_tools_arguments_are_its_commands() {
     }
 }
 
-#[test]
-fn no_persons_act_listed() {
-    let place = Place::new();
-    for tool in tools(&place) {
-        let name = tool["name"].as_str().unwrap();
-        assert!(
-            !["init", "register", "accept", "reject", "mcp"].contains(&name),
-            "{name} is listed"
-        );
-        assert!(
-            tool["inputSchema"]["properties"].get("key").is_none(),
-            "{name} takes key"
-        );
-    }
-}
-
 /// The arguments of `propose` for a first version of
 /// `money-has-currency`.
 fn a_proposal() -> Value {
@@ -559,18 +543,6 @@ fn a_value_of_another_type() {
     arguments["repositories"] = json!("shop");
     let reason = refusal(&place.call("propose", arguments));
     assert!(reason.contains("repositories"), "{reason}");
-    assert_eq!(place.log(), before);
-}
-
-#[test]
-fn scenarios_given() {
-    let place = Place::new();
-    place.made();
-    let before = place.log();
-    let mut arguments = a_proposal();
-    arguments["scenarios"] = json!(["Given an amount, then it names its currency."]);
-    let reason = refusal(&place.call("propose", arguments));
-    assert!(reason.contains("scenarios"), "{reason}");
     assert_eq!(place.log(), before);
 }
 

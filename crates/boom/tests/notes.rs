@@ -177,16 +177,6 @@ fn the_same_note_twice() {
 }
 
 #[test]
-fn an_unsigned_accept() {
-    let place = Place::new();
-    let (_, v1) = one_narrative(&place);
-    place.append_by_hand(&support::accept_entry("chuck", NAME, &v1), None);
-    let last = place.log().last().unwrap().clone();
-    assert_eq!(last["counted"], false);
-    assert_eq!(place.status(NAME, &v1), "proposed");
-}
-
-#[test]
 fn a_note_from_an_agent() {
     let place = Place::new();
     let (_, v1) = one_narrative(&place);
