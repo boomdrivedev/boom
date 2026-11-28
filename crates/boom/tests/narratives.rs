@@ -3,6 +3,7 @@
 //! and the paragraphs of its body; a person accepts it, and no one checks
 //! it (narratives; claim-versions).
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use serde_json::{json, Value};

@@ -1,6 +1,7 @@
 //! The store's file, its views, its readers and writers, and its blobs
 //! (record-store).
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use support::Place;

@@ -2,6 +2,7 @@
 //! over the Model Context Protocol, none of them a person's act
 //! (agent-tools; record 0011).
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use std::io::{BufRead, BufReader, Write};

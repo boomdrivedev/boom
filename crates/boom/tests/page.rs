@@ -2,6 +2,7 @@
 //! the notes on its paragraphs, served on 127.0.0.1 under a token and
 //! computed from the log for each request (narrative-page).
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use std::io::{BufRead, BufReader, Read, Write};

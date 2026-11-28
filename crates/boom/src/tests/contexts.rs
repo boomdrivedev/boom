@@ -3,7 +3,7 @@
 //! of the accepted contexts (context-claims; claim-attachments;
 //! repository-rules).
 
-mod support;
+use super::support;
 
 use serde_json::{json, Value};
 use support::{text, Place};

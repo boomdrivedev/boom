@@ -1,6 +1,7 @@
 //! The command line: its commands, exit codes, JSON answers, no
 //! prompts, and repeated writes (command-line).
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use std::process::Command;

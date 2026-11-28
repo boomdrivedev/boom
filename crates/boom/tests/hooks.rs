@@ -5,6 +5,7 @@
 //! line for the person. The record of a session, outside each repository
 //! and outside the store.
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use std::path::{Path, PathBuf};

@@ -8,6 +8,7 @@
 //! claim it names out of force" and "The person reads what a
 //! supersession takes out of force").
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use support::Place;

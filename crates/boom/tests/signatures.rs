@@ -1,5 +1,6 @@
 //! The keys seam and a person's signature (design 7, 8; record 0006).
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use std::ffi::OsString;

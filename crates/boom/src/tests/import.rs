@@ -4,7 +4,7 @@
 //! (record-import). Every file a test imports is written by the test,
 //! from a string here, into its own folder (core.5; design 10).
 
-mod support;
+use super::support;
 
 use serde_json::{json, Value};
 use support::Place;

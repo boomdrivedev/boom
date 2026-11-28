@@ -4,6 +4,7 @@
 //! of the log builds (record-store, "A command answers from the views";
 //! repository-rules, "The views and a full replay agree").
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use boom::claim::{Kind, Proposal};
