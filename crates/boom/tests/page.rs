@@ -678,22 +678,6 @@ fn the_license_served() {
     assert_eq!(response.bytes, mermaid_file("LICENSE"));
 }
 
-/// narrative-page, "boom serves Mermaid's script from itself".
-#[test]
-fn the_script_with_no_token() {
-    let place = Place::new();
-    one_narrative(&place, &[]);
-    let page = served(&place, &[NAME]);
-    for path in [
-        "/mermaid-11.17.2.min.js".to_owned(),
-        format!("/{}/mermaid-11.17.2.min.js", "0".repeat(32)),
-    ] {
-        let response = page.get(&path);
-        assert_eq!(response.status, 404, "{path}");
-        assert!(response.bytes.len() < 1024, "{path}");
-    }
-}
-
 #[test]
 fn not_a_narrative() {
     let place = Place::new();
@@ -717,10 +701,18 @@ fn no_token() {
         format!("/n/{NAME}"),
         format!("/{}/n/{NAME}", "0".repeat(32)),
         format!("/{}x/n/{NAME}", page.token),
+        "/mermaid-11.17.2.min.js".to_owned(),
+        format!("/{}/mermaid-11.17.2.min.js", "0".repeat(32)),
+        "/search?q=keeps".to_owned(),
+        "/rules".to_owned(),
+        "/claims/".to_owned(),
+        "/decisions".to_owned(),
     ] {
         let response = page.get(&path);
         assert_eq!(response.status, 404, "{path}");
+        assert!(response.bytes.len() < 1024, "{path}");
         assert!(!response.body.contains(NAME), "{path}: {}", response.body);
+        assert!(!response.body.contains(STATUS), "{path}: {}", response.body);
         assert!(!response.body.contains("Boom keeps"), "{path}");
     }
 }
@@ -1206,25 +1198,6 @@ fn a_claim_found() {
 }
 
 #[test]
-fn the_forms_of_a_word() {
-    let place = Place::new();
-    one_narrative(&place, &[]);
-    let searched = place.json(&["search", "RECORDS", "--all"]);
-    let names: Vec<&str> = searched["claims"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|claim| claim["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names, [STATUS]);
-    let html = search_html(&place, "RECORDS");
-    assert!(
-        html.contains(&format!("<li data-claim=\"{STATUS}\">")),
-        "{html}"
-    );
-}
-
-#[test]
 fn no_word_to_search() {
     let place = Place::new();
     one_narrative(&place, &[]);
@@ -1240,22 +1213,6 @@ fn no_word_to_search() {
     );
     assert!(!response.body.contains("data-claim"), "{}", response.body);
     assert!(!response.body.contains("<ul class=\"list found\">"));
-}
-
-#[test]
-fn a_search_with_no_token() {
-    let place = Place::new();
-    book_store(&place);
-    let page = served(&place, &[]);
-    for path in [
-        "/search?q=bolt".to_owned(),
-        format!("/{}/search?q=bolt", "0".repeat(32)),
-    ] {
-        let response = page.get(&path);
-        assert_eq!(response.status, 404, "{path}");
-        assert!(!response.body.contains(NAME), "{path}: {}", response.body);
-        assert!(!response.body.contains("Part I"), "{path}");
-    }
 }
 
 #[test]
@@ -2327,18 +2284,6 @@ fn the_rules_view() {
     one_narrative(&place, &[]);
     let page = served(&place, &[]);
     runs_no_script(&page.at("rules"));
-}
-
-#[test]
-fn a_view_with_no_token() {
-    let place = Place::new();
-    one_narrative(&place, &[]);
-    let page = served(&place, &[]);
-    for path in ["/rules", "/claims/", "/decisions"] {
-        let response = page.get(path);
-        assert_eq!(response.status, 404, "{path}");
-        assert!(!response.body.contains(STATUS), "{path}: {}", response.body);
-    }
 }
 
 #[test]

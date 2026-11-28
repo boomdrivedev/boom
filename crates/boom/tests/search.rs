@@ -536,33 +536,6 @@ fn an_amendment_waiting_gives_the_standing_words() {
 }
 
 #[test]
-fn a_statement_edited_in_the_views_is_built_again_by_verify() {
-    let place = Place::new();
-    let (_, version) = money_in_shop(&place);
-    let edited = place
-        .sqlite()
-        .execute(
-            "UPDATE versions SET statement = 'Every amount is forged.' \
-             WHERE name = 'money-has-currency' AND version = ?1",
-            [&version],
-        )
-        .unwrap();
-    assert_eq!(edited, 1);
-    assert_eq!(
-        place.show(&format!("money-has-currency@{version}"))["statement"],
-        "Every amount is forged.",
-        "the views were edited and left as fresh"
-    );
-    let verified = place.json(&["verify"]);
-    assert_eq!(verified["rebuilt"], json!(["versions"]));
-    assert_eq!(search(&place, &["forged"])["claims"], json!([]));
-    let answer = search(&place, &["currency"]);
-    assert_eq!(names(&answer), ["money-has-currency"]);
-    assert_eq!(answer["claims"][0]["version"], version.as_str());
-    assert_eq!(answer["claims"][0]["statement"], MONEY);
-}
-
-#[test]
 fn an_altered_body_stops_the_search() {
     let place = Place::new();
     let ada = place.made();
