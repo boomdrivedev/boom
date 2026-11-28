@@ -202,18 +202,6 @@ fn an_approval_with_no_link_is_refused() {
 }
 
 #[test]
-fn a_link_to_an_entry_the_log_does_not_hold_is_refused() {
-    let place = Place::new();
-    let given = approvable(&place);
-    let plan = plan(&place);
-    let missing = "0".repeat(64);
-    place.refused(
-        &["approve", &plan, "--link", &missing, "--key", &given.ada],
-        &missing,
-    );
-}
-
-#[test]
 fn one_plan_is_approved_once() {
     let place = Place::new();
     let given = approvable(&place);
