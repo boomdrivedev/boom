@@ -66,8 +66,15 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
     out
 }
 
+// The tests in the crate name it as the tests in `tests/` do.
+#[cfg(test)]
+extern crate self as boom;
+
 /// The SHA-256 of `bytes`, in lowercase hexadecimal.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     hex(&Sha256::digest(bytes))
 }
+
+#[cfg(test)]
+mod tests;

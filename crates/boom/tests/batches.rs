@@ -3,6 +3,7 @@
 //! batch that waits, listed by `boom accept --waiting` (persons-acts;
 //! narrative-page, "The batches that wait on a person").
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use serde_json::Value;

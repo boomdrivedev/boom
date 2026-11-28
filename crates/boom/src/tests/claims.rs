@@ -1,7 +1,7 @@
 //! Claims by name, their versions and amendments, one name space, and
 //! each version's status read from the log (claim-versions).
 
-mod support;
+use super::support;
 
 use serde_json::json;
 use support::Place;

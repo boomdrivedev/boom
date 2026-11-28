@@ -5,6 +5,7 @@
 //! withdrawn version is closed"; persons-acts, "Several versions rejected
 //! together"; claim-search, "The versions that wait").
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use boom::entry::{Act, Actor, Entry, Named};

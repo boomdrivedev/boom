@@ -3,7 +3,7 @@
 //! each stored in the entry of the version with the version it meant
 //! (claim-edges; claim-versions).
 
-mod support;
+use super::support;
 
 use serde_json::{json, Value};
 use support::Place;

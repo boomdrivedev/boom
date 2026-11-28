@@ -3,6 +3,7 @@
 //! the level that each narrative binds and whose order comes from the
 //! outline (views).
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use serde_json::{json, Value};

@@ -3,6 +3,7 @@
 //! on the text that an agent writes, and by the gate on the files that a
 //! change touches (term-claims, term-check).
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use std::path::{Path, PathBuf};

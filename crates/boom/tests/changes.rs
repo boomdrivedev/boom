@@ -1,6 +1,7 @@
 //! Each version of a change record, which an agent records and no person
 //! accepts (change-records).
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use boom::entry::{Act, Actor, Change, ChangeFile, Entry};

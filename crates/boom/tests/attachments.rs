@@ -3,6 +3,7 @@
 //! before it is accepted; judged at the write and on every read
 //! (claim-attachments).
 
+#[path = "../src/tests/support.rs"]
 mod support;
 
 use serde_json::json;
