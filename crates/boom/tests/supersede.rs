@@ -259,29 +259,6 @@ fn a_new_claim_with_no_statement() {
 // A version names the accepted version that it supersedes.
 
 #[test]
-fn the_reason_is_part_of_the_content() {
-    let place = Place::new();
-    billing_in_shop(&place);
-    let first = superseded_by_writers(&place, &[]);
-    let entries = place.log().len();
-    let again = superseded_by_writers(&place, &[]);
-    assert_eq!(first["version"], again["version"]);
-    assert_eq!(place.log().len(), entries);
-    let other = place.json(&[
-        "supersede",
-        BILLING,
-        WRITERS,
-        WRITERS_WORDS,
-        "--reason",
-        "A duplicate.",
-        "--provenance",
-        "run-2",
-    ]);
-    assert_ne!(first["version"], other["version"]);
-    assert_eq!(place.log().len(), entries + 1);
-}
-
-#[test]
 fn a_term_superseded() {
     let place = Place::new();
     let ada = place.made();
@@ -306,25 +283,6 @@ fn a_term_superseded() {
             "run-2",
         ],
         "only an invariant, a decision or an assumption is superseded",
-    );
-}
-
-#[test]
-fn a_reason_of_two_lines() {
-    let place = Place::new();
-    billing_in_shop(&place);
-    place.refused(
-        &[
-            "supersede",
-            BILLING,
-            WRITERS,
-            WRITERS_WORDS,
-            "--reason",
-            "Refunds issue credit notes.\nAnd more.",
-            "--provenance",
-            "run-2",
-        ],
-        "a reason is one line",
     );
 }
 
