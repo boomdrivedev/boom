@@ -22,6 +22,7 @@ mod log;
 mod mcp;
 mod narratives;
 mod notes;
+mod page;
 mod persons;
 mod plan_words;
 mod query;
