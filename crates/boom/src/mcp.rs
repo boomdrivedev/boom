@@ -85,6 +85,10 @@ pub(crate) const ABSENT: &[(&str, &str)] = &[
         "withdraw",
         "an author withdraws its own proposal from the command line in this release",
     ),
+    (
+        "supersede",
+        "an agent proposes a supersession from the command line in this release",
+    ),
     ("mcp", "it is the server itself"),
     (
         "hook session-start",
