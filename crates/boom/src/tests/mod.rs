@@ -35,6 +35,7 @@ mod search;
 mod signatures;
 mod store;
 mod supersede;
+mod terms;
 mod verify;
 mod views;
 mod withdraw;
