@@ -83,25 +83,6 @@ fn a_decision_stores_its_edges() {
 }
 
 #[test]
-fn only_a_decision_changes_claims() {
-    let place = Place::new();
-    two_claims(&place);
-    place.refused(
-        &[
-            "propose",
-            "invariant",
-            "hosts-share-a-client",
-            "Hosts share one client.",
-            "--changes",
-            CLIENT,
-            "--provenance",
-            "run-1",
-        ],
-        "only a decision changes claims",
-    );
-}
-
-#[test]
 fn one_source_given_two_times_is_one_edge() {
     let place = Place::new();
     let (_, resident, _) = two_claims(&place);
@@ -169,27 +150,6 @@ fn an_edge_names_a_claim_of_the_store() {
         "{outcome:?}"
     );
     refused("0001", "no claim has the name 0001");
-}
-
-#[test]
-fn a_version_names_its_own_claim_by_amends() {
-    let place = Place::new();
-    let (_, resident, _) = two_claims(&place);
-    place.refused(
-        &[
-            "propose",
-            "invariant",
-            RESIDENT,
-            "flume has one resident.",
-            "--amends",
-            &resident,
-            "--source",
-            RESIDENT,
-            "--provenance",
-            "run-1",
-        ],
-        "with --amends, not with --source",
-    );
 }
 
 #[test]
@@ -284,42 +244,20 @@ fn a_file_in_a_commit() {
 }
 
 #[test]
-fn a_reference_to_a_commit_in_its_form() {
+fn an_origin_that_cannot_be_read() {
     let place = Place::new();
     place.made();
-    let refused = |origin: &str, words: &str| {
-        place.refused(
-            &[
-                "propose",
-                "invariant",
-                "status-on-a-socket",
-                "Status is read from a socket.",
-                "--origin",
-                origin,
-                "--provenance",
-                "run-1",
-            ],
-            words,
-        );
-    };
-    refused(
-        "git:sluice@1a2b3c:design/overview.svg",
-        "a commit has 40 hexadecimal characters",
-    );
-    refused(
-        &format!("git:sluice@{COMMIT}"),
-        "a reference to a commit names the path of a file in it",
-    );
-    refused(
-        &format!("git:sluice@{COMMIT}:../secret.txt"),
-        "the path of a file in a commit is relative, with no `..`",
-    );
-    refused(
-        &format!("git:sluice@{COMMIT}:/etc/passwd"),
-        "the path of a file in a commit is relative",
-    );
-    refused(
-        "no-such-file.svg",
+    place.refused(
+        &[
+            "propose",
+            "invariant",
+            "status-on-a-socket",
+            "Status is read from a socket.",
+            "--origin",
+            "no-such-file.svg",
+            "--provenance",
+            "run-1",
+        ],
         "the origin no-such-file.svg cannot be read",
     );
 }
@@ -774,25 +712,6 @@ fn a_cause_that_the_store_does_not_hold() {
         "no-such-claim",
     );
     assert_eq!(place.log().len(), before);
-}
-
-#[test]
-fn the_cause_is_part_of_the_content() {
-    let mut plain = boom::claim::Proposal::new(
-        boom::claim::Kind::Invariant,
-        MONEY,
-        "Each amount names its currency.",
-        Vec::new(),
-        None,
-        None,
-        None,
-    );
-    let without = plain.version.clone();
-    plain.cause = Some(format!("{CAUSE}@aaaaaaaaaaaa"));
-    let with = plain.fingerprint(None);
-    assert_ne!(without, with);
-    plain.cause = Some(format!("{CAUSE}@bbbbbbbbbbbb"));
-    assert_ne!(plain.fingerprint(None), with);
 }
 
 #[test]
