@@ -1911,6 +1911,44 @@ pub fn proposed_names(conn: &Connection) -> Result<std::collections::BTreeSet<St
     Ok(names)
 }
 
+/// A version whose edge `supersedes` names a version of a claim, as the
+/// views hold it (claim-versions, "The person reads what a supersession
+/// takes out of force").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Superseding {
+    /// The claim whose version holds the edge.
+    pub name: String,
+    /// That version.
+    pub version: String,
+    /// Its status.
+    pub status: String,
+    /// The version of the named claim that the edge meant.
+    pub meant: String,
+}
+
+/// Each version whose edge `supersedes` names a version of the claim
+/// `name`, with its status, from the rows `supersedes` of `edges`: in the
+/// order of the claims' names, then the order proposed.
+pub fn superseding(conn: &Connection, name: &str) -> Result<Vec<Superseding>, Failure> {
+    let mut statement = conn.prepare(
+        "SELECT e.name, e.version, v.status, e.target_version FROM edges e \
+         JOIN versions v ON v.name = e.name AND v.version = e.version \
+         WHERE e.edge = 'supersedes' AND e.target_name = ?1 \
+         ORDER BY e.name, v.proposed_in",
+    )?;
+    let rows = statement
+        .query_map([name], |row| {
+            Ok(Superseding {
+                name: row.get(0)?,
+                version: row.get(1)?,
+                status: row.get(2)?,
+                meant: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// The name of each claim that a version of the claim `name` supersedes,
 /// as the rows `supersedes` of `edges` hold them, sorted.
 fn superseded_names(conn: &Connection, name: &str) -> Result<Vec<String>, Failure> {
@@ -2345,6 +2383,9 @@ pub struct VersionView {
     /// The version of another claim that forced it, `<name>@<version>`
     /// (claim-edges, "A version names its cause").
     pub cause: Option<String>,
+    /// The accepted version of another claim that it supersedes, with its
+    /// reason (claim-versions).
+    pub supersedes: Option<crate::claim::Supersession>,
     /// The repositories its proposal binds.
     pub repositories: Vec<String>,
     /// The contexts its proposal binds, each `<name>@<version>` of the
@@ -2450,6 +2491,7 @@ fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<Versio
             view: proposal.view,
             narratives: proposal.narratives,
             cause: proposal.cause,
+            supersedes: proposal.supersedes,
             repositories: from_json(&repositories)?,
             contexts: from_json(&contexts)?,
             proposer: from_json(&proposer)?,

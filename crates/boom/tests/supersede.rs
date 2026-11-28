@@ -618,3 +618,63 @@ fn the_accept_lists_the_claim_it_supersedes() {
         "{outcome:?}"
     );
 }
+
+#[test]
+fn a_superseded_claim_shown() {
+    let place = Place::new();
+    let (ada, b1) = billing_in_shop(&place);
+    let w1 = superseded_by_writers(&place, &[])["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    place.accepted(WRITERS, &w1, &ada);
+    let shown = place.show(BILLING);
+    assert_eq!(shown["accepted"], serde_json::Value::Null);
+    assert_eq!(shown["versions"][0]["version"], b1.as_str());
+    assert_eq!(shown["versions"][0]["status"], "superseded");
+    assert_eq!(
+        shown["superseded_by"],
+        serde_json::json!([{
+            "claim": WRITERS,
+            "version": w1,
+            "status": "accepted",
+            "meant": b1,
+        }])
+    );
+    let words = place.run(&["show", BILLING]);
+    assert!(
+        words.stdout.contains(&format!(
+            "superseded by:\n  {} accepted, on {}\n",
+            at(WRITERS, &w1),
+            at(BILLING, &b1)
+        )),
+        "{words:?}"
+    );
+}
+
+#[test]
+fn a_version_that_supersedes_shown() {
+    let place = Place::new();
+    let (_, b1) = billing_in_shop(&place);
+    let w1 = superseded_by_writers(&place, &[])["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let shown = place.show(&at(WRITERS, &w1));
+    assert_eq!(shown["supersedes"]["claim"], BILLING);
+    assert_eq!(shown["supersedes"]["version"], b1.as_str());
+    assert_eq!(shown["supersedes"]["statement"], BILLING_WORDS);
+    assert_eq!(shown["supersedes"]["reason"], REASON);
+    let words = place.run(&["show", &at(WRITERS, &w1)]);
+    assert!(
+        words.stdout.contains(&format!(
+            "supersedes: {}\n  {BILLING_WORDS}\n  reason: {REASON}\n",
+            at(BILLING, &b1)
+        )),
+        "{words:?}"
+    );
+    assert_eq!(
+        place.show(&at(BILLING, &b1))["supersedes"],
+        serde_json::Value::Null
+    );
+}

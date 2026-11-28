@@ -3430,7 +3430,70 @@ fn edges_shown(
         "origin".into(),
         Value::Array(view.origin.iter().map(origin_json).collect()),
     );
+    // The accepted version of another claim that it supersedes, with its
+    // reason (claim-versions, "The person reads what a supersession takes
+    // out of force").
+    let supersedes = match &view.supersedes {
+        Some(supersession) => {
+            let stored = &supersession.claim;
+            let (name, version) = stored.split_once('@').unwrap_or((stored, ""));
+            let (statement, accepted) = store::meant(conn, name, version)?.ok_or_else(|| {
+                Failure::not_run(format!(
+                    "the views hold no version {stored}, which an edge names"
+                ))
+            })?;
+            words.push_str(&format!("supersedes: {stored}\n  {statement}\n"));
+            if let Some(reason) = &supersession.reason {
+                words.push_str(&format!("  reason: {reason}\n"));
+            }
+            json!({
+                "claim": name,
+                "version": version,
+                "statement": statement,
+                "accepted": accepted,
+                "reason": supersession.reason,
+            })
+        }
+        None => Value::Null,
+    };
+    object.insert("supersedes".into(), supersedes);
     Ok((object, words))
+}
+
+/// The versions that supersede a version of `claim`, as `boom show
+/// <name>` gives them under `superseded by:`, each with its status and
+/// the version of `claim` that its edge meant (claim-versions).
+fn superseding_shown(
+    conn: &rusqlite::Connection,
+    claim: &store::ClaimView,
+) -> Result<(Value, String), Failure> {
+    let found = store::superseding(conn, &claim.name)?;
+    let mut words = String::new();
+    if !found.is_empty() {
+        words.push_str("\nsuperseded by:\n");
+    }
+    for superseding in &found {
+        words.push_str(&format!(
+            "  {}@{} {}, on {}@{}\n",
+            superseding.name,
+            superseding.version,
+            superseding.status,
+            claim.name,
+            superseding.meant
+        ));
+    }
+    let listed = found
+        .iter()
+        .map(|superseding| {
+            json!({
+                "claim": superseding.name,
+                "version": superseding.version,
+                "status": superseding.status,
+                "meant": superseding.meant,
+            })
+        })
+        .collect();
+    Ok((Value::Array(listed), words))
 }
 
 /// The contexts a version binds, as `boom show <name>@<version>` gives
@@ -3649,6 +3712,8 @@ fn claim_shown(
     }
     let (resting, resting_words) = resting_shown(conn, claim)?;
     words.push_str(&resting_words);
+    let (superseded_by, superseded_words) = superseding_shown(conn, claim)?;
+    words.push_str(&superseded_words);
     let bound = if claim.kind == Kind::Context.as_str() {
         let (bound, bound_words) = bound_shown(conn, claim)?;
         words.push_str(&bound_words);
@@ -3694,6 +3759,7 @@ fn claim_shown(
     object.insert("newest".into(), Value::Object(newest_json));
     object.insert("versions".into(), Value::Array(versions));
     object.extend(resting);
+    object.insert("superseded_by".into(), superseded_by);
     if let Some(bound) = bound {
         object.insert("bound".into(), bound);
     }

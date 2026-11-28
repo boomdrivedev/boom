@@ -15,7 +15,7 @@
 
 ## 4. boom show and boom mcp
 
-- [ ] 4.1 In `cli.rs` and `store.rs`, `boom show <name>@<version>` gives the edge `supersedes` with its reason, and `boom show <name>` gives `superseded_by`, each version whose edge names the claim, with its status, read from the rows `supersedes` of `edges`, in words and in `boom-show/2`. The tests of the scenarios "A superseded claim shown" and "A version that supersedes shown" pass: `devenv shell -- cargo test -p boom --test supersede shown`
+- [x] 4.1 In `cli.rs` and `store.rs`, `boom show <name>@<version>` gives the edge `supersedes` with its reason, and `boom show <name>` gives `superseded_by`, each version whose edge names the claim, with its status, read from the rows `supersedes` of `edges`, in words and in `boom-show/2`. The tests of the scenarios "A superseded claim shown" and "A version that supersedes shown" pass: `devenv shell -- cargo test -p boom --test supersede shown`
 - [ ] 4.2 In `mcp.rs`, name `supersede` in `ABSENT`, with why: an agent proposes a supersession from the command line in this release. The unit test passes: `devenv shell -- cargo test -p boom --lib mcp::tests::each_command_served_or_absent`
 
 ## 5. The pages
