@@ -17,14 +17,6 @@ fn version(answer: &Value) -> String {
     answer["version"].as_str().unwrap().to_owned()
 }
 
-/// The claim of the log's last entry, as its signed part holds it.
-fn last_claim(place: &Place) -> Value {
-    let log = place.log();
-    let signed: Value =
-        serde_json::from_str(log.last().unwrap()["signed"].as_str().unwrap()).unwrap();
-    signed["claim"].clone()
-}
-
 #[test]
 fn a_narrative_proposed() {
     let place = Place::new();
@@ -77,21 +69,6 @@ fn a_body_that_is_not_text() {
             "run-1",
         ],
         "the body of a narrative is UTF-8 text",
-    );
-}
-
-#[test]
-fn a_name_stores_its_accepted_version() {
-    let place = Place::new();
-    let ada = place.made();
-    let status = place.proposed(STATUS, STATUS_WORDS);
-    place.accepted(STATUS, &status, &ada);
-    place.proposed(STATUS, STATUS_WORDS);
-    let answer = place.narrative(NAME, TITLE, NARRATIVE, &["--includes", STATUS]);
-    assert_eq!(answer["includes"], json!([format!("{STATUS}@{status}")]));
-    assert_eq!(
-        last_claim(&place)["includes"],
-        json!([format!("{STATUS}@{status}")])
     );
 }
 

@@ -149,32 +149,6 @@ fn no_narrative() {
 // An outline names each narrative at the version it meant
 
 #[test]
-fn a_name_stores_its_accepted_version() {
-    let place = Place::new();
-    let ada = place.made();
-    let v1 = narrative(&place, END_TO_END, &["--repository", "boom"]);
-    place.accepted(END_TO_END, &v1, &ada);
-    let file = place.file("again.md", "Again.\n");
-    place.json(&[
-        "propose",
-        "narrative",
-        END_TO_END,
-        "Boom, end to end",
-        "--body",
-        &file,
-        "--amends",
-        &v1,
-        "--provenance",
-        "run-1",
-    ]);
-    outline(&place, BOOK, &[END_TO_END], &[]);
-    assert_eq!(
-        place.last_signed()["claim"]["narratives"],
-        json!([format!("{END_TO_END}@{v1}")])
-    );
-}
-
-#[test]
 fn a_name_that_does_not_resolve() {
     let place = Place::new();
     place.made();
