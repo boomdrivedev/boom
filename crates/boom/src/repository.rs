@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(found(None, None).as_deref(), Some("sluice"));
         assert!(matches!(
             find(None, Some("nowhere"), Some(&repo), &store),
-            Err(Failure::Refused(why)) if why.contains("nowhere")
+            Err(Failure::Refused(why)) if why.contains("BOOM_REPOSITORY names nowhere")
         ));
     }
 

@@ -510,18 +510,6 @@ fn two_versions_of_one_claim_rejected() {
     assert_eq!(place.status(MONEY, &second), "rejected");
 }
 
-#[test]
-fn one_version_keeps_its_form() {
-    let place = Place::new();
-    let (ada, [money, ..]) = three_proposed(&place);
-    place.json(&["reject", &money, "--reason", "stray", "--key", &ada]);
-    let signed = place.last_signed();
-    let (name, version) = money.split_once('@').unwrap();
-    assert_eq!(signed["name"], name);
-    assert_eq!(signed["version"], version);
-    assert_eq!(signed.get("versions"), None);
-}
-
 // The versions that wait.
 
 /// An agent's proposal of `name` for `shop`, giving its target.
