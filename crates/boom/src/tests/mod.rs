@@ -7,11 +7,16 @@
 
 mod support;
 
+mod batches;
 mod claims;
 mod contexts;
 mod edges;
 mod import;
+mod narratives;
+mod notes;
+mod persons;
 mod query;
 mod search;
 mod supersede;
+mod views;
 mod withdraw;
