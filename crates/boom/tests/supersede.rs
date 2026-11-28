@@ -86,3 +86,244 @@ fn a_version_no_longer_accepted_from_another_program() {
     assert_eq!(shown.code, 2, "{shown:?}");
     assert_eq!(place.status(BILLING, &b2), "accepted");
 }
+
+/// The names of the claims `boom query --repository <repository>` gives.
+fn queried(place: &Place, repository: &str) -> Vec<String> {
+    place.json(&["query", "--repository", repository])["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|claim| claim["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// `boom supersede billing-owns-invoices invoice-writers` with the
+/// statement of invoice-writers, the reason and `extra`, by an agent.
+fn superseded_by_writers(place: &Place, extra: &[&str]) -> serde_json::Value {
+    let mut args = vec![
+        "supersede",
+        BILLING,
+        WRITERS,
+        WRITERS_WORDS,
+        "--reason",
+        REASON,
+        "--provenance",
+        "run-2",
+    ];
+    args.extend(extra);
+    place.json(&args)
+}
+
+// boom supersede proposes a version that supersedes an accepted claim.
+
+#[test]
+fn a_proposal_that_waits() {
+    let place = Place::new();
+    let (_, b1) = billing_in_shop(&place);
+    let entries = place.log().len();
+    let outcome = place.run(&[
+        "supersede",
+        BILLING,
+        WRITERS,
+        WRITERS_WORDS,
+        "--reason",
+        REASON,
+        "--provenance",
+        "run-2",
+    ]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
+    assert!(
+        outcome
+            .stdout
+            .contains(&format!("supersedes: {}", at(BILLING, &b1))),
+        "{outcome:?}"
+    );
+    assert_eq!(place.acts().len(), entries + 1);
+    assert_eq!(place.acts().last().unwrap(), "proposed");
+    let shown = place.show(WRITERS);
+    let w1 = shown["versions"][0]["version"].as_str().unwrap().to_owned();
+    assert_eq!(place.status(WRITERS, &w1), "proposed");
+    assert_eq!(place.status(BILLING, &b1), "accepted");
+    assert_eq!(queried(&place, "shop"), [BILLING]);
+}
+
+#[test]
+fn a_supersession_answered_as_json() {
+    let place = Place::new();
+    let (_, b1) = billing_in_shop(&place);
+    let answer = superseded_by_writers(&place, &[]);
+    assert_eq!(answer["format"], "boom-supersede/1");
+    assert_eq!(answer["claim"], WRITERS);
+    let w1 = answer["version"].as_str().unwrap();
+    assert_eq!(w1.len(), 12);
+    assert_eq!(answer["status"], "proposed");
+    assert_eq!(answer["supersedes"], BILLING);
+    assert_eq!(answer["supersedes_version"], b1.as_str());
+    assert_eq!(answer["reason"], REASON);
+    assert_eq!(
+        answer["accept"],
+        format!("boom accept {} --key <key>", at(WRITERS, w1))
+    );
+}
+
+#[test]
+fn a_claim_with_no_accepted_version() {
+    let place = Place::new();
+    place.made();
+    proposed(&place, "cash-only", "We take cash only.", &["--system"]);
+    place.refused(
+        &[
+            "supersede",
+            "cash-only",
+            "bank-transfers",
+            "We take bank transfers.",
+            "--provenance",
+            "run-2",
+        ],
+        "cash-only has no accepted version to supersede",
+    );
+}
+
+#[test]
+fn a_claim_that_supersedes_itself() {
+    let place = Place::new();
+    billing_in_shop(&place);
+    let outcome = place.refused(
+        &["supersede", BILLING, BILLING, "--provenance", "run-2"],
+        "a claim does not supersede itself",
+    );
+    assert!(
+        outcome.stderr.contains("boom propose --amends"),
+        "{outcome:?}"
+    );
+}
+
+// A supersession by a new claim.
+
+#[test]
+fn a_new_claim_replaces_an_invariant() {
+    let place = Place::new();
+    let (_, b1) = billing_in_shop(&place);
+    let answer = place.json(&[
+        "supersede",
+        BILLING,
+        WRITERS,
+        WRITERS_WORDS,
+        "--provenance",
+        "run-2",
+    ]);
+    assert_eq!(answer["claim"], WRITERS);
+    assert_eq!(answer["kind"], "invariant");
+    assert_eq!(answer["base"], serde_json::Value::Null);
+    assert_eq!(answer["repositories"], serde_json::json!(["shop"]));
+    assert_eq!(answer["supersedes"], BILLING);
+    assert_eq!(answer["supersedes_version"], b1.as_str());
+    assert_eq!(answer["reason"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_new_claim_of_another_kind() {
+    let place = Place::new();
+    let (_, b1) = billing_in_shop(&place);
+    let body = place.decision_body();
+    let answer = place.json(&[
+        "supersede",
+        BILLING,
+        WRITERS,
+        "Refunds write their own credit notes.",
+        "--kind",
+        "decision",
+        "--body",
+        &body,
+        "--provenance",
+        "run-2",
+    ]);
+    assert_eq!(answer["kind"], "decision");
+    assert_eq!(answer["supersedes_version"], b1.as_str());
+    let version = answer["version"].as_str().unwrap();
+    let shown = place.show(&at(WRITERS, version));
+    assert_eq!(shown["kind"], "decision");
+    assert_eq!(shown["body"], support::DECISION, "{shown}");
+}
+
+#[test]
+fn a_new_claim_with_no_statement() {
+    let place = Place::new();
+    billing_in_shop(&place);
+    place.refused(
+        &["supersede", BILLING, WRITERS, "--provenance", "run-2"],
+        "a new claim gives its statement",
+    );
+}
+
+// A version names the accepted version that it supersedes.
+
+#[test]
+fn the_reason_is_part_of_the_content() {
+    let place = Place::new();
+    billing_in_shop(&place);
+    let first = superseded_by_writers(&place, &[]);
+    let entries = place.log().len();
+    let again = superseded_by_writers(&place, &[]);
+    assert_eq!(first["version"], again["version"]);
+    assert_eq!(place.log().len(), entries);
+    let other = place.json(&[
+        "supersede",
+        BILLING,
+        WRITERS,
+        WRITERS_WORDS,
+        "--reason",
+        "A duplicate.",
+        "--provenance",
+        "run-2",
+    ]);
+    assert_ne!(first["version"], other["version"]);
+    assert_eq!(place.log().len(), entries + 1);
+}
+
+#[test]
+fn a_term_superseded() {
+    let place = Place::new();
+    let ada = place.made();
+    let answer = place.json(&[
+        "propose",
+        "term",
+        "owner",
+        "A person who registers persons.",
+        "--repository",
+        "shop",
+        "--provenance",
+        "run-1",
+    ]);
+    place.accepted("owner", answer["version"].as_str().unwrap(), &ada);
+    place.refused(
+        &[
+            "supersede",
+            "owner",
+            "registrar",
+            "A person who grants roles.",
+            "--provenance",
+            "run-2",
+        ],
+        "only an invariant, a decision or an assumption is superseded",
+    );
+}
+
+#[test]
+fn a_reason_of_two_lines() {
+    let place = Place::new();
+    billing_in_shop(&place);
+    place.refused(
+        &[
+            "supersede",
+            BILLING,
+            WRITERS,
+            WRITERS_WORDS,
+            "--reason",
+            "Refunds issue credit notes.\nAnd more.",
+            "--provenance",
+            "run-2",
+        ],
+        "a reason is one line",
+    );
+}

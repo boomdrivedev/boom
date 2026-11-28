@@ -404,6 +404,39 @@ enum Command {
         #[arg(long, hide = true)]
         key: Option<PathBuf>,
     },
+    /// Propose a version that supersedes the accepted version of a claim:
+    /// an agent's, naming its provenance, or a person's, signed with their
+    /// key. The version is a first version of a new claim, or a version of
+    /// an accepted claim of the same kind that copies its words. The claim
+    /// stays accepted until a person accepts the version.
+    Supersede {
+        /// The claim it supersedes, by its name.
+        name: String,
+        /// The claim whose version supersedes it: a name that no accepted
+        /// claim has, or an accepted claim of the same kind.
+        new_name: String,
+        /// The version's statement, in one line. A new claim gives it; for
+        /// an accepted claim, it replaces the statement that the version
+        /// copies.
+        statement: Option<String>,
+        /// The kind of a new claim; by default the kind of the claim it
+        /// supersedes.
+        #[arg(long)]
+        kind: Option<Kind>,
+        /// A file whose text is the version's body; for an accepted claim,
+        /// it replaces the body that the version copies.
+        #[arg(long, value_name = "FILE")]
+        body: Option<PathBuf>,
+        /// Why it supersedes the claim, in one line.
+        #[arg(long, value_name = "TEXT")]
+        reason: Option<String>,
+        /// The agent's session or run.
+        #[arg(long, value_name = "TEXT", conflicts_with = "key")]
+        provenance: Option<String>,
+        /// A person's security key, to propose as that person.
+        #[arg(long)]
+        key: Option<PathBuf>,
+    },
     /// Show a claim and its versions, or one version, `<name>@<version>`,
     /// or write the bytes of an artifact a version came from.
     Show {
@@ -1068,6 +1101,31 @@ fn execute(
                 view,
                 narratives,
                 cause,
+                supersedes: None,
+            },
+            key.as_deref().map(|key| given_key(key, env)).as_ref(),
+            keys,
+            env,
+        ),
+        Command::Supersede {
+            name,
+            new_name,
+            statement,
+            kind,
+            body,
+            reason,
+            provenance,
+            key,
+        } => supersede(
+            &path?,
+            Superseding {
+                name,
+                new_name,
+                statement,
+                kind,
+                body,
+                reason,
+                provenance,
             },
             key.as_deref().map(|key| given_key(key, env)).as_ref(),
             keys,
@@ -1531,6 +1589,8 @@ struct Proposed {
     view: Option<String>,
     narratives: Vec<String>,
     cause: Option<String>,
+    /// The accepted version it supersedes, which `boom supersede` names.
+    supersedes: Option<crate::claim::Supersession>,
 }
 
 impl Proposed {
@@ -1922,6 +1982,7 @@ fn propose(
                     .chain(&proposed.includes)
                     .chain(&proposed.narratives)
                     .chain(&proposed.cause)
+                    .chain(proposed.supersedes.as_ref().map(|s| &s.claim))
                     .map(|edge| edge.split_once('@').map_or(edge.as_str(), |(name, _)| name)),
             )
             .map(str::to_owned),
@@ -1990,10 +2051,12 @@ fn propose(
             && answers.is_empty()
             && narratives.is_empty()
             && cause.is_none()
+            && proposed.supersedes.is_none()
         {
             return proposal;
         }
         proposal.cause = cause;
+        proposal.supersedes.clone_from(&proposed.supersedes);
         proposal.source = source;
         proposal.changes = changes;
         proposal.origin = origin.clone();
@@ -2097,6 +2160,12 @@ fn propose(
     if let Some(cause) = &proposal.cause {
         words.push_str(&format!("cause: {cause}\n"));
     }
+    if let Some(supersession) = &proposal.supersedes {
+        words.push_str(&format!("supersedes: {}\n", supersession.claim));
+        if let Some(reason) = &supersession.reason {
+            words.push_str(&format!("reason: {reason}\n"));
+        }
+    }
     if let Some(accept) = &accept {
         words.push_str(&format!("a person accepts it with: {accept}\n"));
     }
@@ -2125,6 +2194,127 @@ fn propose(
         }),
         words,
     })
+}
+
+/// `boom supersede`'s arguments.
+struct Superseding {
+    name: String,
+    new_name: String,
+    statement: Option<String>,
+    kind: Option<Kind>,
+    body: Option<PathBuf>,
+    reason: Option<String>,
+    provenance: Option<String>,
+}
+
+/// `boom supersede` (claim-versions, "boom supersede proposes a version
+/// that supersedes an accepted claim"): it reads `<name>` and `<new-name>`
+/// and proposes, through [`propose`], one version that names the accepted
+/// version of `<name>`: a first version of a new claim, which binds what
+/// that version binds. The judge checks the version again in the write's
+/// transaction, so a claim that changed after the read is refused there.
+fn supersede(
+    path: &Path,
+    given: Superseding,
+    key: Option<&Key>,
+    keys: &dyn Keys,
+    env: &Env,
+) -> Result<Answer, Failure> {
+    if key.is_none()
+        && given
+            .provenance
+            .as_deref()
+            .is_none_or(|p| p.trim().is_empty())
+    {
+        return Err(Failure::refused(
+            "an agent's proposal names its provenance, with --provenance; a person's is signed, with --key",
+        ));
+    }
+    let name = given.name.as_str();
+    let new_name = given.new_name.as_str();
+    for named in [name, new_name] {
+        crate::claim::check_name(named).map_err(Failure::Refused)?;
+    }
+    if name == new_name {
+        return Err(Failure::refused(format!(
+            "{}: amend {name} with boom propose --amends",
+            crate::claim::NOT_ITSELF
+        )));
+    }
+    if let Some(reason) = &given.reason {
+        crate::claim::check_reason(reason).map_err(Failure::Refused)?;
+    }
+    let state = Store::open(path)?.state_for(&Scope::names([name, new_name]))?;
+    let Some(old) = state.named(name).first().copied() else {
+        return Err(Failure::refused(format!("no claim has the name {name}")));
+    };
+    let kinds = |kind: Kind, named: &str| {
+        Failure::refused(format!(
+            "{}: {named} is {} {}",
+            crate::claim::SUPERSEDED_KINDS,
+            crate::claim::article(kind),
+            kind.as_str()
+        ))
+    };
+    if !crate::claim::supersedes_kind(old.kind) {
+        return Err(kinds(old.kind, name));
+    }
+    let Some(standing) = old.standing.as_deref().and_then(|v| old.version(v)) else {
+        return Err(Failure::refused(format!(
+            "{name} has no accepted version to supersede: a version supersedes the accepted version of a claim"
+        )));
+    };
+    let supersedes = crate::claim::Supersession {
+        claim: format!("{name}@{}", standing.proposal.version),
+        reason: given.reason.clone(),
+    };
+    let kind = given.kind.unwrap_or(old.kind);
+    if !crate::claim::supersedes_kind(kind) {
+        return Err(kinds(kind, new_name));
+    }
+    let Some(statement) = given.statement.clone() else {
+        return Err(Failure::refused(format!(
+            "a new claim gives its statement: no claim named {new_name} is accepted, so boom supersede {name} {new_name} <statement>"
+        )));
+    };
+    let proposed = Proposed {
+        kind,
+        name: given.new_name.clone(),
+        statement,
+        amends: None,
+        body: given.body.clone(),
+        provenance: given.provenance.clone(),
+        repositories: standing.repositories.clone(),
+        contexts: context::names(&standing.contexts)
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        system: standing.binds_the_whole_system(),
+        replaces: Vec::new(),
+        source: Vec::new(),
+        changes: Vec::new(),
+        origin: Vec::new(),
+        paths: Vec::new(),
+        includes: Vec::new(),
+        answers: Vec::new(),
+        view: None,
+        narratives: Vec::new(),
+        cause: None,
+        supersedes: Some(supersedes),
+    };
+    let mut answer = propose(path, proposed, key, keys, env)?;
+    let object = answer
+        .json
+        .as_object_mut()
+        .expect("boom propose answers one object");
+    object.insert("format".to_owned(), json!("boom-supersede/1"));
+    object.insert("supersedes".to_owned(), json!(name));
+    object.insert(
+        "supersedes_version".to_owned(),
+        json!(standing.proposal.version),
+    );
+    object.insert("reason".to_owned(), json!(given.reason));
+    Ok(answer)
 }
 
 /// Each plan word in a proposal's statement and body, as the JSON of
