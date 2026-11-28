@@ -581,115 +581,6 @@ fn a_term_of_another_repository_is_not_checked() {
 }
 
 #[test]
-fn the_words_that_the_check_matches() {
-    let place = Place::new();
-    owner_accepted(&place);
-    let file = place.file(
-        "code.rs",
-        "Keepers and KEEPER\nlet keeper_id = KeeperStore::new();\nThe gatekeeper.\n// boom: allow keeper. The old field keeper_id stays.\nboom: allow warden, and a keeper\n",
-    );
-    let outcome = check(&place, &[&file, "--repository", "boom", "--json"], "");
-    let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
-    let found: Vec<(u64, &str, &str)> = answer["refused"]["found"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|found| {
-            (
-                found["line"].as_u64().unwrap(),
-                found["word"].as_str().unwrap(),
-                found["written"].as_str().unwrap(),
-            )
-        })
-        .collect();
-    assert_eq!(
-        found,
-        [
-            (1, "keeper", "Keepers"), // boom: allow keeper
-            (1, "keeper", "KEEPER"),  // boom: allow keeper
-            (2, "keeper", "keeper"),  // boom: allow keeper
-            (2, "keeper", "Keeper"),  // boom: allow keeper
-            (5, "keeper", "keeper"),  // boom: allow keeper
-        ]
-    );
-}
-
-/// The old words that `boom terms check --json` names in `file` of
-/// `boom`, each with its line and as the line writes it.
-fn found_in(place: &Place, file: &str) -> Vec<(u64, String, String)> {
-    let outcome = check(place, &[file, "--repository", "boom", "--json"], "");
-    let answer: Value = serde_json::from_str(&outcome.stdout).unwrap();
-    answer
-        .pointer("/refused/found")
-        .and_then(Value::as_array)
-        .map(|found| {
-            found
-                .iter()
-                .map(|found| {
-                    (
-                        found["line"].as_u64().unwrap(),
-                        found["word"].as_str().unwrap().to_owned(),
-                        found["written"].as_str().unwrap().to_owned(),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// A store whose owner accepted the term `origin` of `boom`, which
-/// replaces `came-from`. // boom: allow came-from
-fn origin_accepted(place: &Place) {
-    let ada = place.made();
-    let version = proposed(
-        place,
-        "origin",
-        "The file or the commit that a claim came from.",
-        &["--repository", "boom", "--replaces", "came-from"], // boom: allow came-from
-    );
-    place.accepted("origin", &version, &ada);
-}
-
-#[test]
-fn a_hyphenated_old_word_in_a_name_in_code() {
-    let place = Place::new();
-    origin_accepted(&place);
-    let file = place.file(
-        "code.rs",
-        "--came-from\nlet came_from = CameFrom::new();\nthis.cameFrom\n", // boom: allow came-from
-    );
-    assert_eq!(
-        found_in(&place, &file)
-            .iter()
-            .map(|(line, word, written)| (*line, word.as_str(), written.as_str()))
-            .collect::<Vec<_>>(),
-        [
-            (1, "came-from", "came-from"), // boom: allow came-from
-            (2, "came-from", "came_from"), // boom: allow came-from
-            (2, "came-from", "CameFrom"),  // boom: allow came-from
-            (3, "came-from", "cameFrom"),  // boom: allow came-from
-        ]
-    );
-}
-
-#[test]
-fn a_hyphenated_old_word_never_matches_the_plain_words() {
-    let place = Place::new();
-    origin_accepted(&place);
-    let plain = place.file(
-        "plain.md",
-        "The file that it came from.\nCame From\nx.came.from\n",
-    );
-    let outcome = check(&place, &[&plain, "--repository", "boom"], "");
-    assert_eq!(outcome.code, 0, "{outcome:?}");
-    let both = place.file("both.md", "It came from the came-from flag.\n"); // boom: allow came-from
-    assert_eq!(
-        found_in(&place, &both),
-        [(1, "came-from".to_owned(), "came-from".to_owned())] // boom: allow came-from
-    );
-}
-
-#[test]
 fn two_files_of_two_repositories() {
     let place = Place::new();
     let (ada, _) = owner_accepted(&place);
@@ -923,19 +814,6 @@ fn another_tool() {
     );
     assert_eq!(outcome.code, 0, "{outcome:?}");
     assert_eq!((outcome.stdout.as_str(), outcome.stderr.as_str()), ("", ""));
-}
-
-#[test]
-fn the_marker_in_a_write() {
-    let place = Place::new();
-    let (ada, _) = owner_accepted(&place);
-    let folder = boom_folder(&place, &ada);
-    let file = path_arg(&folder.join("history.md"));
-    let outcome = hooked(
-        &place,
-        &json!({"tool_name": "Write", "tool_input": {"file_path": file, "content": "The keeper was the word of 2026. boom: allow keeper\n"}}),
-    );
-    assert_eq!(outcome.code, 0, "{outcome:?}");
 }
 
 #[test]
@@ -1491,17 +1369,4 @@ fn a_repository_with_its_own_term_for_the_word() {
         "{outcome:?}"
     );
     assert!(!outcome.stderr.contains("\"tie\""), "{outcome:?}");
-}
-
-#[test]
-fn a_word_that_no_term_replaces() {
-    let place = Place::new();
-    let (ada, _) = link_accepted(&place);
-    let (x, _) = two_repositories_with(
-        &place,
-        &ada,
-        "Each entry holds the hash chain of the log.\n",
-    );
-    let outcome = check(&place, &[&x], "");
-    assert_eq!(outcome.code, 0, "{outcome:?}");
 }

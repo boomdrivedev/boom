@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn a_hyphenated_old_word_matches_its_joined_names() {
         assert_eq!(
-            words("came-from came_from cameFrom CameFrom CAME_FROM Came-From x.came_from_id") // boom: allow came-from
+            words("came-from came_from cameFrom CameFrom CAME_FROM Came-From x.came_from_id --came-from") // boom: allow came-from
                 .iter()
                 .map(|(_, word, written)| (word.as_str(), written.as_str()))
                 .collect::<Vec<_>>(),
@@ -461,6 +461,7 @@ mod tests {
                 ("came-from", "CAME_FROM"), // boom: allow came-from
                 ("came-from", "Came-From"), // boom: allow came-from
                 ("came-from", "came_from"), // boom: allow came-from
+                ("came-from", "came-from"), // boom: allow came-from
             ]
         );
     }
