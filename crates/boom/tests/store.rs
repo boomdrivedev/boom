@@ -305,13 +305,11 @@ fn a_read_during_a_write_sees_none_of_it() {
             [],
         )
         .unwrap();
-    let started = std::time::Instant::now();
+    // The writer holds its lock until the read ends: a read that waited
+    // on it would give up when the store's wait for a write passes, and
+    // fail. The test waits on the read's answer, and on no clock
+    // (a-gate-test-asserts-no-real-time-bound).
     let during = place.show("money-has-currency");
-    assert!(
-        started.elapsed() < std::time::Duration::from_secs(5),
-        "the read waited on the write: {:?}",
-        started.elapsed()
-    );
     assert_eq!(during, before);
     writer.execute_batch("ROLLBACK").unwrap();
 }
