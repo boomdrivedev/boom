@@ -15,6 +15,8 @@ mod claims;
 mod command_line;
 mod contexts;
 mod edges;
+mod hooks;
+mod hooks_store;
 mod import;
 mod lineage;
 mod links;
