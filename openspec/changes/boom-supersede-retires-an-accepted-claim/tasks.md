@@ -1,6 +1,6 @@
 ## 1. The edge in a version
 
-- [ ] 1.1 In `claim.rs`, add `Supersession`, `claim` as `<name>@<version>` and an optional `reason`, as `Proposal::supersedes`, written only where present, and as the last field of `Content`, so each version without it keeps its fingerprint. `Proposal::check` refuses a `supersedes` that is not an edge of another claim, on a version that is not an invariant, a decision or an assumption, on a version with history, or with a reason that is empty or of two lines. The unit tests `a_supersession_is_part_of_the_content` and `a_supersession_has_its_form` pass: `devenv shell -- cargo test -p boom --lib claim::tests::a_supersession`
+- [x] 1.1 In `claim.rs`, add `Supersession`, `claim` as `<name>@<version>` and an optional `reason`, as `Proposal::supersedes`, written only where present, and as the last field of `Content`, so each version without it keeps its fingerprint. `Proposal::check` refuses a `supersedes` that is not an edge of another claim, on a version that is not an invariant, a decision or an assumption, on a version with history, or with a reason that is empty or of two lines. The unit tests `a_supersession_is_part_of_the_content` and `a_supersession_has_its_form` pass: `devenv shell -- cargo test -p boom --lib claim::tests::a_supersession`
 
 ## 2. The proposal
 
