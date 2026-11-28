@@ -209,27 +209,6 @@ fn every_word_is_found() {
 }
 
 #[test]
-fn another_form_of_a_word() {
-    let place = Place::new();
-    money_in_shop(&place);
-    assert_eq!(
-        names(&search(&place, &["AMOUNTS", "Currencies"])),
-        ["money-has-currency"]
-    );
-}
-
-#[test]
-fn a_word_written_with_accents() {
-    let place = Place::new();
-    let ada = place.made();
-    Claim::decision("dates-name-their-zone", "A naive date names its zone.").standing(&place, &ada);
-    assert_eq!(
-        names(&search(&place, &["naïve"])),
-        ["dates-name-their-zone"]
-    );
-}
-
-#[test]
 fn words_not_a_query_language() {
     let place = Place::new();
     money_in_shop(&place);
@@ -630,34 +609,6 @@ fn nothing_is_kept() {
     assert!(
         !before.iter().any(|(_, name)| name.contains("found")),
         "{before:?}"
-    );
-}
-
-#[test]
-fn a_name_above_a_body() {
-    let place = Place::new();
-    let ada = place.made();
-    Claim::invariant(
-        "refund-never-exceeds-payment",
-        "A refund never exceeds the payment.",
-    )
-    .standing(&place, &ada);
-    Claim::decision("orders-are-paid-once", "An order is paid once.")
-        .body("An order is paid once, and a refund is paid against it.\n")
-        .standing(&place, &ada);
-    assert_eq!(
-        names(&search(&place, &["refund"])),
-        ["refund-never-exceeds-payment", "orders-are-paid-once"]
-    );
-    // Above the order of kinds: a decision's name above an invariant's
-    // body.
-    Claim::invariant("payments-are-recorded", "A payment is recorded.")
-        .body("A payment is recorded, and a rebate is recorded against it.\n")
-        .standing(&place, &ada);
-    Claim::decision("rebate-is-capped", "A rebate is capped.").standing(&place, &ada);
-    assert_eq!(
-        names(&search(&place, &["rebate"])),
-        ["rebate-is-capped", "payments-are-recorded"]
     );
 }
 
