@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 8,
+  "branch": "main",
+  "head": "6b3901fe784ef526868337c5dca995f41059af3f",
+  "from": {
+    "agent": "change/boom-captures-intent-by-context",
+    "worktree": "pull/18",
+    "head": "change/boom-captures-intent-by-context"
+  },
+  "submitted": "2026-11-20T23:33:23Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "ab1c40ad1216c93a740e5302b3ee654c3dcb35b8",
+    "on": "b78b174118d8230de3e95f6430aec246c60b881a",
+    "submissions": [
+      8
+    ]
+  },
+  "result": "passed",
+  "landed_as": "c0cbe116afcbb4952cdb17c2f0222e65c8e806f8",
+  "subject": "the rules page and records 0001 to 0011 and the rename, in Plain",
+  "under_test_ms": 33000
+}

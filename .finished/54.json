@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 54,
+  "branch": "main",
+  "head": "36a40001d3d6ec93f87d39447462790f790a0c27",
+  "from": {
+    "agent": "change/boom-supersede-retires-an-accepted-claim",
+    "worktree": "pull/56",
+    "head": "change/boom-supersede-retires-an-accepted-claim"
+  },
+  "submitted": "2026-11-28T00:40:34Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "a2d80892b822d755ae06279151404b5aa9919f1a",
+    "on": "9c9706751e2c8c662fd58d56b256d70e183844fc",
+    "submissions": [
+      54
+    ]
+  },
+  "result": "passed",
+  "landed_as": "f6044818756fa9504be2fe546482df92e4ec935c",
+  "subject": "change/boom-supersede-retires-an-accepted-claim",
+  "under_test_ms": 189000
+}

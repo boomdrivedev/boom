@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 49,
+  "branch": "main",
+  "head": "5c3855b3210b1b4f29aa0a4ce9fc7615975a2b39",
+  "from": {
+    "agent": "change/boom-records-the-acts-on-what-it-owns",
+    "worktree": "pull/51",
+    "head": "change/boom-records-the-acts-on-what-it-owns"
+  },
+  "submitted": "2026-11-26T02:57:01Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 2,
+  "state": "landed",
+  "tested": {
+    "combination": "482c67d43271117808692da97f207262e3c77b44",
+    "on": "c6a0476ede787887070ae5d17e8cb1cfbbbfcefc",
+    "submissions": [
+      49
+    ]
+  },
+  "result": "passed",
+  "landed_as": "df31ecad6812b278ebd96f80e4df5c87832c9a05",
+  "subject": "change/boom-records-the-acts-on-what-it-owns",
+  "under_test_ms": 188000
+}

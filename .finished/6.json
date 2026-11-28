@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 6,
+  "branch": "main",
+  "head": "6a091b7ccdb47382d91461bda53ba2f86f218774",
+  "from": {
+    "agent": "change/releases-take-turns",
+    "worktree": "pull/17",
+    "head": "change/releases-take-turns"
+  },
+  "submitted": "2026-11-20T23:31:46Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "88680c86aaca7873a66c8c1488b8a94531459845",
+    "on": "2ebea232cfd260e1ca2d95ca4fa69c1cb2b79fa2",
+    "submissions": [
+      6
+    ]
+  },
+  "result": "passed",
+  "landed_as": "b78b174118d8230de3e95f6430aec246c60b881a",
+  "subject": "the release workflow takes turns, so two landings close together get two tags",
+  "under_test_ms": 34000
+}

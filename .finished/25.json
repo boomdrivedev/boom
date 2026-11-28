@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 25,
+  "branch": "main",
+  "head": "ef1784808813b1decedf0fa39db6be40577781d0",
+  "from": {
+    "agent": "change/boom-page-draws-diagrams",
+    "worktree": "pull/32",
+    "head": "change/boom-page-draws-diagrams"
+  },
+  "submitted": "2026-11-23T17:06:39Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "18c09c91f3796c7169b93c62e98ee11c6ba6878f",
+    "on": "4f2cb5c657f098383b01a84ef6b6c619e79b6ed5",
+    "submissions": [
+      25
+    ]
+  },
+  "result": "passed",
+  "landed_as": "dba38026d6c10ee7cd972f878009afb194b926b2",
+  "subject": "change/boom-page-draws-diagrams",
+  "under_test_ms": 137000
+}

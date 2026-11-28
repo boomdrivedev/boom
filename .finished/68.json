@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 68,
+  "branch": "main",
+  "head": "d97f16cc553e4938dcc2196912b43cb1714cb3af",
+  "from": {
+    "agent": "chore/boom-tests-its-logic-as-units",
+    "worktree": "pull/69",
+    "head": "chore/boom-tests-its-logic-as-units"
+  },
+  "submitted": "2026-11-28T08:56:32Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "02882ca9ea2dcff88c6e18289cf4e5123e83b793",
+    "on": "3b231aaacaad25ead186bdc4d31d604b1d9cdafd",
+    "submissions": [
+      68
+    ]
+  },
+  "result": "passed",
+  "landed_as": "11990a5e349976302a49c0a2278a55972764224f",
+  "subject": "chore/boom-tests-its-logic-as-units",
+  "under_test_ms": 50000
+}

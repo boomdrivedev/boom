@@ -1,0 +1,29 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 28,
+  "branch": "main",
+  "head": "86a3c6c4555fac5252a875bc7638c7e8bff7e0a4",
+  "from": {
+    "agent": "change/boom-computes-views",
+    "worktree": "pull/35",
+    "head": "change/boom-computes-views"
+  },
+  "submitted": "2026-11-23T22:15:20Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "withdrawn",
+  "conflict": {
+    "paths": [
+      "crates/boom/src/claim.rs",
+      "crates/boom/src/cli.rs",
+      "crates/boom/src/judge.rs"
+    ],
+    "with": []
+  },
+  "withdrawn": {
+    "by": "resubmission",
+    "at": "2026-11-23T22:18:12Z"
+  },
+  "subject": "change/boom-computes-views"
+}

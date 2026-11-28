@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 23,
+  "branch": "main",
+  "head": "7a1cdf4e5d50f31ce2a312828c09d9e228da6e2e",
+  "from": {
+    "agent": "change/boom-keeps-narratives",
+    "worktree": "pull/30",
+    "head": "change/boom-keeps-narratives"
+  },
+  "submitted": "2026-11-23T14:20:03Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "d6c72ecf7ee488c50a44394375e65ec1a0674c19",
+    "on": "72b333b54a02168dbd4274c9361b90f6c3776483",
+    "submissions": [
+      23
+    ]
+  },
+  "result": "passed",
+  "landed_as": "7f468c9bb015e4bfd307c6be20e3ccec20a98987",
+  "subject": "change/boom-keeps-narratives",
+  "under_test_ms": 141000
+}

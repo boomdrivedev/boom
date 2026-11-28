@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 29,
+  "branch": "main",
+  "head": "9703d3dcc1ab816326a077e0a9c598d503d396d5",
+  "from": {
+    "agent": "change/boom-computes-views",
+    "worktree": "pull/35",
+    "head": "change/boom-computes-views"
+  },
+  "submitted": "2026-11-23T22:18:12Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 2,
+  "state": "landed",
+  "tested": {
+    "combination": "b898a0512fe19d7ae64506be908a3dd8da78131c",
+    "on": "dcb1dd782c720e617013f1c3a57aae04885fd03d",
+    "submissions": [
+      29
+    ]
+  },
+  "result": "passed",
+  "landed_as": "148f4b6330edec6e510aefbe3fb2e249edb0dbf5",
+  "subject": "change/boom-computes-views",
+  "under_test_ms": 141000
+}

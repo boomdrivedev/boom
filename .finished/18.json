@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 18,
+  "branch": "main",
+  "head": "8bf37ca1d7eec3c5449f1fa328eb7e983aad3160",
+  "from": {
+    "agent": "change/contexts-own-paths",
+    "worktree": "pull/25",
+    "head": "change/contexts-own-paths"
+  },
+  "submitted": "2026-11-21T15:04:28Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "01fbe50020cdd3df4f5c1d5e8c2c9537738db108",
+    "on": "ac0b18a4ed81d9721a7caa7c6e3a3303807123e0",
+    "submissions": [
+      18
+    ]
+  },
+  "result": "passed",
+  "landed_as": "f666a3a3301a3a435e6c0fd700aceb764fce0a37",
+  "subject": "change/contexts-own-paths",
+  "under_test_ms": 59000
+}

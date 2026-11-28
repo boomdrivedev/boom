@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 22,
+  "branch": "main",
+  "head": "a11d4b2dbb7e3fd85e639ad5f3ddfde8461239e6",
+  "from": {
+    "agent": "chore/archive-agents-get-context-in-layers",
+    "worktree": "pull/29",
+    "head": "chore/archive-agents-get-context-in-layers"
+  },
+  "submitted": "2026-11-22T23:33:25Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "e3a5129ca5f9c8d485b411e73cfb6b078e422e2d",
+    "on": "e095620d0ab303a24c5b216afeb889aba285c3fe",
+    "submissions": [
+      22
+    ]
+  },
+  "result": "passed",
+  "landed_as": "72b333b54a02168dbd4274c9361b90f6c3776483",
+  "subject": "chore/archive-agents-get-context-in-layers",
+  "under_test_ms": 38000
+}

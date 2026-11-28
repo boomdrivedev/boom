@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 27,
+  "branch": "main",
+  "head": "bbef2453cb61e518dcf55eef69f2a5e4eb76a343",
+  "from": {
+    "agent": "chore/archive-terms-bind-the-whole-system",
+    "worktree": "pull/34",
+    "head": "chore/archive-terms-bind-the-whole-system"
+  },
+  "submitted": "2026-11-23T22:08:58Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "6f41d7e5d3ae00c8e1d36b797119baffb5a97067",
+    "on": "59dec6b7acd8ba67f5e0f909f79b5f5168ddb6df",
+    "submissions": [
+      27
+    ]
+  },
+  "result": "passed",
+  "landed_as": "dcb1dd782c720e617013f1c3a57aae04885fd03d",
+  "subject": "chore/archive-terms-bind-the-whole-system",
+  "under_test_ms": 46000
+}

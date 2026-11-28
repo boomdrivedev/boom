@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 21,
+  "branch": "main",
+  "head": "64b0502eaeb87dde7e67c42819cfa44370c18a42",
+  "from": {
+    "agent": "change/agents-get-context-in-layers",
+    "worktree": "pull/28",
+    "head": "change/agents-get-context-in-layers"
+  },
+  "submitted": "2026-11-22T22:27:20Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "784f9e0895337cf19e9a1b04be9daf5fc517337c",
+    "on": "a439ca473d84692747e95181a6886f5a31f3b63d",
+    "submissions": [
+      21
+    ]
+  },
+  "result": "passed",
+  "landed_as": "e095620d0ab303a24c5b216afeb889aba285c3fe",
+  "subject": "change/agents-get-context-in-layers",
+  "under_test_ms": 74000
+}

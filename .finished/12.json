@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 12,
+  "branch": "main",
+  "head": "3eb1752e2add8dbaea20246979888a8cad768c16",
+  "from": {
+    "agent": "change/one-accept-signs-many",
+    "worktree": "pull/21",
+    "head": "change/one-accept-signs-many"
+  },
+  "submitted": "2026-11-21T00:58:28Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "e1f1cc1054ed87f5779cedac960ae0197f3cb9d8",
+    "on": "3f6f8c06cea6f5a42bbd990934593d9feb9a3bbf",
+    "submissions": [
+      12
+    ]
+  },
+  "result": "passed",
+  "landed_as": "8e7fa62396d3fb934c561d4823151a2e5c3cfc5c",
+  "subject": "boom accept of several versions is one entry that the key signs one time",
+  "under_test_ms": 43000
+}

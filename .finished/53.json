@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 53,
+  "branch": "main",
+  "head": "f77f5915d417b86a30eb08aaa208c7f8f1cdfd41",
+  "from": {
+    "agent": "fix/boom-accept-takes-a-term-of-each-repository",
+    "worktree": "pull/55",
+    "head": "fix/boom-accept-takes-a-term-of-each-repository"
+  },
+  "submitted": "2026-11-27T20:54:11Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "0079ae0d6a378737a2485bdf527476597fe9b18c",
+    "on": "afa596093b7b8a7124d14dd7c6ea56cbc822180d",
+    "submissions": [
+      53
+    ]
+  },
+  "result": "passed",
+  "landed_as": "9c9706751e2c8c662fd58d56b256d70e183844fc",
+  "subject": "fix/boom-accept-takes-a-term-of-each-repository",
+  "under_test_ms": 309000
+}

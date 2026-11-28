@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 37,
+  "branch": "main",
+  "head": "960c471b988dbed2f8bfa135974aeffa8b1af538",
+  "from": {
+    "agent": "change/boom-accepts-a-batch",
+    "worktree": "pull/43",
+    "head": "change/boom-accepts-a-batch"
+  },
+  "submitted": "2026-11-24T14:13:08Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "abf314f08dc7faf0cfb39c552cb91b270d538e81",
+    "on": "ad231882483ad5df8da896db2f05a3cc70020b85",
+    "submissions": [
+      37
+    ]
+  },
+  "result": "passed",
+  "landed_as": "62666ede93807484199e9d504f2617783394c276",
+  "subject": "change/boom-accepts-a-batch",
+  "under_test_ms": 147000
+}

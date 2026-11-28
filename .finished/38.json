@@ -1,0 +1,38 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 38,
+  "branch": "main",
+  "head": "0201d1aa52a629c0b08f149b45c383e69c26b5e4",
+  "from": {
+    "agent": "change/a-note-reaches-its-elaboration",
+    "worktree": "pull/44",
+    "head": "change/a-note-reaches-its-elaboration"
+  },
+  "submitted": "2026-11-24T15:32:40Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "withdrawn",
+  "tested": {
+    "combination": "10d88544bc63ed9e8d58d394cb036a30712d7166",
+    "on": "62666ede93807484199e9d504f2617783394c276",
+    "submissions": [
+      38
+    ]
+  },
+  "result": "failed",
+  "failed": [
+    {
+      "task": "root:terms",
+      "log": "/Users/chuck/.local/share/boomdrive/repositories/boomdrivedev/boom/boom.git/sluice-remote/origin/.logs/main/c39/root:terms.log",
+      "not_run": "sluice's sandbox refused the run network-outbound remote:*:53 (by moon), network-outbound /private/var/run/mDNSResponder (a name lookup, by moon), file-write-data /Users/chuck/.cargo/.package-cache (by cargo) and 4 more"
+    }
+  ],
+  "withdrawn": {
+    "by": "resubmission",
+    "at": "2026-11-24T15:42:07Z"
+  },
+  "subject": "change/a-note-reaches-its-elaboration",
+  "under_test_ms": 260000,
+  "runs_with_no_outcome": 1
+}

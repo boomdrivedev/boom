@@ -1,0 +1,29 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 44,
+  "branch": "main",
+  "head": "bc6e60a4f070fb0a2da9d06493da5517e4b3c974",
+  "from": {
+    "agent": "change/boom-records-the-acts-on-what-it-owns",
+    "worktree": "pull/48",
+    "head": "change/boom-records-the-acts-on-what-it-owns"
+  },
+  "submitted": "2026-11-26T02:27:54Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "withdrawn",
+  "conflict": {
+    "paths": [
+      "crates/boom/src/entry.rs",
+      "crates/boom/src/judge.rs",
+      "crates/boom/src/mcp.rs"
+    ],
+    "with": []
+  },
+  "withdrawn": {
+    "by": "resubmission",
+    "at": "2026-11-26T02:32:40Z"
+  },
+  "subject": "change/boom-records-the-acts-on-what-it-owns"
+}

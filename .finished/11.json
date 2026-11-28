@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 11,
+  "branch": "main",
+  "head": "7e3eb50c40241e985e009d0b6d8260a3365813e1",
+  "from": {
+    "agent": "change/log-names-each-version",
+    "worktree": "pull/20",
+    "head": "change/log-names-each-version"
+  },
+  "submitted": "2026-11-21T00:00:21Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "7619633203bf8d9caf5a0b443aefd4210e50cfdb",
+    "on": "18272d706e7395ac1ca7919932751af4d0bbfbeb",
+    "submissions": [
+      11
+    ]
+  },
+  "result": "passed",
+  "landed_as": "3f6f8c06cea6f5a42bbd990934593d9feb9a3bbf",
+  "subject": "boom log names the version of each act, and boom show takes an entry number and shows a claim's newest version in full",
+  "under_test_ms": 94000
+}

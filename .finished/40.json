@@ -1,0 +1,48 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 40,
+  "branch": "main",
+  "head": "e23e3b8719673a670b912460e4bcc027ab86583a",
+  "from": {
+    "agent": "change/a-signed-act-stands-under-its-rules",
+    "worktree": "pull/45",
+    "head": "change/a-signed-act-stands-under-its-rules"
+  },
+  "submitted": "2026-11-24T15:56:20Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "withdrawn",
+  "tested": {
+    "combination": "e2b0a7d5196e4dbce3a0f6264ab45bb76c106586",
+    "on": "b640da0ffca2805497c0b42c08bb0b9ba1da6e91",
+    "submissions": [
+      40
+    ]
+  },
+  "result": "failed",
+  "failed": [
+    {
+      "task": "boom:lint",
+      "log": "/Users/chuck/.local/share/boomdrive/repositories/boomdrivedev/boom/boom.git/sluice-remote/origin/.logs/main/c41/boom:lint.log",
+      "not_run": "sluice's sandbox refused the run network-outbound remote:*:53 (by moon), network-outbound /private/var/run/mDNSResponder (a name lookup, by moon), file-write-data /Users/chuck/.cargo/.package-cache (by cargo) and 3 more"
+    },
+    {
+      "task": "boom:test",
+      "log": "/Users/chuck/.local/share/boomdrive/repositories/boomdrivedev/boom/boom.git/sluice-remote/origin/.logs/main/c41/boom:test.log",
+      "not_run": "sluice's sandbox refused the run network-outbound remote:*:53 (by moon), network-outbound /private/var/run/mDNSResponder (a name lookup, by moon), file-write-data /Users/chuck/.cargo/.package-cache (by cargo) and 3 more"
+    },
+    {
+      "task": "boom:typecheck",
+      "log": "/Users/chuck/.local/share/boomdrive/repositories/boomdrivedev/boom/boom.git/sluice-remote/origin/.logs/main/c41/boom:typecheck.log",
+      "not_run": "sluice's sandbox refused the run network-outbound remote:*:53 (by moon), network-outbound /private/var/run/mDNSResponder (a name lookup, by moon), file-write-data /Users/chuck/.cargo/.package-cache (by cargo) and 3 more"
+    }
+  ],
+  "withdrawn": {
+    "by": "resubmission",
+    "at": "2026-11-24T16:10:30Z"
+  },
+  "subject": "change/a-signed-act-stands-under-its-rules",
+  "under_test_ms": 278000,
+  "runs_with_no_outcome": 1
+}

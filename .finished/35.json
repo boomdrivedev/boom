@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 35,
+  "branch": "main",
+  "head": "cf71a70b0d0f390dcfceae39ba0f739c1c82d1f9",
+  "from": {
+    "agent": "change/boom-page-has-a-claims-view",
+    "worktree": "pull/41",
+    "head": "change/boom-page-has-a-claims-view"
+  },
+  "submitted": "2026-11-24T03:17:55Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "46a6665442c60a3ac3019060459663c52680321c",
+    "on": "58dd1356bf171488a8048ad1b787eefb1e21fe0a",
+    "submissions": [
+      35
+    ]
+  },
+  "result": "passed",
+  "landed_as": "3cb1b743c7577a3c71be794ae7cdd4f4145fe89a",
+  "subject": "change/boom-page-has-a-claims-view",
+  "under_test_ms": 304000
+}

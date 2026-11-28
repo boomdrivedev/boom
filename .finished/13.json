@@ -1,0 +1,26 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 13,
+  "branch": "main",
+  "head": "19d7344348594d58436f4da76d6afb59b5ef90d1",
+  "from": {
+    "agent": "boomdrive-design",
+    "worktree": "pull/12",
+    "head": "design/a-repository-moves-into-boom-whole"
+  },
+  "submitted": "2026-11-18T23:11:55Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "11677f761017266eb19e5807269b3001bb47479a",
+    "on": "54c73d182c51482f263d6a99aacf933415b488e0",
+    "submissions": [
+      13
+    ]
+  },
+  "result": "passed",
+  "landed_as": "a1cc9eecfd109b99e63e317497d01fb95856bb14",
+  "subject": "design/a-repository-moves-into-boom-whole"
+}
