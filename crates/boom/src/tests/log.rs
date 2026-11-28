@@ -1,8 +1,7 @@
 //! The log: entries appended and never edited, numbered in order,
 //! chained, and each judged whenever it is read (record-log).
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use support::Place;
 

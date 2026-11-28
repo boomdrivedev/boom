@@ -1,7 +1,6 @@
 //! A person's signed approval of a plan (plan-approvals).
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use boom::entry::{Act, Actor, Entry};
 use support::Place;

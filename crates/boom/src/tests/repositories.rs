@@ -1,8 +1,7 @@
 //! The repositories a store registers, each one's remote and its
 //! delivery at session start, set by an owner (repository-settings).
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use serde_json::json;
 use support::Place;

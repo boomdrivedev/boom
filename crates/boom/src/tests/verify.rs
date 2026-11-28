@@ -3,8 +3,7 @@
 //! (record-store, "boom verify checks the log and rebuilds the views";
 //! command-line, "Verify answered as JSON").
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use serde_json::json;
 use support::Place;

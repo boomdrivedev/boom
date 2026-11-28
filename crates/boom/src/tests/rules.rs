@@ -2,8 +2,7 @@
 //! its rule set, and a rule that came into force with a later rule set
 //! does not hold for it (record-log).
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use std::path::Path;
 

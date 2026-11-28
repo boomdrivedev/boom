@@ -7,16 +7,27 @@
 
 mod support;
 
+mod approvals;
+mod attachments;
 mod batches;
+mod changes;
 mod claims;
 mod contexts;
 mod edges;
 mod import;
+mod lineage;
+mod links;
+mod log;
 mod narratives;
 mod notes;
 mod persons;
+mod plan_words;
 mod query;
+mod repositories;
+mod rules;
+mod scale;
 mod search;
 mod supersede;
+mod verify;
 mod views;
 mod withdraw;
