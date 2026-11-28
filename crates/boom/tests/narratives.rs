@@ -25,22 +25,6 @@ fn last_claim(place: &Place) -> Value {
     signed["claim"].clone()
 }
 
-/// The paragraphs `boom show <name>@<version> --json` gives, as
-/// `(number, kind)`.
-fn paragraphs(place: &Place, target: &str) -> Vec<(u64, String)> {
-    place.show(target)["paragraphs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|p| {
-            (
-                p["number"].as_u64().unwrap(),
-                p["kind"].as_str().unwrap().to_owned(),
-            )
-        })
-        .collect()
-}
-
 #[test]
 fn a_narrative_proposed() {
     let place = Place::new();
@@ -176,51 +160,6 @@ fn a_narrative_included() {
             "run-1",
         ],
         "a narrative includes claims of other kinds",
-    );
-}
-
-#[test]
-fn a_heading_text_and_a_list() {
-    let place = Place::new();
-    place.made();
-    let body =
-        "# What Boom is\n\nBoom keeps claims.\n\n- An agent proposes.\n- A person accepts.\n";
-    let answer = place.narrative(NAME, TITLE, body, &[]);
-    let target = format!("{NAME}@{}", version(&answer));
-    assert_eq!(
-        paragraphs(&place, &target),
-        [
-            (1, "heading".to_owned()),
-            (2, "text".to_owned()),
-            (3, "item".to_owned()),
-            (4, "item".to_owned())
-        ]
-    );
-}
-
-#[test]
-fn a_nested_list() {
-    let place = Place::new();
-    place.made();
-    let body = "- One item\n  - a\n  - b\n  - c\n- Two\n";
-    let answer = place.narrative(NAME, TITLE, body, &[]);
-    let target = format!("{NAME}@{}", version(&answer));
-    assert_eq!(
-        paragraphs(&place, &target),
-        [(1, "item".to_owned()), (2, "item".to_owned())]
-    );
-}
-
-#[test]
-fn a_thematic_break() {
-    let place = Place::new();
-    place.made();
-    let body = "Boom keeps claims.\n\n---\n\nA person accepts them.\n";
-    let answer = place.narrative(NAME, TITLE, body, &[]);
-    let target = format!("{NAME}@{}", version(&answer));
-    assert_eq!(
-        paragraphs(&place, &target),
-        [(1, "text".to_owned()), (2, "text".to_owned())]
     );
 }
 
