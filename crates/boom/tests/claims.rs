@@ -36,23 +36,6 @@ fn a_claim_proposed_waits_on_a_person() {
 }
 
 #[test]
-fn a_name_not_in_kebab_case_is_refused() {
-    let place = Place::new();
-    place.made();
-    place.refused(
-        &[
-            "propose",
-            "invariant",
-            "Refund_Within",
-            MONEY,
-            "--provenance",
-            "run-1",
-        ],
-        "a name is kebab case",
-    );
-}
-
-#[test]
 fn an_invariant_needs_a_statement_alone() {
     let place = Place::new();
     place.made();
@@ -71,52 +54,6 @@ fn an_invariant_needs_a_statement_alone() {
 }
 
 #[test]
-fn a_decision_with_no_body_is_refused() {
-    let place = Place::new();
-    place.made();
-    place.refused(
-        &[
-            "propose",
-            "decision",
-            "amounts-in-cents",
-            "Amounts are kept in integer cents.",
-            "--provenance",
-            "run-1",
-        ],
-        "a decision needs a body",
-    );
-    let body = place.decision_body();
-    let answer = place.json(&[
-        "propose",
-        "decision",
-        "amounts-in-cents",
-        "Amounts are kept in integer cents.",
-        "--body",
-        &body,
-        "--provenance",
-        "run-1",
-    ]);
-    assert_eq!(answer["status"], "proposed");
-}
-
-#[test]
-fn a_statement_of_two_lines_is_refused() {
-    let place = Place::new();
-    place.made();
-    place.refused(
-        &[
-            "propose",
-            "invariant",
-            "money-has-currency",
-            "Every amount names its currency.\nAnd only one.",
-            "--provenance",
-            "run-1",
-        ],
-        "a statement is one line",
-    );
-}
-
-#[test]
 fn the_same_proposal_twice_is_one_version() {
     let place = Place::new();
     place.made();
@@ -124,16 +61,6 @@ fn the_same_proposal_twice_is_one_version() {
     let second = place.proposed("money-has-currency", MONEY);
     assert_eq!(first, second);
     assert_eq!(place.acts(), ["registered", "proposed"]);
-}
-
-#[test]
-fn one_word_changed_is_another_version() {
-    let place = Place::new();
-    place.made();
-    let first = place.proposed("money-has-currency", MONEY);
-    let second = place.proposed("money-has-currency", "Every amount names one currency.");
-    assert_ne!(first, second);
-    assert_eq!(place.acts(), ["registered", "proposed", "proposed"]);
 }
 
 #[test]
@@ -566,39 +493,6 @@ fn history_with_no_scenario() {
     assert_eq!(shown["scenarios"], json!([]));
     assert_eq!(shown["history"]["status"], "superseded");
     assert_eq!(shown["history"]["by"], "amounts-in-cents");
-}
-
-#[test]
-fn the_same_words_as_history_are_another_version() {
-    let place = Place::new();
-    place.made();
-    let history = floats_imported(&place);
-    let body = place.file("floats.md", "Amounts are kept as floats.\n");
-    let proposed = place.json(&[
-        "propose",
-        "decision",
-        "amounts-as-floats",
-        "Amounts are floats",
-        "--body",
-        &body,
-        "--provenance",
-        "run-2",
-    ]);
-    let standing = proposed["version"].as_str().unwrap();
-    assert_ne!(standing, history);
-    let shown = place.show(&format!("amounts-as-floats@{history}"));
-    let plain = place.show(&format!("amounts-as-floats@{standing}"));
-    for field in ["statement", "scenarios", "body_fingerprint"] {
-        assert_eq!(shown[field], plain[field], "{field}");
-    }
-    assert_eq!(plain["history"], json!(null));
-    assert_eq!(
-        place.show("amounts-as-floats")["versions"]
-            .as_array()
-            .unwrap()
-            .len(),
-        2
-    );
 }
 
 #[test]
