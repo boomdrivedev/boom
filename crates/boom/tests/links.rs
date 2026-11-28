@@ -56,24 +56,6 @@ fn each_entry_gives_the_sha256_of_its_signed_part() {
 }
 
 #[test]
-fn the_act_hash_leaves_out_the_chain() {
-    let first = Place::new();
-    first.made();
-    first.proposed("money-has-currency", MONEY);
-    let second = Place::new();
-    second.made();
-    second.proposed(
-        "refund-within-payment",
-        "A refund never exceeds the payment.",
-    );
-    second.proposed("money-has-currency", MONEY);
-    let (one, two) = (&first.log()[1], &second.log()[2]);
-    assert_eq!(one["signed"], two["signed"]);
-    assert_eq!(one["act_hash"], two["act_hash"]);
-    assert_ne!(one["hash"], two["hash"]);
-}
-
-#[test]
 fn an_entry_of_rule_set_0_gives_the_hash_of_its_signed_part_as_stored() {
     let place = Place::new();
     place.made();

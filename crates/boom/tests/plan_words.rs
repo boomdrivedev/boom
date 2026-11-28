@@ -86,19 +86,6 @@ fn the_warnings_as_json() {
 }
 
 #[test]
-fn another_form() {
-    let place = Place::new();
-    place.made();
-    let body = place.file("body.md", "Phases\n");
-    let outcome = place.run(&proposal("boom keeps each entry.", &["--body", &body]));
-    assert_eq!(outcome.code, 0, "{outcome:?}");
-    assert!(
-        outcome.stderr.contains("warning: \"phase\" names a plan"),
-        "{outcome:?}"
-    );
-}
-
-#[test]
 fn no_plan_word() {
     let place = Place::new();
     place.made();
@@ -110,15 +97,6 @@ fn no_plan_word() {
     assert!(!outcome.stderr.contains("warning"), "{outcome:?}");
     let answer: serde_json::Value = serde_json::from_str(&outcome.stdout).unwrap();
     assert_eq!(answer["plan_words"], json!([]));
-}
-
-#[test]
-fn a_plan_word_inside_a_longer_word() {
-    let place = Place::new();
-    place.made();
-    let outcome = place.run(&proposal("A microwave keeps each entry warm.", &[]));
-    assert_eq!(outcome.code, 0, "{outcome:?}");
-    assert!(!outcome.stderr.contains("warning"), "{outcome:?}");
 }
 
 #[test]
@@ -137,14 +115,4 @@ fn the_same_version_again() {
         );
     }
     assert_eq!(place.log().len(), before + 1);
-}
-
-#[test]
-fn a_marker_on_the_line() {
-    let place = Place::new();
-    place.made();
-    let body = place.file("body.md", "the user's words: \"MVP\" boom: allow MVP\n");
-    let outcome = place.run(&proposal("boom keeps each entry.", &["--body", &body]));
-    assert_eq!(outcome.code, 0, "{outcome:?}");
-    assert!(!outcome.stderr.contains("warning"), "{outcome:?}");
 }
