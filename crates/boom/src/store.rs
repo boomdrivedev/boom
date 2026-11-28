@@ -1069,9 +1069,17 @@ fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), 
         Act::Proposed { claim, .. } => {
             write_claim(conn, holding(state, &claim.name, &claim.version))
         }
-        Act::Accepted { versions }
-        | Act::Rejected { versions, .. }
-        | Act::Withdrawn { versions, .. } => {
+        Act::Accepted { versions } => {
+            for named in versions {
+                write_claim(conn, holding(state, &named.name, &named.version))?;
+                // The claim that the accept took out of force (claim-versions).
+                if let Some(superseded) = judge::superseded_by(state, &named.name, &named.version) {
+                    write_claim(conn, superseded)?;
+                }
+            }
+            Ok(())
+        }
+        Act::Rejected { versions, .. } | Act::Withdrawn { versions, .. } => {
             for named in versions {
                 write_claim(conn, holding(state, &named.name, &named.version))?;
             }
@@ -1903,6 +1911,19 @@ pub fn proposed_names(conn: &Connection) -> Result<std::collections::BTreeSet<St
     Ok(names)
 }
 
+/// The name of each claim that a version of the claim `name` supersedes,
+/// as the rows `supersedes` of `edges` hold them, sorted.
+fn superseded_names(conn: &Connection, name: &str) -> Result<Vec<String>, Failure> {
+    let mut statement = conn.prepare_cached(
+        "SELECT DISTINCT target_name FROM edges WHERE edge = 'supersedes' AND name = ?1 \
+         ORDER BY target_name",
+    )?;
+    let names = statement
+        .query_map([name], |row| row.get::<_, String>(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(names)
+}
+
 /// Each version whose edge `cause` names `name@version`, as the views hold
 /// it, each `(name, version)`.
 pub fn naming_cause(
@@ -1943,12 +1964,18 @@ pub fn load_state(conn: &Connection) -> Result<State, Failure> {
 }
 
 /// The part of the state the views hold that `scope` names: every
-/// person, the claims it names, and, where it asks, every claim with an
-/// imported version. No other claim's rows are read.
+/// person, the claims it names with the claims their versions supersede,
+/// and, where it asks, every claim with an imported version. No other
+/// claim's rows are read.
 pub fn load_state_for(conn: &Connection, scope: &Scope) -> Result<State, Failure> {
     let mut state = load_persons(conn)?;
     for name in &scope.names {
         load_claims(conn, &mut state, "WHERE name = ?1", [name.as_str()])?;
+        // The claims its versions supersede, which an accept takes out of
+        // force (claim-versions).
+        for superseded in superseded_names(conn, name)? {
+            load_claims(conn, &mut state, "WHERE name = ?1", [superseded.as_str()])?;
+        }
     }
     if scope.imported {
         load_claims(

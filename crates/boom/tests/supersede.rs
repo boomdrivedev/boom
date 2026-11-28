@@ -450,3 +450,137 @@ fn an_accepted_claim_of_another_kind() {
         "--kind decision: tests-as-units is an invariant",
     );
 }
+
+// The accept of a supersession takes the claim it names out of force.
+
+/// The names of the claims `boom search <words> --all` gives.
+fn searched(place: &Place, words: &[&str]) -> Vec<String> {
+    let mut args = vec!["search"];
+    args.extend(words);
+    args.push("--all");
+    place.json(&args)["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|claim| claim["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn a_new_claim_accepted() {
+    let place = Place::new();
+    let (ada, b1) = billing_in_shop(&place);
+    let w1 = superseded_by_writers(&place, &[])["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let before = place.log();
+    let answer = place.accepted(WRITERS, &w1, &ada);
+    assert_eq!(answer["status"], "accepted");
+    assert_eq!(place.status(WRITERS, &w1), "accepted");
+    assert_eq!(place.status(BILLING, &b1), "superseded");
+    assert_eq!(place.show(BILLING)["accepted"], serde_json::Value::Null);
+    assert_eq!(queried(&place, "shop"), [WRITERS]);
+    let log = place.log();
+    assert_eq!(log.len(), before.len() + 1);
+    assert_eq!(log[..before.len()], before[..]);
+    assert!(log.iter().all(|entry| entry["counted"] == true), "{log:?}");
+    assert_eq!(
+        place.json(&["verify"])["rebuilt"],
+        serde_json::json!([]),
+        "the views an accept wrote are those a replay builds"
+    );
+}
+
+#[test]
+fn the_duplicate_leaves_force() {
+    let place = Place::new();
+    let (ada, k1, d1, _) = duplicates(&place);
+    assert_eq!(searched(&place, &["units,", "too"]), [DUPLICATE]);
+    let k2 = place.json(&[
+        "supersede",
+        DUPLICATE,
+        KEEP,
+        "--reason",
+        "a duplicate",
+        "--provenance",
+        "run-2",
+    ])["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let answer = place.accepted(KEEP, &k2, &ada);
+    assert_eq!(answer["status"], "accepted");
+    assert_eq!(place.status(KEEP, &k2), "accepted");
+    assert_eq!(place.status(KEEP, &k1), "superseded");
+    assert_eq!(place.status(DUPLICATE, &d1), "superseded");
+    let queried: Vec<(String, String)> = place.json(&["query", "--repository", "shop"])["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|claim| {
+            (
+                claim["name"].as_str().unwrap().to_owned(),
+                claim["version"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert!(
+        queried.contains(&(KEEP.to_owned(), k2.clone())),
+        "{queried:?}"
+    );
+    assert!(
+        queried.iter().all(|(name, _)| name != DUPLICATE),
+        "{queried:?}"
+    );
+    assert!(searched(&place, &["units,", "too"]).is_empty());
+    assert_eq!(place.json(&["verify"])["rebuilt"], serde_json::json!([]));
+}
+
+#[test]
+fn the_claim_named_moved_on() {
+    let place = Place::new();
+    let (ada, b1) = billing_in_shop(&place);
+    let w1 = superseded_by_writers(&place, &[])["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let b2 = place.amended(BILLING, "Billing alone writes invoices.", &b1);
+    place.accepted(BILLING, &b2, &ada);
+    let signatures = place.keys.signatures();
+    let outcome = place.refused(
+        &["accept", &at(WRITERS, &w1), "--key", &ada],
+        &format!("{} is accepted", at(BILLING, &b2)),
+    );
+    assert!(outcome.stderr.contains(&at(WRITERS, &w1)), "{outcome:?}");
+    assert_eq!(place.keys.signatures(), signatures);
+    assert_eq!(place.status(WRITERS, &w1), "proposed");
+}
+
+#[test]
+fn one_accept_names_both_claims() {
+    let place = Place::new();
+    let (ada, b1) = billing_in_shop(&place);
+    let w1 = superseded_by_writers(&place, &[])["version"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let b2 = place.amended(BILLING, "Billing alone writes invoices.", &b1);
+    let signatures = place.keys.signatures();
+    let outcome = place.refused(
+        &[
+            "accept",
+            &at(WRITERS, &w1),
+            &at(BILLING, &b2),
+            "--key",
+            &ada,
+        ],
+        "not both",
+    );
+    for named in [at(WRITERS, &w1), at(BILLING, &b2)] {
+        assert!(outcome.stderr.contains(&named), "{named}: {outcome:?}");
+    }
+    assert_eq!(place.keys.signatures(), signatures);
+    assert_eq!(place.status(WRITERS, &w1), "proposed");
+    assert_eq!(place.status(BILLING, &b2), "proposed");
+}

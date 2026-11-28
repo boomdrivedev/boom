@@ -78,8 +78,10 @@ pub enum Status {
     Proposed,
     /// Accepted, and no later version of its claim is: it is in force.
     Accepted,
-    /// Accepted, and a later version of its claim is; or, for a record
-    /// that came in as history, superseded as its file says.
+    /// Accepted, and a later version of its claim is, or a version of
+    /// another claim that supersedes it is (claim-versions, "The accept of
+    /// a supersession takes the claim it names out of force"); or, for a
+    /// record that came in as history, superseded as its file says.
     Superseded,
     /// Rejected by a person; or, for a record that came in as history,
     /// rejected as its file says.
@@ -1064,6 +1066,7 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
             // One act, judged whole: each version counts, or each is
             // accepted already by this person and the act repeats.
             let accepter = actor_name(&entry.actor).unwrap_or_default();
+            check_supersessions_of(state, versions)?;
             let mut verdicts = Vec::with_capacity(versions.len());
             let mut claims: Vec<Key> = Vec::with_capacity(versions.len());
             for named in versions {
@@ -1136,6 +1139,44 @@ fn check_act(state: &State, entry: &Entry) -> Result<Verdict, String> {
         } => check_approval(state, plan, links, covers),
         Act::Recorded { change, .. } => check_recorded(state, change),
     }
+}
+
+/// The supersessions of one accept: no version it names supersedes a
+/// claim of which it names a version too, and no two versions it names
+/// supersede one claim (claim-versions, "The accept of a supersession
+/// takes the claim it names out of force"). Each version is judged
+/// against the state before the entry, so an accept of both would take
+/// out of force a version that the person did not name.
+fn check_supersessions_of(state: &State, versions: &[crate::entry::Named]) -> Result<(), String> {
+    let mut superseding: Vec<(&crate::entry::Named, &str, &str)> = Vec::new();
+    for named in versions {
+        let Some(supersession) = state
+            .holding(&named.name, &named.version)
+            .and_then(|claim| claim.version(&named.version))
+            .and_then(|version| version.proposal.supersedes.as_ref())
+        else {
+            continue;
+        };
+        let Ok((target, meant)) = claim::edge(&supersession.claim) else {
+            continue;
+        };
+        if let Some((other, _, _)) = superseding.iter().find(|(_, named, _)| *named == target) {
+            return Err(format!(
+                "{}@{} and {}@{} each supersede {target}: an accept takes one version that supersedes a claim",
+                other.name, other.version, named.name, named.version
+            ));
+        }
+        superseding.push((named, target, meant));
+    }
+    for (named, target, meant) in &superseding {
+        if let Some(also) = versions.iter().find(|also| also.name == *target) {
+            return Err(format!(
+                "{}@{} supersedes {target}@{meant}, and the accept names {}@{} too: an accept takes a claim, or the version that supersedes it, and not both",
+                named.name, named.version, also.name, also.version
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The verdict of one act on several versions, judged whole: it counts
@@ -1662,10 +1703,14 @@ fn check_accept(
                     newer.proposal.version
                 ));
             }
-            let accepted = claim.standing.as_deref().unwrap_or_default();
-            return Err(format!(
-                "{name}@{version} is superseded: {name}@{accepted} is accepted"
-            ));
+            return Err(match claim.standing.as_deref() {
+                Some(accepted) => {
+                    format!("{name}@{version} is superseded: {name}@{accepted} is accepted")
+                }
+                None => {
+                    format!("{name}@{version} is superseded, and {name} has no accepted version")
+                }
+            });
         }
         Status::Rejected => return Err(format!("{name}@{version} is rejected, by {by}")),
         Status::Deprecated => return Err(format!("{name}@{version} is deprecated")),
@@ -1690,6 +1735,27 @@ fn check_accept(
             ),
             None => format!("{name}@{version} builds on {builds_on}, which is not accepted"),
         });
+    }
+    // A version that supersedes is accepted while the version it names
+    // is still the accepted version of its claim (claim-versions, "The
+    // accept of a supersession takes the claim it names out of force").
+    if let Some(supersession) = &found.proposal.supersedes {
+        let (target, meant) = claim::edge(&supersession.claim)?;
+        let (superseded, _) = find(state, target, meant)
+            .map_err(|why| format!("it supersedes {}: {why}", supersession.claim))?;
+        match superseded.standing.as_deref() {
+            Some(standing) if standing == meant => {}
+            Some(standing) => {
+                return Err(format!(
+                    "{name}@{version} supersedes {target}@{meant}, which is no longer accepted: {target}@{standing} is accepted"
+                ))
+            }
+            None => {
+                return Err(format!(
+                    "{name}@{version} supersedes {target}@{meant}, which is no longer accepted: {target} has no accepted version"
+                ))
+            }
+        }
     }
     Ok(Verdict::Counts)
 }
@@ -2236,7 +2302,39 @@ fn apply_accept(state: &mut State, seq: u64, actor: Option<String>, name: &str, 
     accepted.status = Status::Accepted;
     accepted.decided_by = actor;
     accepted.decided_in = Some(seq);
+    let supersedes = accepted.proposal.supersedes.clone();
     claim.standing = Some(version.to_owned());
+    // The version it supersedes leaves force, where it is still the
+    // accepted version of its claim; its own entry stays as it is
+    // (claim-versions, "The accept of a supersession takes the claim it
+    // names out of force").
+    if let Some((target, meant)) = supersedes
+        .as_ref()
+        .and_then(|supersession| supersession.claim.split_once('@'))
+    {
+        if let Some(superseded) = state
+            .holding_mut(target, meant)
+            .filter(|claim| claim.standing.as_deref() == Some(meant))
+        {
+            superseded.standing = None;
+            if let Some(out) = superseded.version_mut(meant) {
+                out.status = Status::Superseded;
+            }
+        }
+    }
+}
+
+/// The claim that the version `name@version` of `state` supersedes, where
+/// it supersedes one and `state` holds it.
+pub fn superseded_by<'a>(state: &'a State, name: &str, version: &str) -> Option<&'a Claim> {
+    let supersession = state
+        .holding(name, version)?
+        .version(version)?
+        .proposal
+        .supersedes
+        .as_ref()?;
+    let (target, meant) = supersession.claim.split_once('@')?;
+    state.holding(target, meant)
 }
 
 /// A refusal of `name@version` that names it.
