@@ -9,13 +9,10 @@ use support::Place;
 
 #[test]
 fn the_version() {
-    let output = Command::new(env!("CARGO_BIN_EXE_boom"))
-        .arg("--version")
-        .output()
-        .expect("the binary runs");
-    assert_eq!(output.status.code(), Some(0));
+    let outcome = Place::new().run_bare(&["--version"]);
+    assert_eq!(outcome.code, 0, "{outcome:?}");
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap().trim_end(),
+        outcome.stdout.trim_end(),
         format!("boom {}", env!("CARGO_PKG_VERSION"))
     );
 }
@@ -70,19 +67,23 @@ fn an_unknown_kind_is_refused_naming_the_kinds() {
     }
 }
 
+/// The binary's main path: with no terminal, it acts and writes its
+/// answer and its exit code.
 #[test]
 fn no_terminal() {
     let place = Place::new();
     place.made();
     let store = place.store_arg();
     let mut args = PROPOSAL.to_vec();
-    args.extend(["--store", &store]);
+    args.extend(["--store", &store, "--json"]);
     let output = Command::new(env!("CARGO_BIN_EXE_boom"))
         .args(&args)
         .stdin(std::process::Stdio::null())
         .output()
         .expect("the binary runs");
     assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let answer: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(answer["status"], "proposed", "{answer}");
     assert_eq!(place.acts(), ["registered", "proposed"]);
 }
 
@@ -269,11 +270,8 @@ fn a_note_answered_as_json() {
 
 #[test]
 fn the_commands() {
-    let output = Command::new(env!("CARGO_BIN_EXE_boom"))
-        .arg("--help")
-        .output()
-        .expect("the binary runs");
-    let help = String::from_utf8(output.stdout).unwrap();
+    let place = Place::new();
+    let help = place.run_bare(&["--help"]).stdout;
     for command in [
         "init", "register", "propose", "accept", "reject", "show", "log", "verify", "import",
         "repo", "terms", "note", "page", "hook", "mcp",
@@ -284,7 +282,6 @@ fn the_commands() {
             "{command}: {help}"
         );
     }
-    let place = Place::new();
     place.made();
     place.refused(&["page", "--json"], "boom page takes no --json");
 }

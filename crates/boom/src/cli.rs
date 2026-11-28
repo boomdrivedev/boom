@@ -792,7 +792,7 @@ where
             view: view.clone(),
             port: *port,
             open: !*no_open,
-            idle: std::time::Duration::from_secs(idle.saturating_mul(60)),
+            idle: *idle,
             person: person.clone(),
         };
         return match path.and_then(|path| crate::page::serve(&path, &options, env)) {

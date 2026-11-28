@@ -5,9 +5,7 @@
 mod support;
 
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::time::Duration;
+use std::process::{Child, Command, Stdio};
 
 use serde_json::{json, Value};
 use support::{initialize, request, text, Place};
@@ -78,6 +76,9 @@ fn asked_for_one_json_object() {
     );
 }
 
+/// `boom mcp` answers each request while its input stays open: the test
+/// waits on each answer, and on no clock
+/// (a-gate-test-asserts-no-real-time-bound).
 #[test]
 fn one_answer_before_the_next_request() {
     let place = Place::new();
@@ -91,44 +92,35 @@ fn one_answer_before_the_next_request() {
         .stderr(Stdio::null())
         .spawn()
         .expect("the binary runs");
-    let mut stdin = child.stdin.take().unwrap();
-    let stdout = BufReader::new(child.stdout.take().unwrap());
-    // Each line the server writes is read on a thread of its own, so a
-    // server holding its answers fails the wait below rather than hangs.
-    let (lines, read) = mpsc::channel();
-    let reader = std::thread::spawn(move || {
-        for line in stdout.lines() {
-            if lines.send(line.unwrap()).is_err() {
-                return;
-            }
+    // The child ends when the test ends, passed or failed.
+    struct Ends(Child);
+    impl Drop for Ends {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
         }
-    });
-    let within = Duration::from_secs(10);
-    writeln!(stdin, "{}", initialize(1)).unwrap();
-    stdin.flush().unwrap();
-    let first: Value = serde_json::from_str(
-        &read
-            .recv_timeout(within)
-            .expect("boom mcp answers initialize within ten seconds, before its input closes"),
-    )
-    .unwrap();
+    }
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut child = Ends(child);
+    let mut answer = |line: String| -> Value {
+        writeln!(stdin, "{line}").unwrap();
+        stdin.flush().unwrap();
+        let read = lines
+            .next()
+            .expect("boom mcp answers before its input closes")
+            .unwrap();
+        serde_json::from_str(&read).unwrap()
+    };
+    let first = answer(initialize(1).to_string());
     assert_eq!(first["id"], 1, "{first}");
     assert_eq!(first["result"]["serverInfo"]["name"], "boom", "{first}");
-    writeln!(stdin, "{}", request(2, "tools/list", json!({}))).unwrap();
-    stdin.flush().unwrap();
-    let second: Value = serde_json::from_str(
-        &read
-            .recv_timeout(within)
-            .expect("boom mcp answers tools/list within ten seconds, before its input closes"),
-    )
-    .unwrap();
+    let second = answer(request(2, "tools/list", json!({})).to_string());
     assert_eq!(second["id"], 2, "{second}");
     assert!(second["result"]["tools"].is_array(), "{second}");
     drop(stdin);
-    let status = child.wait().unwrap();
-    reader.join().unwrap();
-    assert_eq!(status.code(), Some(0));
-    assert!(read.try_recv().is_err(), "boom mcp writes nothing else");
+    assert!(lines.next().is_none(), "boom mcp writes nothing else");
+    assert_eq!(child.0.wait().unwrap().code(), Some(0));
 }
 
 /// The tools `tools/list` gives.

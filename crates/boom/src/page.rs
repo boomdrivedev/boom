@@ -89,8 +89,8 @@ pub struct Options {
     pub port: u16,
     /// Whether to open the URL in the browser.
     pub open: bool,
-    /// How long boom serves with no request.
-    pub idle: Duration,
+    /// How many minutes boom serves with no request.
+    pub idle: u64,
     /// The person of the page, `--person`.
     pub person: Option<String>,
 }
@@ -1414,14 +1414,34 @@ fn decoded(text: &str) -> String {
 }
 
 /// A response: its status, its type, its bytes, and a place to go to.
-struct Reply {
-    status: u16,
-    content_type: &'static str,
-    body: Cow<'static, [u8]>,
-    location: Option<String>,
+pub struct Reply {
+    /// The status, such as 200, 303 or 404.
+    pub status: u16,
+    /// The type of the body.
+    pub content_type: &'static str,
+    /// The body.
+    pub body: Cow<'static, [u8]>,
+    /// Where a 303 sends the browser.
+    pub location: Option<String>,
 }
 
 impl Reply {
+    /// The headers of the response, each with its value, beside the
+    /// length that the server gives.
+    pub fn headers(&self) -> Vec<(&'static str, String)> {
+        let mut fields = vec![
+            ("Content-Type", self.content_type.to_owned()),
+            ("Content-Security-Policy", POLICY.to_owned()),
+            ("Cache-Control", "no-store".to_owned()),
+            ("Referrer-Policy", REFERRER_POLICY.to_owned()),
+            ("X-Content-Type-Options", "nosniff".to_owned()),
+        ];
+        if let Some(location) = &self.location {
+            fields.push(("Location", location.clone()));
+        }
+        fields
+    }
+
     fn page(html: String) -> Reply {
         Reply {
             status: 200,
@@ -1452,18 +1472,134 @@ impl Reply {
     }
 }
 
+/// What one run of `boom page` serves, checked before it binds a port:
+/// the words of its line, the path of its first page and the person of
+/// its notes.
+pub struct Page {
+    path: PathBuf,
+    shown: String,
+    first: String,
+    person: Option<String>,
+    env: Env,
+}
+
+impl Page {
+    /// Checks what `options` asks `boom page` to serve from the store at
+    /// `path`: the narrative or the outline, and the person.
+    pub fn checked(path: &Path, options: &Options, env: &Env) -> Result<Page, Failure> {
+        let mut store = Store::open(path)?;
+        let name = options
+            .target
+            .as_deref()
+            .map(|target| target.split_once('@').map_or(target, |(name, _)| name))
+            .or(options.view.as_deref());
+        let state = store.state_for(&Scope::names(name))?;
+        let shown = match (&options.target, &options.view) {
+            (Some(_), Some(_)) => {
+                return Err(Failure::refused(
+                    "boom page takes a narrative or --view <outline>, and not both",
+                ))
+            }
+            (None, Some(view)) => {
+                let claim = outline_claim(&state, view)?;
+                let version = crate::view::shown(claim)
+                    .map(|version| version.proposal.version.clone())
+                    .unwrap_or_default();
+                format!("{view}@{version}")
+            }
+            (Some(target), None) => {
+                let (name, version) = match target.split_once('@') {
+                    Some((name, version)) => (name, Some(version)),
+                    None => (target.as_str(), None),
+                };
+                let claim = narrative_claim(&state, name)?;
+                let version = match version {
+                    Some(version) => claim
+                        .version(version)
+                        .ok_or_else(|| {
+                            Failure::refused(format!(
+                                "the narrative {name} has no version {version}"
+                            ))
+                        })?
+                        .proposal
+                        .version
+                        .clone(),
+                    None => claim
+                        .versions
+                        .last()
+                        .map(|version| version.proposal.version.clone())
+                        .unwrap_or_default(),
+                };
+                format!("{name}@{version}")
+            }
+            (None, None) => "the design book".to_owned(),
+        };
+        let person = match options.person.as_deref() {
+            Some(given) => Some(person_of(&state, Some(given))?),
+            None => person_of(&state, None).ok(),
+        };
+        let first = match (&options.target, &options.view) {
+            (Some(target), _) => format!("/n/{target}"),
+            (None, Some(view)) => format!("/v/{view}"),
+            (None, None) => "/".to_owned(),
+        };
+        Ok(Page {
+            path: path.to_owned(),
+            shown,
+            first,
+            person,
+            env: env.clone(),
+        })
+    }
+
+    /// What the page serves, as its line names it: `<name>@<version>`,
+    /// or the design book.
+    pub fn shown(&self) -> &str {
+        &self.shown
+    }
+
+    /// The server of the page at `port` of `127.0.0.1`, each of its
+    /// paths under `base`, `/<token>`.
+    pub fn server(self, port: u16, base: String) -> Server {
+        Server {
+            first: format!("{base}{}", self.first),
+            context: Context {
+                base,
+                person: self.person,
+                signing: Signing::Given,
+                settings: settings::path(&self.env),
+            },
+            path: self.path,
+            port,
+            env: self.env,
+        }
+    }
+}
+
 /// The server of one run of `boom page`.
-struct Server {
+pub struct Server {
     path: PathBuf,
     port: u16,
+    first: String,
     context: Context,
     env: Env,
 }
 
 impl Server {
+    /// The path of the page that the line of `boom page` gives.
+    pub fn first(&self) -> &str {
+        &self.first
+    }
+
     /// The answer to one request: a page computed from the views at the
     /// log's last entry, a note written, or a refusal.
-    fn answer(&self, method: &str, url: &str, headers: &[(String, String)], body: &[u8]) -> Reply {
+    pub fn answer(
+        &self,
+        method: &str,
+        url: &str,
+        headers: &[(String, String)],
+        body: &[u8],
+    ) -> Reply {
         let base = &self.context.base;
         let path = url.split(['?', '#']).next().unwrap_or_default();
         let Some(rest) = path.strip_prefix(base.as_str()) else {
@@ -1633,78 +1769,35 @@ impl Server {
     }
 }
 
-/// The headers of each response.
-fn headers(reply: &Reply) -> Vec<tiny_http::Header> {
-    let mut fields = vec![
-        ("Content-Type", reply.content_type.to_owned()),
-        ("Content-Security-Policy", POLICY.to_owned()),
-        ("Cache-Control", "no-store".to_owned()),
-        ("Referrer-Policy", REFERRER_POLICY.to_owned()),
-        ("X-Content-Type-Options", "nosniff".to_owned()),
-    ];
-    if let Some(location) = &reply.location {
-        fields.push(("Location", location.clone()));
+/// How long `boom page` serves with no request.
+struct Idle {
+    limit: Duration,
+    last: Instant,
+}
+
+impl Idle {
+    /// A limit of `minutes`, from `now`.
+    fn new(minutes: u64, now: Instant) -> Idle {
+        Idle {
+            limit: Duration::from_secs(minutes.saturating_mul(60)),
+            last: now,
+        }
     }
-    fields
-        .into_iter()
-        .filter_map(|(name, value)| tiny_http::Header::from_bytes(name, value).ok())
-        .collect()
+
+    /// What is left of the limit at `now`, or none once it has passed.
+    fn left(&self, now: Instant) -> Option<Duration> {
+        let left = self
+            .limit
+            .saturating_sub(now.saturating_duration_since(self.last));
+        (!left.is_zero()).then_some(left)
+    }
 }
 
 /// `boom page`: checks what it serves, binds `127.0.0.1`, prints its
 /// line, opens the URL unless asked not to, and serves until `idle`
 /// passes with no request (narrative-page).
 pub fn serve(path: &Path, options: &Options, env: &Env) -> Result<(), Failure> {
-    let mut store = Store::open(path)?;
-    let name = options
-        .target
-        .as_deref()
-        .map(|target| target.split_once('@').map_or(target, |(name, _)| name))
-        .or(options.view.as_deref());
-    let state = store.state_for(&Scope::names(name))?;
-    let shown = match (&options.target, &options.view) {
-        (Some(_), Some(_)) => {
-            return Err(Failure::refused(
-                "boom page takes a narrative or --view <outline>, and not both",
-            ))
-        }
-        (None, Some(view)) => {
-            let claim = outline_claim(&state, view)?;
-            let version = crate::view::shown(claim)
-                .map(|version| version.proposal.version.clone())
-                .unwrap_or_default();
-            format!("{view}@{version}")
-        }
-        (Some(target), None) => {
-            let (name, version) = match target.split_once('@') {
-                Some((name, version)) => (name, Some(version)),
-                None => (target.as_str(), None),
-            };
-            let claim = narrative_claim(&state, name)?;
-            let version = match version {
-                Some(version) => claim
-                    .version(version)
-                    .ok_or_else(|| {
-                        Failure::refused(format!("the narrative {name} has no version {version}"))
-                    })?
-                    .proposal
-                    .version
-                    .clone(),
-                None => claim
-                    .versions
-                    .last()
-                    .map(|version| version.proposal.version.clone())
-                    .unwrap_or_default(),
-            };
-            format!("{name}@{version}")
-        }
-        (None, None) => "the design book".to_owned(),
-    };
-    let person = match options.person.as_deref() {
-        Some(given) => Some(person_of(&state, Some(given))?),
-        None => person_of(&state, None).ok(),
-    };
-    drop(store);
+    let page = Page::checked(path, options, env)?;
     let server = tiny_http::Server::http(("127.0.0.1", options.port)).map_err(|error| {
         Failure::not_run(format!(
             "boom page could not serve on 127.0.0.1:{}: {error}",
@@ -1716,13 +1809,9 @@ pub fn serve(path: &Path, options: &Options, env: &Env) -> Result<(), Failure> {
         .to_ip()
         .map(|address| address.port())
         .ok_or_else(|| Failure::not_run("boom page serves on no port of 127.0.0.1"))?;
-    let base = format!("/{}", token()?);
-    let first = match (&options.target, &options.view) {
-        (Some(target), _) => format!("{base}/n/{target}"),
-        (None, Some(view)) => format!("{base}/v/{view}"),
-        (None, None) => format!("{base}/"),
-    };
-    let url = format!("http://127.0.0.1:{port}{first}");
+    let shown = page.shown().to_owned();
+    let served = page.server(port, format!("/{}", token()?));
+    let url = format!("http://127.0.0.1:{port}{}", served.first());
     let mut stdout = std::io::stdout();
     let _ = writeln!(stdout, "Boom: page of {shown} at {url}");
     let _ = stdout.flush();
@@ -1742,34 +1831,22 @@ pub fn serve(path: &Path, options: &Options, env: &Env) -> Result<(), Failure> {
             eprintln!("boom: {opener} did not open the page: open the URL above in a browser");
         }
     }
-    let served = Server {
-        path: path.to_owned(),
-        port,
-        context: Context {
-            base,
-            person,
-            signing: Signing::Given,
-            settings: settings::path(env),
-        },
-        env: env.clone(),
-    };
-    let mut last = Instant::now();
+    let mut idle = Idle::new(options.idle, Instant::now());
     loop {
-        let left = options.idle.saturating_sub(last.elapsed());
-        if left.is_zero() {
+        let Some(left) = idle.left(Instant::now()) else {
             eprintln!(
                 "boom page stopped: {} minutes passed with no request",
-                options.idle.as_secs() / 60
+                options.idle
             );
             return Ok(());
-        }
+        };
         let Some(mut request) = server
             .recv_timeout(left)
             .map_err(|error| Failure::not_run(format!("boom page could not serve: {error}")))?
         else {
             continue;
         };
-        last = Instant::now();
+        idle.last = Instant::now();
         let method = request.method().as_str().to_owned();
         let url = request.url().to_owned();
         let fields: Vec<(String, String)> = request
@@ -1800,8 +1877,10 @@ pub fn serve(path: &Path, options: &Options, env: &Env) -> Result<(), Failure> {
         )
         // Each length is known: the response gives it, never chunks.
         .with_chunked_threshold(usize::MAX);
-        for header in headers(&reply) {
-            response.add_header(header);
+        for (name, value) in reply.headers() {
+            if let Ok(header) = tiny_http::Header::from_bytes(name, value) {
+                response.add_header(header);
+            }
         }
         let _ = request.respond(response);
     }
@@ -1844,6 +1923,21 @@ mod tests {
             "the script names no version {MERMAID_VERSION}"
         );
         assert!(String::from_utf8_lossy(MERMAID_LICENSE).starts_with("The MIT License"));
+    }
+
+    /// narrative-page, "boom page stops when no request comes": a
+    /// limit of one minute, on instants that the test sets.
+    #[test]
+    fn idle() {
+        let start = Instant::now();
+        let mut idle = Idle::new(1, start);
+        let at = |seconds| start + Duration::from_secs(seconds);
+        assert_eq!(idle.left(start), Some(Duration::from_secs(60)));
+        assert_eq!(idle.left(at(59)), Some(Duration::from_secs(1)));
+        assert_eq!(idle.left(at(60)), None);
+        idle.last = at(30);
+        assert_eq!(idle.left(at(60)), Some(Duration::from_secs(30)));
+        assert_eq!(idle.left(at(90)), None);
     }
 
     #[test]
