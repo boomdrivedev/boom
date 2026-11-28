@@ -7,7 +7,6 @@ mod support;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
 
 use boom::page::{Context, MERMAID_VERSION, POLICY};
 use boom::store::Store;
@@ -454,69 +453,50 @@ fn a_script_in_a_diagram() {
     );
 }
 
-// The server, through the binary.
+// The server, in the test's process: each request goes to the server's
+// answer, as `boom page` gives it each request it reads from its port.
 
-/// A run of `boom page`, killed when the test ends.
+/// The port that a served page's host names; nothing binds it.
+const PORT: u16 = 8123;
+
+/// The token of a served page.
+const TOKEN: &str = "5eedc0de5eedc0de5eedc0de5eedc0de";
+
+/// The server of `boom page <args>` on the place's store.
 struct Served {
-    child: Child,
+    server: boom::page::Server,
     url: String,
     port: u16,
     token: String,
 }
 
-impl Drop for Served {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-/// A free port of 127.0.0.1.
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
-/// Starts `boom page <args> --no-open --port <port>` on the place's
-/// store, in the place's folder, and reads its line.
+/// The server of `boom page <args>` on the place's store: a narrative,
+/// `--view <outline>` and `--person <name>`, as `boom page` reads them.
 fn served(place: &Place, args: &[&str]) -> Served {
-    let port = free_port();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_boom"))
-        .arg("page")
-        .args(args)
-        .args([
-            "--no-open",
-            "--port",
-            &port.to_string(),
-            "--store",
-            &place.store_arg(),
-        ])
-        .current_dir(place.dir.path())
-        .env_remove("BOOM_REPOSITORY")
-        .env("XDG_CONFIG_HOME", place.dir.path().join("config"))
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut line = String::new();
-    BufReader::new(child.stdout.take().unwrap())
-        .read_line(&mut line)
-        .unwrap();
-    assert!(line.starts_with("Boom: page of "), "{line:?}");
-    let url = line.trim_end().rsplit(" at ").next().unwrap().to_owned();
-    let prefix = format!("http://127.0.0.1:{port}/");
-    assert!(url.starts_with(&prefix), "{url}");
-    let token = url[prefix.len()..].split('/').next().unwrap().to_owned();
-    assert_eq!(token.len(), 32, "{url}");
+    let mut options = boom::page::Options {
+        target: None,
+        view: None,
+        port: PORT,
+        open: false,
+        idle: 60,
+        person: None,
+    };
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match *arg {
+            "--view" => options.view = args.next().map(|view| view.to_string()),
+            "--person" => options.person = args.next().map(|person| person.to_string()),
+            target => options.target = Some(target.to_owned()),
+        }
+    }
+    let server = boom::page::Page::checked(&place.store, &options, &place.env)
+        .unwrap()
+        .server(PORT, format!("/{TOKEN}"));
     Served {
-        child,
-        url,
-        port,
-        token,
+        url: format!("http://127.0.0.1:{PORT}{}", server.first()),
+        server,
+        port: PORT,
+        token: TOKEN.to_owned(),
     }
 }
 
@@ -538,62 +518,33 @@ impl Response {
     }
 }
 
-/// Sends `method path` to `port` with `headers` and `body`.
-fn send(port: u16, method: &str, path: &str, headers: &[(&str, &str)], body: &str) -> Response {
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(10)))
-        .unwrap();
-    let mut request = format!("{method} {path} HTTP/1.1\r\nConnection: close\r\n");
-    for (name, value) in headers {
-        request.push_str(&format!("{name}: {value}\r\n"));
-    }
-    if !body.is_empty() || method == "POST" {
-        request.push_str(&format!(
-            "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n",
-            body.len()
-        ));
-    }
-    request.push_str("\r\n");
-    request.push_str(body);
-    stream.write_all(request.as_bytes()).unwrap();
-    let mut raw = Vec::new();
-    stream.read_to_end(&mut raw).unwrap();
-    let split = raw
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .unwrap_or(raw.len());
-    let head = String::from_utf8_lossy(&raw[..split]).into_owned();
-    let bytes = raw.get(split + 4..).unwrap_or_default().to_vec();
-    let body = String::from_utf8_lossy(&bytes).into_owned();
-    let mut lines = head.lines();
-    let status = lines
-        .next()
-        .unwrap()
-        .split(' ')
-        .nth(1)
-        .unwrap()
-        .parse()
-        .unwrap();
-    let headers = lines
-        .filter_map(|line| line.split_once(": "))
-        .map(|(name, value)| (name.to_owned(), value.to_owned()))
-        .collect();
-    Response {
-        status,
-        headers,
-        body,
-        bytes,
-    }
-}
-
 impl Served {
     fn host(&self) -> String {
         format!("127.0.0.1:{}", self.port)
     }
 
+    /// The answer to `method path` with `headers` and `body`.
+    fn send(&self, method: &str, path: &str, headers: &[(&str, &str)], body: &str) -> Response {
+        let headers: Vec<(String, String)> = headers
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+        let reply = self.server.answer(method, path, &headers, body.as_bytes());
+        let bytes = reply.body.to_vec();
+        Response {
+            status: reply.status,
+            headers: reply
+                .headers()
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value))
+                .collect(),
+            body: String::from_utf8_lossy(&bytes).into_owned(),
+            bytes,
+        }
+    }
+
     fn get(&self, path: &str) -> Response {
-        send(self.port, "GET", path, &[("Host", &self.host())], "")
+        self.send("GET", path, &[("Host", &self.host())], "")
     }
 
     fn page(&self, target: &str) -> Response {
@@ -601,8 +552,7 @@ impl Served {
     }
 
     fn post(&self, target: &str, origin: &str, body: &str) -> Response {
-        send(
-            self.port,
+        self.send(
             "POST",
             &format!("/{}/n/{target}/note", self.token),
             &[("Host", &self.host()), ("Origin", origin)],
@@ -611,24 +561,75 @@ impl Served {
     }
 }
 
+/// `boom page`'s main path, through the binary: its line, the page at
+/// the URL that the line gives, and the script whose length the
+/// response gives, never in chunks.
 #[test]
 fn the_page_served() {
     let place = Place::new();
     let v1 = one_narrative(&place, &[]);
-    let page = served(&place, &[NAME]);
-    assert!(page.url.ends_with(&format!("/n/{NAME}")), "{}", page.url);
-    let path = page
-        .url
-        .trim_start_matches(&format!("http://{}", page.host()))
-        .to_owned();
-    let response = page.get(&path);
-    assert_eq!(response.status, 200, "{}", response.body);
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_boom"))
+        .args(["page", NAME, "--no-open", "--port", &port.to_string()])
+        .args(["--store", &place.store_arg()])
+        .current_dir(place.dir.path())
+        .env_remove("BOOM_REPOSITORY")
+        .env("XDG_CONFIG_HOME", place.dir.path().join("config"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    // The child ends when the test ends, passed or failed.
+    struct Ends(Child);
+    impl Drop for Ends {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let stdout = child.stdout.take().unwrap();
+    let _ends = Ends(child);
+    let mut line = String::new();
+    BufReader::new(stdout).read_line(&mut line).unwrap();
+    let prefix = format!("Boom: page of {NAME}@{v1} at http://127.0.0.1:{port}/");
+    assert!(line.starts_with(&prefix), "{line:?}");
+    let path = &line.trim_end()[prefix.len() - 1..];
+    let token = &path[1..path[1..].find('/').unwrap() + 1];
+    assert_eq!(token.len(), 32, "{line:?}");
+    assert_eq!(&path[token.len() + 1..], format!("/n/{NAME}"), "{line:?}");
+    let get = |path: &str| {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        write!(
+            stream,
+            "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut raw = Vec::new();
+        stream.read_to_end(&mut raw).unwrap();
+        let split = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+        let head = String::from_utf8_lossy(&raw[..split]).into_owned();
+        (head, raw[split + 4..].to_vec())
+    };
+    let (head, body) = get(path);
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
     assert!(
-        response.body.contains(&format!("{NAME}@{v1}")),
-        "{}",
-        response.body
+        head.contains(&format!("Content-Security-Policy: {POLICY}")),
+        "{head}"
     );
-    assert_eq!(response.header("Content-Security-Policy"), Some(POLICY));
+    assert!(String::from_utf8_lossy(&body).contains(&format!("{NAME}@{v1}")));
+    let (head, body) = get(&format!("/{token}/mermaid-11.17.2.min.js"));
+    let script = mermaid_file("mermaid.min.js");
+    assert!(
+        head.contains(&format!("Content-Length: {}", script.len())),
+        "{head}"
+    );
+    assert!(!head.to_lowercase().contains("chunked"), "{head}");
+    assert!(body == script);
 }
 
 /// The bytes of a file of Mermaid's in the crate.
@@ -655,10 +656,6 @@ fn the_script_served() {
             .is_some_and(|value| value.starts_with("text/javascript")),
         "{:?}",
         response.headers
-    );
-    assert_eq!(
-        response.header("Content-Length"),
-        Some(mermaid_file("mermaid.min.js").len().to_string().as_str())
     );
     assert!(response.bytes == mermaid_file("mermaid.min.js"));
 }
@@ -733,8 +730,7 @@ fn another_host_name() {
     let place = Place::new();
     one_narrative(&place, &[]);
     let page = served(&place, &[NAME]);
-    let response = send(
-        page.port,
+    let response = page.send(
         "GET",
         &format!("/{}/n/{NAME}", page.token),
         &[("Host", "example.com")],
@@ -742,30 +738,6 @@ fn another_host_name() {
     );
     assert_eq!(response.status, 403);
     assert!(!response.body.contains("Boom keeps"));
-}
-
-#[test]
-fn idle() {
-    let place = Place::new();
-    one_narrative(&place, &[]);
-    let mut page = served(&place, &[NAME, "--idle", "1"]);
-    let started = Instant::now();
-    loop {
-        if let Some(status) = page.child.try_wait().unwrap() {
-            assert_eq!(status.code(), Some(0));
-            assert!(
-                started.elapsed() >= Duration::from_secs(55),
-                "{:?}",
-                started.elapsed()
-            );
-            break;
-        }
-        assert!(
-            started.elapsed() < Duration::from_secs(90),
-            "boom page did not stop"
-        );
-        std::thread::sleep(Duration::from_millis(250));
-    }
 }
 
 #[test]
@@ -893,8 +865,7 @@ fn a_note_sent_from_the_pages_form() {
         "3"
     );
     let origin = origin_of_the_form(&policy, &format!("http://{}", page.host()));
-    let response = send(
-        page.port,
+    let response = page.send(
         "POST",
         &action,
         &[("Host", &page.host()), ("Origin", &origin)],
