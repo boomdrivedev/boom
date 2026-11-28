@@ -95,5 +95,9 @@ show, log, query, search and the imports. It serves no person's act.
 
 You may propose versions. Load the skill `proposing-claims` before you
 propose an invariant, a decision, an assumption, a term or a context.
+Load it too before you run `boom supersede`. Run it only for a
+duplicate, or for a claim that another claim replaces, and never to get
+your own change through. When your work breaks an accepted claim, tell
+the person.
 Load `writing-narratives` before you write a narrative or an outline, or
 before you propose many claims for one design.
