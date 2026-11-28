@@ -152,6 +152,50 @@ pub struct Proposal {
     /// (claim-edges, "A version names its cause").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cause: Option<String>,
+    /// The accepted version of another claim that this version
+    /// supersedes, with its reason; written only where there is one
+    /// (claim-versions, "A version names the accepted version that it
+    /// supersedes").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<Supersession>,
+}
+
+/// The accepted version of another claim that a version supersedes, and
+/// why (claim-versions, "A version names the accepted version that it
+/// supersedes").
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Supersession {
+    /// The version it supersedes, `<name>@<version>`.
+    pub claim: String,
+    /// Why, one line; written only where given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// The kinds of claim that supersede a claim and are superseded
+/// (claim-versions, "A version names the accepted version that it
+/// supersedes").
+pub fn supersedes_kind(kind: Kind) -> bool {
+    matches!(kind, Kind::Invariant | Kind::Decision | Kind::Assumption)
+}
+
+/// The words of a refusal of a kind that does not supersede.
+pub const SUPERSEDED_KINDS: &str = "only an invariant, a decision or an assumption is superseded";
+
+/// The words of a refusal of a claim that names itself as the claim it
+/// supersedes.
+pub const NOT_ITSELF: &str = "a claim does not supersede itself";
+
+/// The form of a supersession's reason: one line of words.
+pub fn check_reason(reason: &str) -> Result<(), String> {
+    if reason.contains(['\n', '\r']) {
+        Err("a reason is one line: this one holds a line break".to_owned())
+    } else if reason.trim().is_empty() {
+        Err("a reason is one line of words: this one is empty".to_owned())
+    } else {
+        Ok(())
+    }
 }
 
 /// The one view that boom computes: the design book (views).
@@ -417,8 +461,9 @@ pub fn once<T: PartialEq + Clone>(edges: &[T]) -> Vec<T> {
 
 /// The content a version is the fingerprint of, in the order it is
 /// written: its history, a term's repository, a term's old words, the
-/// globs of a context and its edges last, and each only where present, so
-/// a version with none keeps the fingerprint it had before they were.
+/// globs of a context and its edges, the claim it supersedes last, and
+/// each only where present, so a version with none keeps the fingerprint
+/// it had before they were.
 #[derive(Serialize)]
 struct Content<'a> {
     kind: Kind,
@@ -451,6 +496,8 @@ struct Content<'a> {
     narratives: &'a [String],
     #[serde(skip_serializing_if = "Option::is_none")]
     cause: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supersedes: Option<&'a Supersession>,
 }
 
 impl Proposal {
@@ -491,6 +538,7 @@ impl Proposal {
             view: None,
             narratives: Vec::new(),
             cause: None,
+            supersedes: None,
         };
         proposal.version = proposal.fingerprint(None);
         proposal
@@ -536,9 +584,9 @@ impl Proposal {
     /// it has them, its history, the repository of a term, given as
     /// `repository` and none for a term of the whole system, the old words of a term, the globs of a context, its
     /// edges `source`, `changes`, `origin` and `includes`, the answers
-    /// of a narrative, the view and the narratives of an outline, and its
-    /// cause (claim-versions; claim-edges; context-claims; narratives;
-    /// views).
+    /// of a narrative, the view and the narratives of an outline, its
+    /// cause, and the claim it supersedes with its reason (claim-versions;
+    /// claim-edges; context-claims; narratives; views).
     pub fn fingerprint(&self, repository: Option<&str>) -> String {
         let content = serde_json::to_string(&Content {
             kind: self.kind,
@@ -559,6 +607,7 @@ impl Proposal {
             view: self.view.as_deref(),
             narratives: &self.narratives,
             cause: self.cause.as_deref(),
+            supersedes: self.supersedes.as_ref(),
         })
         .expect("a version's content is JSON");
         crate::sha256_hex(content.as_bytes())[..12].to_owned()
@@ -577,6 +626,9 @@ impl Proposal {
     /// repositories of its globs; only a context owns globs
     /// (context-claims). A narrative has no scenarios and no history, and
     /// only a narrative includes claims and answers notes (narratives).
+    /// Only an invariant, a decision or an assumption with no history
+    /// supersedes another claim, with a reason of one line where it gives
+    /// one (claim-versions).
     pub fn check(&self, repositories: &[String]) -> Result<(), String> {
         check_name(&self.name)?;
         check_statement(&self.statement)?;
@@ -616,6 +668,7 @@ impl Proposal {
         self.check_edges()?;
         self.check_narrative()?;
         self.check_outline()?;
+        self.check_supersedes()?;
         let fingerprint = self.fingerprint(repository);
         if self.version != fingerprint {
             return Err(format!(
@@ -825,6 +878,41 @@ impl Proposal {
                 return Err(format!("the outline holds {name} two times"));
             }
             held.push(name);
+        }
+        Ok(())
+    }
+
+    /// The claim it supersedes: an edge `<name>@<version>` of another
+    /// claim, from an invariant, a decision or an assumption with no
+    /// history, with a reason of one line where it gives one
+    /// (claim-versions).
+    fn check_supersedes(&self) -> Result<(), String> {
+        let Some(supersession) = &self.supersedes else {
+            return Ok(());
+        };
+        let (name, _) = edge(&supersession.claim)?;
+        if name == self.name {
+            return Err(format!(
+                "{NOT_ITSELF}, and a version of its own claim amends it, with --amends: {} supersedes {}",
+                self.name, supersession.claim
+            ));
+        }
+        if !supersedes_kind(self.kind) {
+            return Err(format!(
+                "{SUPERSEDED_KINDS}, by one of those kinds: {} is {} {}",
+                self.name,
+                article(self.kind),
+                self.kind.as_str()
+            ));
+        }
+        if self.history.is_some() {
+            return Err(format!(
+                "a version that comes in as history supersedes no claim: {} supersedes {}",
+                self.name, supersession.claim
+            ));
+        }
+        if let Some(reason) = &supersession.reason {
+            check_reason(reason)?;
         }
         Ok(())
     }
@@ -1358,6 +1446,131 @@ mod tests {
         let written =
             serde_json::to_string(&money("Every amount names its currency.", None)).unwrap();
         assert!(!written.contains("paths"), "{written}");
+    }
+
+    fn superseding(kind: Kind, claim: &str, reason: Option<&str>) -> Proposal {
+        let mut version = Proposal::new(
+            kind,
+            "invoice-writers",
+            "Only billing and refunds write invoices.",
+            Vec::new(),
+            (kind == Kind::Decision).then(|| "a".repeat(64)),
+            None,
+            None,
+        );
+        version.supersedes = Some(Supersession {
+            claim: claim.to_owned(),
+            reason: reason.map(str::to_owned),
+        });
+        version.version = version.fingerprint(None);
+        version
+    }
+
+    #[test]
+    fn a_supersession_is_part_of_the_content() {
+        let target = "billing-owns-invoices@aaaaaaaaaaaa";
+        let none = Proposal::new(
+            Kind::Invariant,
+            "invoice-writers",
+            "Only billing and refunds write invoices.",
+            Vec::new(),
+            None,
+            None,
+            None,
+        );
+        let bare = superseding(Kind::Invariant, target, None);
+        let one = superseding(Kind::Invariant, target, Some("Refunds issue credit notes."));
+        let again = superseding(Kind::Invariant, target, Some("Refunds issue credit notes."));
+        let other = superseding(Kind::Invariant, target, Some("A duplicate."));
+        assert_eq!(one.version, again.version);
+        let versions = [&none, &bare, &one, &other].map(|v| v.version.clone());
+        for (at, version) in versions.iter().enumerate() {
+            assert!(!versions[..at].contains(version), "{versions:?}");
+        }
+        // A version that supersedes nothing writes no field, and keeps the
+        // fingerprint it had.
+        let expected = crate::sha256_hex(
+            br#"{"kind":"invariant","name":"invoice-writers","statement":"Only billing and refunds write invoices.","scenarios":[],"body":null,"base":null}"#,
+        );
+        assert_eq!(none.version, expected[..12]);
+        assert!(!serde_json::to_string(&none).unwrap().contains("supersedes"));
+        // The supersession is the content's last field, its reason only
+        // where given.
+        let expected = crate::sha256_hex(
+            br#"{"kind":"invariant","name":"invoice-writers","statement":"Only billing and refunds write invoices.","scenarios":[],"body":null,"base":null,"supersedes":{"claim":"billing-owns-invoices@aaaaaaaaaaaa","reason":"Refunds issue credit notes."}}"#,
+        );
+        assert_eq!(one.version, expected[..12]);
+        let written = serde_json::to_string(&bare).unwrap();
+        assert!(
+            written.ends_with(r#""supersedes":{"claim":"billing-owns-invoices@aaaaaaaaaaaa"}}"#),
+            "{written}"
+        );
+        for version in [&bare, &one] {
+            assert_eq!(version.check(&[]), Ok(()), "{version:?}");
+            let written = serde_json::to_string(version).unwrap();
+            assert_eq!(
+                &serde_json::from_str::<Proposal>(&written).unwrap(),
+                version
+            );
+        }
+    }
+
+    #[test]
+    fn a_supersession_has_its_form() {
+        for kind in [Kind::Invariant, Kind::Decision, Kind::Assumption] {
+            let version = superseding(kind, "billing-owns-invoices@aaaaaaaaaaaa", None);
+            assert_eq!(version.check(&[]), Ok(()), "{kind:?}");
+        }
+        for claim in ["billing-owns-invoices", "Billing@aaaaaaaaaaaa", "x@aaa"] {
+            let refused = superseding(Kind::Invariant, claim, None)
+                .check(&[])
+                .unwrap_err();
+            assert!(
+                refused.starts_with("an edge names a claim of the store"),
+                "{claim}: {refused}"
+            );
+        }
+        let itself = superseding(Kind::Invariant, "invoice-writers@aaaaaaaaaaaa", None);
+        let refused = itself.check(&[]).unwrap_err();
+        assert!(refused.starts_with(NOT_ITSELF), "{refused}");
+        let mut term = Proposal::term(
+            "invoice-writers",
+            "Who writes invoices.",
+            None,
+            None,
+            None,
+            &[],
+        );
+        term.supersedes = Some(Supersession {
+            claim: "owner@aaaaaaaaaaaa".to_owned(),
+            reason: None,
+        });
+        term.version = term.fingerprint(None);
+        let refused = term.check(&[]).unwrap_err();
+        assert!(refused.starts_with(SUPERSEDED_KINDS), "{refused}");
+        let mut history = floats(Vec::new(), Some(superseded(Some("amounts-in-cents"))));
+        history.supersedes = Some(Supersession {
+            claim: "amounts-in-pence@aaaaaaaaaaaa".to_owned(),
+            reason: None,
+        });
+        history.version = history.fingerprint(None);
+        let refused = history.check(&[]).unwrap_err();
+        assert!(refused.contains("history supersedes no claim"), "{refused}");
+        for (reason, words) in [
+            ("Two\nlines.", "a reason is one line"),
+            ("Cr\rlines.", "a reason is one line"),
+            ("  ", "a reason is one line of words"),
+            ("", "a reason is one line of words"),
+        ] {
+            let refused = superseding(
+                Kind::Invariant,
+                "billing-owns-invoices@aaaaaaaaaaaa",
+                Some(reason),
+            )
+            .check(&[])
+            .unwrap_err();
+            assert!(refused.starts_with(words), "{reason:?}: {refused}");
+        }
     }
 
     #[test]

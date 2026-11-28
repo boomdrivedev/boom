@@ -24,7 +24,7 @@ finds a claim violated or unclear, and 2 when it refuses.
 | [`boom accept`](#boom-accept) | Accepts proposed versions in one sign: a narrative with its claims, a cause with its revision, or what waits. A person's. |
 | [`boom reject`](#boom-reject) | Rejects one or more proposed versions in one sign, with a reason. A person's. |
 | [`boom withdraw`](#boom-withdraw) | Withdraws proposed versions, with a reason and no key. Their author's. |
-| [`boom supersede`](#boom-supersede) | Proposes a claim that replaces a standing one. |
+| [`boom supersede`](#boom-supersede) | Proposes a version that supersedes an accepted claim: a new claim, or the accepted claim to keep, whose words it copies. A person's accept takes the claim out of force. |
 | [`boom query`](#boom-query) | Lists what applies to a path, a context or a name. |
 | [`boom check`](#boom-check) | Reads a change against the standing claims it touches. |
 | [`boom render`](#boom-render) | Computes a view: the design book, the rules, the ADRs or the map. |
@@ -148,33 +148,85 @@ withdrawn by its author: a duplicate, by entry 15
 ## `boom supersede`
 
 ```text
-boom supersede <name> <new-name> <statement> --scenario <text>...
-               [--kind <kind>] [--body <file>] [--reason <text>]
+boom supersede <name> <new-name> [<statement>] [--kind <kind>] [--body <file>]
+               [--reason <text>] (--provenance <text> | --key <key>)
 ```
 
-Proposes a new claim that replaces the standing claim `<name>`, of the
-same kind unless `--kind` says otherwise. The new claim is only
-proposed: the old one stands, and the gate holds work to it, until a
-person accepts the new one. An agent may run it; it never gets a change
-through on its own.
+Proposes one version that supersedes the accepted version of `<name>`:
+an agent's with `--provenance`, or a person's with `--key`. Only an
+invariant, a decision or an assumption supersedes, or is superseded.
+The version names `<name>@<version>` and the reason, of one line, in
+its content, so the person signs them with the rest. It only waits:
+`<name>` stays accepted until a person accepts the version. Boom refuses
+a `<name>` with no accepted version, and a `<new-name>` that is
+`<name>`, which a new version amends with `boom propose --amends`.
+
+It takes one of two cases from the store:
+
+- **A new name.** Where no accepted claim has `<new-name>`, the version
+  is a first version of `<new-name>`, with `<statement>` and the body of
+  `--body`, of the kind of `<name>` unless `--kind` says otherwise. It
+  binds what the accepted version of `<name>` binds. A new claim gives
+  its statement.
+- **An accepted claim of the same kind.** Where `<new-name>` is an
+  accepted claim of the kind of `<name>`, such as the claim to keep of
+  two that say the same thing, the version amends its accepted version.
+  It copies that version's statement, body and sources, and binds what
+  it binds. `<statement>` or `--body`, where given, replaces the one
+  that it copies. Boom refuses a claim of another kind, and a `--kind`
+  of another kind.
 
 ```console
 $ boom supersede billing-owns-invoices invoice-writers \
-    "Only billing and refunds write invoices; refunds writes only credit notes." \
-    --scenario "Given src/refunds, when it writes a credit note, then the check holds." \
-    --reason "Refunds issue their own credit notes."
-proposed invoice-writers@a93f6d2, an invariant that supersedes billing-owns-invoices
-billing-owns-invoices stands until a person accepts: boom accept invoice-writers
-recorded in shop-ledger at 4c2e7b0
+    "Only billing and refunds write invoices." \
+    --reason "Refunds issue their own credit notes." --provenance run-2
+invariant invoice-writers@6f5583f4232b is proposed, by entry 4
+it binds shop
+supersedes: billing-owns-invoices@8b4f037293f0
+reason: Refunds issue their own credit notes.
+a person accepts it with: boom accept invoice-writers@6f5583f4232b --key <key>
 ```
+
+With `--json`, the answer is `boom-supersede/1`: the fields of
+`boom-propose/2`, `supersedes` the name of `<name>`, the version that it
+supersedes and the reason.
 
 ```json
 {
-  "event": "proposed",
-  "record": { "name": "invoice-writers", "version": "a93f6d2", "kind": "invariant", "supersedes": "billing-owns-invoices" },
+  "format": "boom-supersede/1",
+  "claim": "invoice-writers",
+  "kind": "invariant",
+  "version": "6f5583f4232b",
+  "base": null,
   "status": "proposed",
-  "commit": "4c2e7b0"
+  "entry": 4,
+  "repositories": ["shop"],
+  "contexts": [],
+  "source": [],
+  "supersedes": "billing-owns-invoices",
+  "supersedes_version": "8b4f037293f0",
+  "reason": "Refunds issue their own credit notes.",
+  "accept": "boom accept invoice-writers@6f5583f4232b --key <key>",
+  "plan_words": []
 }
+```
+
+The person's accept takes the claim out of force. Before the key signs,
+`boom accept` lists the version that each version supersedes. Once the
+accept counts, that version is `superseded` and its claim has no
+accepted version, so `boom query`, `boom search` and the hooks no longer
+give it. The log keeps each entry. Boom refuses the accept where that
+version is no longer the accepted one, or where the accept also names a
+version of that claim. `boom show <name>` gives the versions that
+supersede a claim under `superseded_by`, and
+`boom show <name>@<version>` gives the edge `supersedes` with its
+reason.
+
+```console
+$ boom accept invoice-writers@6f5583f4232b --key ~/.ssh/id_ed25519_sk
+This accept takes 1 version in one entry:
+  invariant invoice-writers@6f5583f4232b, which supersedes billing-owns-invoices@8b4f037293f0
+invoice-writers@6f5583f4232b is accepted, accepted by ada, by entry 5, and it superseded billing-owns-invoices@8b4f037293f0
 ```
 
 ## `boom query`

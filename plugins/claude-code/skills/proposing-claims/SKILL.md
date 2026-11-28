@@ -127,6 +127,27 @@ words>"`. A ruling's statement is the person's approved sentence.
   Boom withdraws only a version that an agent proposed and that waits.
   When you have a better version, amend the draft.
 
+## Supersede an accepted claim
+
+`boom supersede` proposes a version that takes an accepted claim out of
+force once a person accepts it. Run it in two cases only:
+
+- **A duplicate.** Two accepted claims say the same thing. Supersede
+  the one to retire with the one to keep. The new version of the claim
+  to keep copies its words:
+  `boom supersede <claim to retire> <claim to keep> --reason <why> --provenance <session>`.
+- **A claim that another replaces.** An accepted claim no longer holds,
+  and a new claim says what holds now. Give the new claim its name and
+  its statement:
+  `boom supersede <old claim> <new claim> "<statement>" --reason <why> --provenance <session>`.
+
+Never supersede a claim to get your own change through. When your work
+breaks an accepted claim, tell the person which claim and why, and let
+the person decide. A version that supersedes waits on a person like
+any other, and the old claim holds until the person accepts it. Only an
+invariant, a decision or an assumption is superseded. To change the
+words of a claim, amend it with `--amends`.
+
 ## Batches
 
 The person signs a batch once. Boom computes the batches from the

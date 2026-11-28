@@ -765,6 +765,7 @@ impl Scope {
                             .chain(&claim.includes)
                             .chain(&claim.narratives)
                             .chain(&claim.cause)
+                            .chain(claim.supersedes.as_ref().map(|s| &s.claim))
                             .chain(crate::judge::contexts(attach.as_ref()))
                             .filter_map(|edge| edge.split_once('@'))
                             .map(|(name, _)| name.to_owned()),
@@ -1068,9 +1069,17 @@ fn write_touched(conn: &Connection, state: &State, entry: &Entry) -> Result<(), 
         Act::Proposed { claim, .. } => {
             write_claim(conn, holding(state, &claim.name, &claim.version))
         }
-        Act::Accepted { versions }
-        | Act::Rejected { versions, .. }
-        | Act::Withdrawn { versions, .. } => {
+        Act::Accepted { versions } => {
+            for named in versions {
+                write_claim(conn, holding(state, &named.name, &named.version))?;
+                // The claim that the accept took out of force (claim-versions).
+                if let Some(superseded) = judge::superseded_by(state, &named.name, &named.version) {
+                    write_claim(conn, superseded)?;
+                }
+            }
+            Ok(())
+        }
+        Act::Rejected { versions, .. } | Act::Withdrawn { versions, .. } => {
             for named in versions {
                 write_claim(conn, holding(state, &named.name, &named.version))?;
             }
@@ -1741,8 +1750,9 @@ pub fn bound_to(conn: &Connection, context: &str) -> Result<Vec<Bound>, Failure>
 
 /// A row for each edge of a version, in its order: each `source` and
 /// `changes` with the claim and the version it meant, each `origin` with
-/// its form and, for a file, its fingerprint (claim-edges). Its base is
-/// the `base` of its row in `versions`.
+/// its form and, for a file, its fingerprint (claim-edges), and the
+/// version it supersedes (claim-versions). Its base is the `base` of its
+/// row in `versions`.
 fn write_edges(
     conn: &Connection,
     name: &str,
@@ -1754,12 +1764,18 @@ fn write_edges(
          artifact, origin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
     let cause: Vec<String> = proposal.cause.iter().cloned().collect();
+    let supersedes: Vec<String> = proposal
+        .supersedes
+        .iter()
+        .map(|supersession| supersession.claim.clone())
+        .collect();
     for (edge, edges) in [
         ("source", &proposal.source),
         ("changes", &proposal.changes),
         ("includes", &proposal.includes),
         ("narratives", &proposal.narratives),
         ("cause", &cause),
+        ("supersedes", &supersedes),
     ] {
         for (position, stored) in edges.iter().enumerate() {
             let (target_name, target_version) = stored.split_once('@').unwrap_or((stored, ""));
@@ -1895,6 +1911,57 @@ pub fn proposed_names(conn: &Connection) -> Result<std::collections::BTreeSet<St
     Ok(names)
 }
 
+/// A version whose edge `supersedes` names a version of a claim, as the
+/// views hold it (claim-versions, "The person reads what a supersession
+/// takes out of force").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Superseding {
+    /// The claim whose version holds the edge.
+    pub name: String,
+    /// That version.
+    pub version: String,
+    /// Its status.
+    pub status: String,
+    /// The version of the named claim that the edge meant.
+    pub meant: String,
+}
+
+/// Each version whose edge `supersedes` names a version of the claim
+/// `name`, with its status, from the rows `supersedes` of `edges`: in the
+/// order of the claims' names, then the order proposed.
+pub fn superseding(conn: &Connection, name: &str) -> Result<Vec<Superseding>, Failure> {
+    let mut statement = conn.prepare(
+        "SELECT e.name, e.version, v.status, e.target_version FROM edges e \
+         JOIN versions v ON v.name = e.name AND v.version = e.version \
+         WHERE e.edge = 'supersedes' AND e.target_name = ?1 \
+         ORDER BY e.name, v.proposed_in",
+    )?;
+    let rows = statement
+        .query_map([name], |row| {
+            Ok(Superseding {
+                name: row.get(0)?,
+                version: row.get(1)?,
+                status: row.get(2)?,
+                meant: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// The name of each claim that a version of the claim `name` supersedes,
+/// as the rows `supersedes` of `edges` hold them, sorted.
+fn superseded_names(conn: &Connection, name: &str) -> Result<Vec<String>, Failure> {
+    let mut statement = conn.prepare_cached(
+        "SELECT DISTINCT target_name FROM edges WHERE edge = 'supersedes' AND name = ?1 \
+         ORDER BY target_name",
+    )?;
+    let names = statement
+        .query_map([name], |row| row.get::<_, String>(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(names)
+}
+
 /// Each version whose edge `cause` names `name@version`, as the views hold
 /// it, each `(name, version)`.
 pub fn naming_cause(
@@ -1935,12 +2002,18 @@ pub fn load_state(conn: &Connection) -> Result<State, Failure> {
 }
 
 /// The part of the state the views hold that `scope` names: every
-/// person, the claims it names, and, where it asks, every claim with an
-/// imported version. No other claim's rows are read.
+/// person, the claims it names with the claims their versions supersede,
+/// and, where it asks, every claim with an imported version. No other
+/// claim's rows are read.
 pub fn load_state_for(conn: &Connection, scope: &Scope) -> Result<State, Failure> {
     let mut state = load_persons(conn)?;
     for name in &scope.names {
         load_claims(conn, &mut state, "WHERE name = ?1", [name.as_str()])?;
+        // The claims its versions supersede, which an accept takes out of
+        // force (claim-versions).
+        for superseded in superseded_names(conn, name)? {
+            load_claims(conn, &mut state, "WHERE name = ?1", [superseded.as_str()])?;
+        }
     }
     if scope.imported {
         load_claims(
@@ -2310,6 +2383,9 @@ pub struct VersionView {
     /// The version of another claim that forced it, `<name>@<version>`
     /// (claim-edges, "A version names its cause").
     pub cause: Option<String>,
+    /// The accepted version of another claim that it supersedes, with its
+    /// reason (claim-versions).
+    pub supersedes: Option<crate::claim::Supersession>,
     /// The repositories its proposal binds.
     pub repositories: Vec<String>,
     /// The contexts its proposal binds, each `<name>@<version>` of the
@@ -2415,6 +2491,7 @@ fn version_views(conn: &Connection, name: &str, term: &str) -> Result<Vec<Versio
             view: proposal.view,
             narratives: proposal.narratives,
             cause: proposal.cause,
+            supersedes: proposal.supersedes,
             repositories: from_json(&repositories)?,
             contexts: from_json(&contexts)?,
             proposer: from_json(&proposer)?,
