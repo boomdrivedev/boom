@@ -2,8 +2,7 @@
 //! input stays open (agent-tools; record 0011). The other tests of the
 //! server run in the crate, in src/tests/mcp.rs.
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
@@ -16,6 +15,7 @@ use support::{initialize, request, Place};
 /// (a-gate-test-asserts-no-real-time-bound).
 #[test]
 fn one_answer_before_the_next_request() {
+    let _slot = super::slot();
     let place = Place::new();
     let mut child = Command::new(env!("CARGO_BIN_EXE_boom"))
         .args(["mcp", "--store", &place.store_arg()])

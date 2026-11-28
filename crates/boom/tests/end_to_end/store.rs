@@ -2,8 +2,7 @@
 //! lands, chained (record-store). The other tests of the store run in
 //! the crate, in src/tests/store.rs.
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use support::Place;
 
@@ -27,6 +26,7 @@ fn agents_proposal_command(place: &Place, name: &str) -> std::process::Command {
 
 #[test]
 fn two_proposals_at_once_both_land_chained() {
+    let _slot = super::slot();
     let place = Place::new();
     place.made();
     let mut one = agents_proposal_command(&place, "money-has-currency")

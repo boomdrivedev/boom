@@ -3,8 +3,7 @@
 //! The other tests of signatures run in the crate, in
 //! src/tests/signatures.rs.
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use boom::sign::{Key, Keys, SshKeygen};
 use boom::Failure;
@@ -12,6 +11,7 @@ use support::SoftKeys;
 
 #[test]
 fn the_passphrase_program_of_the_settings_reaches_ssh_keygen() {
+    let _slot = super::slot();
     use std::os::unix::fs::PermissionsExt as _;
 
     let dir = tempfile::tempdir().unwrap();

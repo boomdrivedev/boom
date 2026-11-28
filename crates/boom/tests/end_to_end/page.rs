@@ -3,8 +3,7 @@
 //! (narrative-page). The other tests of the page run in the crate, each
 //! request sent to the server's answer, in src/tests/page.rs.
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
@@ -19,6 +18,7 @@ use support::{Place, NARRATIVE};
 /// response gives, never in chunks.
 #[test]
 fn the_page_served() {
+    let _slot = super::slot();
     let place = Place::new();
     let v1 = one_narrative(&place, &[]);
     let port = std::net::TcpListener::bind("127.0.0.1:0")

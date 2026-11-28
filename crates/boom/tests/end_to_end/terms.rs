@@ -4,8 +4,7 @@
 //! the boom the tree builds (term-check). The other tests of the terms
 //! run in the crate, in src/tests/terms.rs.
 
-#[path = "../src/tests/support.rs"]
-mod support;
+use super::support;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -15,6 +14,7 @@ use support::{path_arg, Place};
 
 #[test]
 fn an_agent_writes_the_old_word_and_the_hook_names_owner() {
+    let _slot = super::slot();
     let (matcher, command) = hook_command();
     for tool in ["Write", "Edit", "MultiEdit"] {
         assert!(matcher.split('|').any(|name| name == tool), "{matcher}");
@@ -75,6 +75,7 @@ fn an_agent_writes_the_old_word_and_the_hook_names_owner() {
 
 #[test]
 fn a_change_that_adds_an_old_word() {
+    let _slot = super::slot();
     let place = Place::new();
     owner_accepted(&place);
     let folder = change(&place, &[("README.md", "# boom\n\nThe keeper signs.\n")]); // boom: allow keeper
@@ -88,6 +89,7 @@ fn a_change_that_adds_an_old_word() {
 
 #[test]
 fn an_old_word_that_the_change_does_not_touch() {
+    let _slot = super::slot();
     let place = Place::new();
     owner_accepted(&place);
     let folder = change(&place, &[("notes.md", "The owner signs.\n")]);
@@ -102,6 +104,7 @@ fn an_old_word_that_the_change_does_not_touch() {
 
 #[test]
 fn an_archived_change_and_a_marker() {
+    let _slot = super::slot();
     let place = Place::new();
     owner_accepted(&place);
     let folder = change(
@@ -123,6 +126,7 @@ fn an_archived_change_and_a_marker() {
 
 #[test]
 fn a_change_that_deletes_a_file_that_holds_an_old_word() {
+    let _slot = super::slot();
     let place = Place::new();
     owner_accepted(&place);
     let folder = change(&place, &[]);
@@ -145,6 +149,7 @@ fn a_change_that_deletes_a_file_that_holds_an_old_word() {
 
 #[test]
 fn the_gate_with_no_store() {
+    let _slot = super::slot();
     let place = Place::new();
     let folder = change(&place, &[("README.md", "The keeper signs.\n")]); // boom: allow keeper
     let ran = gate(&place, &folder, &["--repository", "boom"]);
@@ -154,6 +159,7 @@ fn the_gate_with_no_store() {
 
 #[test]
 fn the_task_names_the_entry_it_read() {
+    let _slot = super::slot();
     let place = Place::new();
     owner_accepted(&place);
     let folder = change(&place, &[("notes.md", "The owner signs.\n")]);
