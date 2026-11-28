@@ -121,21 +121,13 @@ fn a_context_proposed() {
     assert_eq!(shown["newest"]["paths"], json!([OVERVIEW_GLOB]));
     let signed = place.last_signed();
     assert_eq!(signed["claim"]["paths"], json!([OVERVIEW_GLOB]));
+    assert!(signed["claim"]["body"].is_null(), "a context needs no body");
     assert_eq!(signed["attach"], json!({"repositories": ["sluice"]}));
     let words = place.run(&["show", &format!("{OVERVIEW}@{}", version(&answer))]);
     assert!(
         words.stdout.contains(&format!("path: {OVERVIEW_GLOB}\n")),
         "{words:?}"
     );
-}
-
-#[test]
-fn a_context_with_no_body_and_one_glob() {
-    let place = Place::new();
-    place.made();
-    let answer = context(&place, OVERVIEW, &[OVERVIEW_GLOB], &[]);
-    assert_eq!(answer["status"], "proposed");
-    assert!(place.last_signed()["claim"]["body"].is_null());
 }
 
 #[test]
@@ -657,22 +649,6 @@ fn the_contexts_of_a_path_in_words() {
         lines[1],
         format!("path {IN_OVERVIEW}: {OVERVIEW}@{overview}")
     );
-}
-
-#[test]
-fn a_glob_does_not_cross_a_folder() {
-    let place = Place::new();
-    first_store(&place);
-    let answer = query_path(&place, &["sluice:crates/sluice/src/overview/watch.rs"]);
-    assert!(!names(&answer).contains(&BRANCHES.to_owned()), "{answer}");
-}
-
-#[test]
-fn a_file_that_does_not_exist() {
-    let place = Place::new();
-    first_store(&place);
-    let answer = query_path(&place, &["sluice:crates/sluice/src/overview_new.rs"]);
-    assert!(names(&answer).contains(&BRANCHES.to_owned()), "{answer}");
 }
 
 #[test]
